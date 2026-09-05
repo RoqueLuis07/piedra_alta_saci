@@ -61,6 +61,21 @@ papel y a unos 40 cm, resolución máxima, HDR apagado. La corrección de fondo
 del pipeline resuelve la iluminación despareja; lo que no resuelve es la
 **perspectiva** (foto en diagonal), que deforma las casillas.
 
+### Documentos escaneados muy grandes
+
+Un PDF con cientos de hojas puede pesar cientos de megas. Para revisar o
+compartir una parte, sin recomprimir ni rasterizar de nuevo:
+
+```bash
+python scripts/extraer_muestra.py documento.pdf --informe              # qué tiene adentro
+python scripts/extraer_muestra.py documento.pdf --paginas 1-3 --salida muestra.pdf
+python scripts/extraer_muestra.py documento.pdf --paginas 1 --imagenes # sólo el escaneo
+```
+
+El informe dice a cuántos dpi está escaneada cada página, cuánto pesa y si la
+página es un escaneo de hoja entera o un PDF generado. Es la forma rápida de
+saber si un lote va a dar marcas limpias antes de procesarlo.
+
 ## 3. Procesar el lote
 
 ```bash

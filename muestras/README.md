@@ -64,12 +64,37 @@ Para las muestras de marcas, con las **páginas que tienen los dibujos** alcanza
 no hace falta el documento completo. Si una página mezcla marcas y datos del
 titular, tapar los datos antes de subir, o avisar y buscamos otra vía.
 
+## Si el documento pesa demasiado
+
+Un PDF con cientos de hojas escaneadas puede pesar 200 MB o más, y no entra ni
+por el navegador (25 MB) ni por git (100 MB). No hace falta el documento
+entero: con dos o tres páginas alcanza.
+
+`scripts/extraer_muestra.py` recorta una muestra **sin degradarla** — copia los
+datos originales de la imagen, no la vuelve a comprimir ni a rasterizar:
+
+```bash
+pip install pypdf pillow
+
+# 1. Ver qué tiene adentro (no escribe nada)
+python scripts/extraer_muestra.py "documento grande.pdf" --informe
+
+# 2. Recortar dos o tres páginas
+python scripts/extraer_muestra.py "documento grande.pdf" --paginas 1-3 --salida muestra.pdf
+
+# 3. Si aun así pesa mucho: exportar sólo las imágenes escaneadas
+python scripts/extraer_muestra.py "documento grande.pdf" --paginas 1 --imagenes
+```
+
+El informe dice, por página, el tamaño de la hoja, a cuántos dpi está escaneada
+y cuánto pesa. **Ese informe solo ya sirve**: se puede pegar en el chat sin
+mandar ningún archivo, y con eso se ajustan los umbrales del pipeline.
+
 ## Límites
 
 - Por el navegador: hasta **25 MB por archivo** y 100 archivos por carga.
 - Con git: hasta 100 MB por archivo.
-- Un escaneo de una hoja a 600 dpi en PDF pesa entre 2 y 10 MB. Si un
-  documento entero no entra, subir sólo las primeras páginas.
+- Un escaneo de una hoja a 600 dpi pesa entre 2 y 10 MB.
 
 ## Después
 
