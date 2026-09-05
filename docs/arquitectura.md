@@ -67,32 +67,28 @@ debería declarar por sí solo que dos marcas son la misma.
 mouse), grosor fijo, botón de deshacer y de limpiar. Exporta PNG y entra por el
 mismo pipeline.
 
-## 2. El PDF oficial como base
+## 2. El PDF oficial como base — **resuelto**
 
-El formulario se descarga del sitio del gobierno y trae un número de orden que
-cambia en cada descarga. Entonces **no se puede regenerar**: hay que
-conservarlo tal cual y **superponerle** las marcas.
+El formulario se descarga del sitio del gobierno con un número de orden que
+cambia en cada descarga, así que no se puede regenerar: se conserva tal cual y
+se le **superponen** las marcas.
 
-El flujo:
+Está implementado en `marcas/pdf/guia.py` y probado sobre una guía real. El
+flujo:
 
 1. El usuario descarga el formulario del sitio oficial y lo **sube** al sistema
-   (queda asociado al trámite, con su número de orden).
-2. El sistema busca la **plantilla de mapeo** de esa versión del formulario: un
-   JSON con las coordenadas en puntos PDF de cada casilla donde va una marca.
-3. Se arma una **capa transparente** con las marcas ubicadas en esas cajas
-   (ReportLab) y se fusiona sobre la página original (`pypdf`), sin tocar el
-   texto ni el número de orden.
-4. Se devuelve el PDF resultante y se registra qué marcas se usaron, quién y
-   cuándo.
+   (uno por trámite; no se guarda como plantilla).
+2. El sistema **lee las casillas del propio PDF**: los recuadros del anexo son
+   rectángulos vectoriales, así que no hace falta calibrar coordenadas a mano
+   ni mantener una plantilla por versión del formulario.
+3. Se descartan las casillas ya ocupadas (la marca dominante impresa, las
+   anuladas con "X") y las marcas se reparten entre las libres, **iguales en
+   las cuatro copias**.
+4. Se fusiona una capa transparente sobre las páginas originales: número de
+   orden, código de barras y QR quedan intactos.
 
-Para calibrar el mapeo de una versión nueva del formulario **se reutiliza el
-detector de casillas que ya existe**: se rasteriza la página, `detectar_celdas`
-encuentra los recuadros y sus coordenadas se convierten a puntos PDF. Si el
-gobierno cambia el diseño, recalibrar lleva minutos, no una reescritura.
-
-Antes de implementarlo hay que ver el PDF: si trae **campos de formulario
-(AcroForm)**, conviene rellenarlos directamente en lugar de superponer; si es
-una imagen escaneada, se superpone sí o sí; si usa XFA, hay que revisar aparte.
+El detalle del formulario y lo que queda por confirmar está en
+[guia_oficial.md](guia_oficial.md).
 
 ## 3. Base de datos
 
@@ -168,7 +164,7 @@ peso legal, y agregarlo después obliga a reescribir historia que no se tiene.
 | 0 | Pipeline de digitalización, catálogo, planillas PDF, selector | **hecho** |
 | 1 | PostgreSQL + Django, migración del catálogo, usuarios y roles | pendiente |
 | 2 | Búsqueda por similitud (capas 1 y 2) + panel de dibujo | pendiente |
-| 3 | PDF oficial: carga del formulario, mapeo de casillas, superposición | pendiente |
+| 3 | PDF oficial: carga del formulario, detección de casillas, superposición | **hecho** (falta definir el Rubro 2) |
 | 4 | Auditoría, importación de propietarios, PWA, respaldos | pendiente |
 
 El pipeline de la etapa 0 no se tira: `marcas/vectorizacion/` es una biblioteca
@@ -177,12 +173,14 @@ Django, desde Celery o desde la línea de comandos.
 
 ## 6. Qué falta definir
 
-1. **Un ejemplo real de las marcas.** Cambia decisiones concretas: resolución
-   de escaneo, si las marcas vienen en grilla o sueltas, qué tan finos son los
-   trazos y si hay texto junto al dibujo.
-2. **El PDF oficial del gobierno.** Define si se rellenan campos de formulario
-   o se superpone una capa, cuántas casillas hay por página y qué datos además
-   de la imagen hay que completar.
+1. **Un ejemplo real de las marcas escaneadas.** Cambia decisiones concretas:
+   resolución de escaneo, si vienen en grilla o sueltas en documentos, qué tan
+   finos son los trazos y si hay texto junto al dibujo. La marca dominante de
+   la guía oficial ya es digital y sirve de referencia de destino: trazo negro
+   parejo sobre lienzo cuadrado, que es exactamente lo que produce el
+   pipeline.
+2. **Si el Rubro 2 de la guía también lleva marcas** además del anexo, y qué
+   corresponde poner ahí (ver [guia_oficial.md](guia_oficial.md)).
 3. **Volumen y crecimiento:** 500 marcas hoy, ¿cuántas por año?
 4. **Cuántas personas usan el sistema a la vez** y desde dónde (oficina, campo
    con señal intermitente).

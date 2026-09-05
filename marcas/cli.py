@@ -14,6 +14,7 @@ from marcas.pdf import (
     generar_planilla,
     generar_plantilla_captura,
 )
+from marcas.pdf.guia import completar_guia, hojas_de_anexo
 from marcas.vectorizacion.pipeline import procesar_lote, resumen
 from marcas.vectorizacion.trazar import potrace_disponible
 
@@ -128,6 +129,44 @@ def cmd_planilla(args) -> int:
     return 0
 
 
+def cmd_guia(args) -> int:
+    """Estampa las marcas elegidas sobre la guía oficial descargada."""
+    if args.inspeccionar:
+        hojas = hojas_de_anexo(args.pdf)
+        if not hojas:
+            print("No se reconocieron hojas de anexo en ese PDF.", file=sys.stderr)
+            return 1
+        print(f"{'PÁG':<5} {'COPIA':<15} {'HOJA':<5} {'CASILLAS':<9} LIBRES")
+        for h in hojas:
+            print(f"{h.pagina + 1:<5} {h.copia:<15} {h.orden + 1:<5} "
+                  f"{len(h.casillas):<9} {len(h.libres)}")
+        por_copia = {}
+        for h in hojas:
+            por_copia[h.copia] = por_copia.get(h.copia, 0) + len(h.libres)
+        print(f"\nCapacidad: {min(por_copia.values())} marcas por copia.")
+        return 0
+
+    filas = _seleccionar(args)
+    if not filas:
+        print("La selección no devolvió marcas.", file=sys.stderr)
+        return 1
+    imagenes = []
+    for f in filas:
+        ruta = Path(f["archivo_png"])
+        imagenes.append(ruta if ruta.is_absolute() else config.RAIZ / ruta)
+    try:
+        r = completar_guia(args.pdf, imagenes, args.salida, dpi=args.dpi)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(
+        f"Guía completada: {r['salida']} ({r['peso_kb']} kB)\n"
+        f"  {r['marcas']} marcas en {len(r['paginas_modificadas'])} páginas de anexo\n"
+        f"  copias: {', '.join(r['copias'])}"
+    )
+    return 0
+
+
 def cmd_control(args) -> int:
     filas = _seleccionar(args)
     items = [ItemPlanilla.desde_fila(f) for f in filas]
@@ -224,6 +263,8 @@ def construir_parser() -> argparse.ArgumentParser:
         p.add_argument("--buscar", default=None)
         p.add_argument("--estado", default=None, choices=["activa", "revisar", "baja"])
         p.add_argument("--limite", type=int, default=None)
+        p.add_argument("--todas", action="store_true",
+                       help="todo el catálogo (es lo que pasa si no se filtra)")
 
     p = sub.add_parser("listar", help="ver el catálogo")
     opciones_seleccion(p)
@@ -246,6 +287,16 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("--salida", type=Path, default=config.DIR_SALIDA / "hoja_control.pdf")
     p.add_argument("--subtitulo", default=None)
     p.set_defaults(func=cmd_control)
+
+    p = sub.add_parser("guia", help="estampar marcas sobre la guía oficial descargada")
+    opciones_seleccion(p)
+    p.add_argument("--pdf", type=Path, required=True,
+                   help="guía de traslado descargada del sitio oficial")
+    p.add_argument("--salida", type=Path, default=config.DIR_SALIDA / "guia_completada.pdf")
+    p.add_argument("--dpi", type=int, default=300)
+    p.add_argument("--inspeccionar", action="store_true",
+                   help="sólo mostrar las hojas de anexo y las casillas libres")
+    p.set_defaults(func=cmd_guia)
 
     p = sub.add_parser("estado", help="resumen del catálogo")
     p.set_defaults(func=cmd_estado)

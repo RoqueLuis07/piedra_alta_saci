@@ -34,6 +34,26 @@ La guía operativa completa —resolución, formato, cómo preparar las hojas, q
 hacer cuando una marca sale mal— está en
 **[docs/guia_digitalizacion.md](docs/guia_digitalizacion.md)**.
 
+## Estampado sobre la Guía de Traslado oficial
+
+El formulario de SENACSA se descarga ya numerado (N° de orden, código de
+barras y QR distintos en cada descarga), así que **no se regenera: se le
+superponen las marcas**. El PDF descargado se sube en cada trámite; el sistema
+no guarda plantillas.
+
+```bash
+python -m marcas guia --pdf GE291181750.pdf --inspeccionar   # ver qué trae
+python -m marcas guia --pdf GE291181750.pdf --limite 62      # estampar
+```
+
+Las casillas **no están calibradas a mano**: se leen de los rectángulos
+vectoriales del propio PDF, página por página. Eso importa, porque en la guía
+real la grilla de la primera hoja de anexo está 7 pt más abajo que la de las
+demás. El sistema respeta las casillas ya ocupadas (la marca dominante, las
+anuladas con "X") y estampa la misma marca en la misma posición de las cuatro
+copias. Detalle completo en
+**[docs/guia_oficial.md](docs/guia_oficial.md)**.
+
 ### PNG y SVG, no uno u otro
 
 Pediste PNG, y el PNG es lo que consume la planilla. Pero el pipeline genera
@@ -87,6 +107,9 @@ python -m marcas importar
 # 6. Elegir marcas y generar la planilla
 python -m marcas web                     # selector visual en el navegador
 python -m marcas planilla --todas        # o directo por línea de comandos
+
+# 7. Estampar las marcas sobre una guía oficial descargada
+python -m marcas guia --pdf GE291181750.pdf --codigos H01-F01C01,H01-F01C02
 ```
 
 ### El selector visual
@@ -106,6 +129,7 @@ la tabla `planillas`, así que una planilla se puede reimprimir idéntica.
 | `marcas listar` | Ver el catálogo, con filtros |
 | `marcas control` | Hoja de contactos para revisar un lote |
 | `marcas planilla` | PDF general con las marcas en casillas |
+| `marcas guia` | Estampar marcas sobre la Guía de Traslado oficial |
 | `marcas web` | Selector visual + generación del PDF |
 | `marcas estado` | Resumen del catálogo |
 | `marcas demo` | Recorrido completo con hojas sintéticas |
@@ -126,9 +150,13 @@ marcas/
 │   ├── limpiar.py          binarización, limpieza y normalización
 │   ├── trazar.py           PNG → SVG con potrace
 │   └── pipeline.py         procesamiento por lotes + manifiesto
-├── pdf/planilla.py         planilla general, hoja de control, plantilla de captura
+├── pdf/
+│   ├── planilla.py         planilla general, hoja de control, plantilla de captura
+│   └── guia.py             estampado sobre la Guía de Traslado oficial
 └── web/                    selector visual (Flask)
-scripts/generar_hoja_demo.py  hojas escaneadas sintéticas para pruebas
+scripts/
+├── generar_hoja_demo.py     hojas escaneadas sintéticas para pruebas
+└── generar_guia_demo.py     guía de traslado sintética para pruebas
 datos/                        escaneos, imágenes generadas, base y PDF (fuera del repo)
 ```
 
@@ -155,12 +183,20 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
-Las pruebas generan hojas escaneadas sintéticas y verifican el pipeline
-completo: enderezado, detección de las 20 casillas, transparencia del PNG,
-trazado del SVG, importación idempotente al catálogo y paginación de los PDF.
+Las pruebas generan hojas escaneadas y guías de traslado sintéticas, así que
+no dependen de documentos reales. Verifican el pipeline completo: enderezado,
+detección de casillas, transparencia del PNG, trazado del SVG, importación
+idempotente al catálogo, paginación de los PDF y el estampado sobre la guía
+(casillas anuladas respetadas, las cuatro copias iguales, el resto del
+documento intacto).
 
 ## Qué falta
 
+- **Confirmar si las casillas del Rubro 2 de la guía también llevan marcas.**
+  Hoy se llenan sólo los anexos; ver *Pendiente de definir* en
+  [docs/guia_oficial.md](docs/guia_oficial.md).
+- **Búsqueda por similitud** (marca dibujada o cargada → marcas parecidas):
+  el enfoque está en [docs/arquitectura.md](docs/arquitectura.md).
 - Cargar los propietarios (hoy se editan de a uno desde el selector o por SQL);
   lo natural es un import desde planilla de cálculo.
 - Búsqueda "por parecido" para detectar marcas duplicadas o muy similares al

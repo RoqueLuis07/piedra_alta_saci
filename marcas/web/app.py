@@ -17,6 +17,7 @@ from flask import (
 
 from marcas import config, db
 from marcas.pdf import ItemPlanilla, generar_planilla
+from marcas.pdf.guia import completar_guia
 
 
 def _ruta_imagen(fila) -> Path | None:
@@ -66,6 +67,41 @@ def crear_app(ruta_db: Path | None = None) -> Flask:
             estado=request.form.get("estado") or "activa",
         )
         return redirect(request.referrer or url_for("inicio"))
+
+    @app.post("/guia")
+    def guia():
+        """Estampa las marcas elegidas sobre la guía oficial que sube el usuario.
+
+        El formulario se descarga de la web de SENACSA con un número de orden
+        distinto en cada descarga, así que se sube en cada trámite: el sistema
+        no guarda ninguna copia como plantilla.
+        """
+        codigos = request.form.getlist("marca")
+        archivo = request.files.get("guia_pdf")
+        if not codigos or not archivo or not archivo.filename:
+            return redirect(url_for("inicio"))
+
+        filas = db.obtener_marcas(codigos, app.config["RUTA_DB"])
+        imagenes = [_ruta_imagen(f) for f in filas]
+        imagenes = [i for i in imagenes if i and i.exists()]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            entrada = Path(tmp) / "guia.pdf"
+            archivo.save(entrada)
+            destino = Path(tmp) / "guia_completada.pdf"
+            try:
+                completar_guia(entrada, imagenes, destino)
+            except (ValueError, FileNotFoundError) as exc:
+                return f"<p>No se pudo completar la guía: {exc}</p>", 400
+            datos = destino.read_bytes()
+
+        nombre = Path(archivo.filename).stem
+        return send_file(
+            io.BytesIO(datos),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"{nombre}_con_marcas.pdf",
+        )
 
     @app.post("/planilla")
     def planilla():

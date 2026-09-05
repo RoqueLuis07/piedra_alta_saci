@@ -192,3 +192,29 @@ def test_web_edita_una_marca(cliente, catalogo):
     cliente.post("/marca/H01-F01C02", data={"descripcion": "V corta", "estado": "baja"})
     marca = db.obtener_marcas(["H01-F01C02"], ruta_db)[0]
     assert marca["descripcion"] == "V corta" and marca["estado"] == "baja"
+
+
+def test_web_estampa_la_guia_subida(cliente, catalogo, tmp_path):
+    """La guía oficial se sube en cada trámite; el sistema no guarda plantillas."""
+    import io
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "scripts"))
+    from generar_guia_demo import generar as generar_guia
+
+    guia = generar_guia(tmp_path / "guia.pdf")
+    r = cliente.post(
+        "/guia",
+        data={
+            "marca": ["H01-F01C01", "H01-F01C02"],
+            "guia_pdf": (io.BytesIO(guia.read_bytes()), "GE291181750.pdf"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    assert r.headers["Content-Type"] == "application/pdf"
+    assert "GE291181750_con_marcas.pdf" in r.headers["Content-Disposition"]
+    assert r.data.startswith(b"%PDF")
+
+
+def test_web_guia_sin_archivo_vuelve_al_inicio(cliente):
+    assert cliente.post("/guia", data={"marca": ["H01-F01C01"]}).status_code == 302

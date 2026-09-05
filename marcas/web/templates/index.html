@@ -40,6 +40,8 @@
   .barra input[type=number] { width:62px; }
   .cuenta { font-weight:600; }
   .vacio { color:var(--suave); padding:40px; text-align:center; }
+  .separador { color:var(--linea); }
+  .barra input[type=file] { width:210px; padding:4px; font-size:11px; }
 </style>
 </head>
 <body>
@@ -64,7 +66,8 @@
   </form>
 </header>
 
-<form method="post" action="{{ url_for('planilla') }}" id="seleccion">
+<form method="post" action="{{ url_for('planilla') }}" id="seleccion"
+      enctype="multipart/form-data">
 <main>
   {% if marcas %}
   <div class="grilla">
@@ -109,7 +112,11 @@
   <span class="campo">Casillas vacías <input type="number" name="vacias" min="0" max="60" value="0"></span>
   <label class="campo"><input type="checkbox" name="apaisado"> apaisado</label>
   <label class="campo"><input type="checkbox" name="guardar" checked> registrar selección</label>
-  <button class="primario" type="submit">Generar PDF</button>
+  <button class="primario" type="submit">Planilla PDF</button>
+  <span class="campo separador">o</span>
+  <label class="campo">Guía oficial descargada
+    <input type="file" name="guia_pdf" accept="application/pdf"></label>
+  <button class="primario" type="submit" formaction="{{ url_for('guia') }}">Estampar en la guía</button>
 </div>
 </form>
 
