@@ -48,6 +48,13 @@ volver a copiar, existe el modo libre (§6).
 Nombrar los archivos por hoja: `hoja_01.png`, `hoja_02.png`… El nombre se usa
 como prefijo de los códigos. Todo va a `datos/escaneos/`.
 
+**Si el escáner entrega PDF**, sirve igual: se deja el PDF en `datos/escaneos/`
+y cada página se procesa por separado (`documento-p01`, `documento-p02`…). El
+pipeline saca la imagen original de cada página sin re-digitalizarla, siempre
+que el escaneo haya entrado como una sola imagen a página completa, que es lo
+normal. Un PDF que no sea un escaneo se rasteriza a 400 dpi (`--dpi` lo
+cambia).
+
 **¿Foto de celular en vez de escáner?** Funciona, con cuidado: hoja apoyada en
 una superficie plana, luz pareja sin sombra del cuerpo, cámara paralela al
 papel y a unos 40 cm, resolución máxima, HDR apagado. La corrección de fondo

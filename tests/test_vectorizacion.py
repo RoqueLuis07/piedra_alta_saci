@@ -183,3 +183,61 @@ def test_la_plantilla_de_captura_es_compatible_con_el_segmentador(tmp_path):
     assert r["a_revisar"] == 0, [
         m["observaciones"] for m in resultados[0].marcas if m["revisar"]
     ]
+
+
+def _pdf_escaneado(destino, hojas):
+    """Arma un PDF donde cada página es una imagen a página completa."""
+    from PIL import Image
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    c = rl_canvas.Canvas(str(destino), pagesize=A4)
+    for hoja in hojas:
+        c.drawImage(ImageReader(Image.fromarray(hoja)), 0, 0, width=A4[0], height=A4[1])
+        c.showPage()
+    c.save()
+    return destino
+
+
+def test_pdf_escaneado_conserva_la_resolucion_original(tmp_path, hoja_escaneada):
+    """De un PDF escaneado se saca la imagen del escáner, no una re-digitalización."""
+    from marcas.vectorizacion.pipeline import cargar_paginas
+
+    pdf = _pdf_escaneado(tmp_path / "doc.pdf", [hoja_escaneada, hoja_escaneada])
+    paginas = list(cargar_paginas(pdf))
+    assert [n for n, _ in paginas] == ["doc-p01", "doc-p02"]
+    assert paginas[0][1].shape == hoja_escaneada.shape
+
+
+def test_pdf_vectorial_se_rasteriza(tmp_path):
+    """Un PDF sin imagen escaneada (una plantilla, por ejemplo) se rasteriza."""
+    from marcas.pdf import generar_plantilla_captura
+    from marcas.vectorizacion.pipeline import cargar_paginas
+
+    pdf = generar_plantilla_captura(tmp_path / "plantilla.pdf", hojas=1)
+    (_, imagen), = list(cargar_paginas(pdf, dpi=200))
+    # A4 a 200 dpi son unos 1654 x 2339 px.
+    assert 1600 < imagen.shape[1] < 1700
+    assert 2300 < imagen.shape[0] < 2400
+
+
+def test_lote_desde_un_pdf(tmp_path, hoja_escaneada):
+    pdf = _pdf_escaneado(tmp_path / "documento.pdf", [hoja_escaneada, hoja_escaneada])
+    resultados, manifiesto = procesar_lote(
+        pdf, tmp_path / "png", None, manifiesto=tmp_path / "m.csv"
+    )
+    assert len(resultados) == 2, "una hoja de resultado por página del PDF"
+    assert [r.hoja for r in resultados] == ["documento-p01", "documento-p02"]
+    assert resumen(resultados)["marcas_detectadas"] == 40
+    codigos = {m["codigo"] for r in resultados for m in r.marcas}
+    assert any(c.startswith("DOCUMENTO-P01-") for c in codigos)
+    assert any(c.startswith("DOCUMENTO-P02-") for c in codigos)
+
+
+def test_archivo_ilegible_se_reporta_sin_romper_el_lote(tmp_path):
+    (tmp_path / "roto.png").write_bytes(b"esto no es una imagen")
+    resultados, _ = procesar_lote(
+        tmp_path, tmp_path / "png", None, manifiesto=tmp_path / "m.csv"
+    )
+    assert len(resultados) == 1 and resultados[0].error

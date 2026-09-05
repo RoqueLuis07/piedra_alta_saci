@@ -91,8 +91,8 @@ escaneo real), las procesa, carga el catálogo y arma los tres PDF en
 # 1. Imprimir las hojas donde se van a dibujar las marcas (100%, sin ajustar a página)
 python -m marcas captura --hojas 25 --salida datos/salida/plantilla_captura.pdf
 
-# 2. Dibujar una marca por casilla y escanear a 600 dpi, escala de grises, PNG o TIFF
-#    -> dejar los archivos en datos/escaneos/
+# 2. Dibujar una marca por casilla y escanear a 600 dpi, escala de grises
+#    -> dejar los archivos en datos/escaneos/ (PNG, TIFF, JPG o PDF escaneado)
 
 # 3. Digitalizar el lote: PNG + SVG + manifiesto.csv
 python -m marcas procesar
@@ -111,6 +111,16 @@ python -m marcas planilla --todas        # o directo por línea de comandos
 # 7. Estampar las marcas sobre una guía oficial descargada
 python -m marcas guia --pdf GE291181750.pdf --codigos H01-F01C01,H01-F01C02
 ```
+
+### Documentos escaneados en PDF
+
+Las marcas suelen llegar dentro de PDF escaneados, no como imágenes sueltas.
+`marcas procesar` los acepta igual: de cada página saca **la imagen original
+del escáner** cuando el escaneo entró como una sola imagen a página completa,
+así se trabaja con los píxeles del escáner y no con una re-digitalización. Si
+la página no es un escaneo (un PDF generado, una plantilla), la rasteriza a
+400 dpi, ajustable con `--dpi`. Cada página se numera sola: `documento-p01`,
+`documento-p02`…
 
 ### El selector visual
 
@@ -158,6 +168,7 @@ scripts/
 ├── generar_hoja_demo.py     hojas escaneadas sintéticas para pruebas
 └── generar_guia_demo.py     guía de traslado sintética para pruebas
 datos/                        escaneos, imágenes generadas, base y PDF (fuera del repo)
+muestras/                     documentos reales de ejemplo (ver muestras/README.md)
 ```
 
 ## Datos

@@ -3,6 +3,11 @@
 Pensado para tandas grandes (500+ marcas). Cada hoja se procesa de forma
 independiente, así que un escaneo malo no arruina el lote: queda anotado en el
 manifiesto con el motivo y se vuelve a escanear sólo esa hoja.
+
+Acepta imágenes sueltas y **PDF escaneados**, que es como suelen llegar los
+documentos con las marcas. De un PDF se extrae la imagen original de cada
+página cuando el escaneo entró como una sola imagen a página completa: así se
+trabaja con los píxeles del escáner y no con una re-digitalización.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 import cv2
 import numpy as np
@@ -23,7 +29,12 @@ from marcas.vectorizacion.limpiar import limpiar_marca, recortar_a_tinta
 from marcas.vectorizacion.segmentar import segmentar_hoja
 from marcas.vectorizacion.trazar import potrace_disponible, trazar_svg
 
-EXTENSIONES = {".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp"}
+EXTENSIONES = {".tif", ".tiff", ".png", ".jpg", ".jpeg", ".bmp", ".pdf"}
+
+# Al rasterizar una página de PDF que no trae una imagen escaneada entera.
+DPI_RASTERIZADO = 400
+# Por debajo de esto, la imagen embebida no sirve y conviene rasterizar.
+DPI_MINIMO_EMBEBIDO = 200
 
 CAMPOS_MANIFIESTO = [
     "codigo", "hoja", "fila", "columna", "png", "svg",
@@ -60,6 +71,51 @@ def _sha1(ruta: Path) -> str:
     return h.hexdigest()
 
 
+def _paginas_de_pdf(ruta: Path, dpi: int) -> Iterator[tuple[str, np.ndarray]]:
+    """Devuelve una imagen en gris por página del PDF.
+
+    Si la página es un escaneo (una sola imagen que cubre la hoja), se usa esa
+    imagen tal cual, a su resolución original. Si no —un PDF generado, o una
+    página con varias imágenes— se rasteriza a ``dpi``.
+    """
+    import pypdf
+    import pypdfium2 as pdfium
+
+    lector = pypdf.PdfReader(str(ruta))
+    documento = pdfium.PdfDocument(str(ruta))
+    try:
+        for i, pagina in enumerate(lector.pages, start=1):
+            nombre = f"{ruta.stem}-p{i:02d}"
+            gris = None
+            try:
+                imagenes = list(pagina.images)
+            except Exception:
+                imagenes = []
+            if len(imagenes) == 1:
+                pil = imagenes[0].image
+                ancho_pt = float(pagina.mediabox.width) or 1.0
+                if pil.width / (ancho_pt / 72) >= DPI_MINIMO_EMBEBIDO:
+                    gris = np.array(pil.convert("L"))
+            if gris is None:
+                pil = documento[i - 1].render(scale=dpi / 72).to_pil().convert("L")
+                gris = np.array(pil)
+            yield nombre, gris
+    finally:
+        documento.close()
+
+
+def cargar_paginas(ruta: Path, dpi: int = DPI_RASTERIZADO) -> Iterator[tuple[str, np.ndarray]]:
+    """Abre un archivo de entrada y entrega sus páginas en escala de grises."""
+    ruta = Path(ruta)
+    if ruta.suffix.lower() == ".pdf":
+        yield from _paginas_de_pdf(ruta, dpi)
+        return
+    imagen = cv2.imread(str(ruta), cv2.IMREAD_GRAYSCALE)
+    if imagen is None:
+        raise ValueError(f"no se pudo leer la imagen: {ruta.name}")
+    yield ruta.stem, imagen
+
+
 def cargar_codigos(ruta_csv: Path | None) -> dict[tuple[str, int, int], str]:
     """Lee el mapeo opcional hoja/fila/columna -> código de marca."""
     if not ruta_csv:
@@ -72,8 +128,9 @@ def cargar_codigos(ruta_csv: Path | None) -> dict[tuple[str, int, int], str]:
     return mapa
 
 
-def procesar_hoja(
-    ruta: Path,
+def procesar_pagina(
+    nombre: str,
+    imagen: np.ndarray,
     dir_png: Path,
     dir_svg: Path | None,
     *,
@@ -83,13 +140,7 @@ def procesar_hoja(
 ) -> ResultadoHoja:
     """Segmenta una hoja, limpia cada marca y escribe PNG (y SVG si se pide)."""
     codigos = codigos or {}
-    nombre = ruta.stem
     resultado = ResultadoHoja(hoja=nombre)
-
-    imagen = cv2.imread(str(ruta), cv2.IMREAD_GRAYSCALE)
-    if imagen is None:
-        resultado.error = "no se pudo leer la imagen"
-        return resultado
 
     gris, celdas, angulo = segmentar_hoja(imagen, modo=modo)
     resultado.angulo = angulo
@@ -157,6 +208,31 @@ def procesar_hoja(
     return resultado
 
 
+def procesar_hoja(
+    ruta: Path,
+    dir_png: Path,
+    dir_svg: Path | None,
+    *,
+    modo: str = "grilla",
+    codigos: dict[tuple[str, int, int], str] | None = None,
+    lienzo: int | None = None,
+    dpi: int = DPI_RASTERIZADO,
+) -> list[ResultadoHoja]:
+    """Procesa un archivo de entrada. Un PDF devuelve un resultado por página."""
+    ruta = Path(ruta)
+    try:
+        paginas = list(cargar_paginas(ruta, dpi))
+    except Exception as exc:
+        return [ResultadoHoja(hoja=ruta.stem, error=f"no se pudo abrir: {exc}")]
+    return [
+        procesar_pagina(
+            nombre, imagen, dir_png, dir_svg,
+            modo=modo, codigos=codigos, lienzo=lienzo,
+        )
+        for nombre, imagen in paginas
+    ]
+
+
 def procesar_lote(
     entrada: Path,
     dir_png: Path | None = None,
@@ -166,6 +242,7 @@ def procesar_lote(
     ruta_codigos: Path | None = None,
     manifiesto: Path | None = None,
     lienzo: int | None = None,
+    dpi: int = DPI_RASTERIZADO,
     al_avanzar=None,
 ) -> tuple[list[ResultadoHoja], Path]:
     """Procesa todas las hojas de una carpeta (o un único archivo)."""
@@ -182,12 +259,13 @@ def procesar_lote(
     resultados: list[ResultadoHoja] = []
     inicio = time.time()
     for i, hoja in enumerate(hojas, start=1):
-        res = procesar_hoja(
-            hoja, dir_png, dir_svg, modo=modo, codigos=codigos, lienzo=lienzo
-        )
-        resultados.append(res)
-        if al_avanzar:
-            al_avanzar(i, len(hojas), res)
+        for res in procesar_hoja(
+            hoja, dir_png, dir_svg,
+            modo=modo, codigos=codigos, lienzo=lienzo, dpi=dpi,
+        ):
+            resultados.append(res)
+            if al_avanzar:
+                al_avanzar(i, len(hojas), res)
 
     manifiesto = manifiesto or (dir_png.parent / "manifiesto.csv")
     manifiesto.parent.mkdir(parents=True, exist_ok=True)

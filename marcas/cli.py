@@ -57,6 +57,7 @@ def cmd_procesar(args) -> int:
         ruta_codigos=args.codigos,
         manifiesto=args.manifiesto,
         lienzo=args.lienzo,
+        dpi=args.dpi,
         al_avanzar=avance,
     )
     r = resumen(resultados)
@@ -241,7 +242,8 @@ def construir_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_captura)
 
     p = sub.add_parser("procesar", help="escaneos -> PNG + SVG + manifiesto")
-    p.add_argument("entrada", type=Path, nargs="?", default=config.DIR_ESCANEOS)
+    p.add_argument("entrada", type=Path, nargs="?", default=config.DIR_ESCANEOS,
+                   help="carpeta o archivo; acepta imágenes y PDF escaneados")
     p.add_argument("--png", type=Path, default=config.DIR_PNG)
     p.add_argument("--svg", type=Path, default=config.DIR_SVG)
     p.add_argument("--sin-svg", action="store_true", help="no vectorizar (más rápido)")
@@ -250,6 +252,8 @@ def construir_parser() -> argparse.ArgumentParser:
                    help="CSV hoja,fila,columna,codigo para nombrar las marcas")
     p.add_argument("--manifiesto", type=Path, default=None)
     p.add_argument("--lienzo", type=int, default=None, help=f"px (def. {config.LIENZO_PX})")
+    p.add_argument("--dpi", type=int, default=400,
+                   help="resolución al rasterizar un PDF sin imagen escaneada")
     p.set_defaults(func=cmd_procesar)
 
     p = sub.add_parser("importar", help="manifiesto -> catálogo")
