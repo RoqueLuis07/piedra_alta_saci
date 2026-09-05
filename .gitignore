@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Los escaneos y las imágenes generadas no van al repositorio.
+datos/escaneos/*
+datos/marcas/*
+datos/salida/*
+datos/*.db
+!datos/**/.gitkeep

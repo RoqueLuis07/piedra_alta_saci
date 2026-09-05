@@ -1,0 +1,10 @@
+# Dependencias de Python
+numpy>=1.26
+opencv-python-headless>=4.9      # segmentación y limpieza de imágenes
+pillow>=10.2                     # lectura de formatos varios
+reportlab>=4.1                   # generación de los PDF
+flask>=3.0                       # selector visual (sólo para `marcas web`)
+
+# Dependencia del sistema (no se instala con pip):
+#   potrace  ->  sudo apt install potrace  /  brew install potrace
+#   Sólo hace falta para generar los SVG; sin ella el pipeline igual da los PNG.
