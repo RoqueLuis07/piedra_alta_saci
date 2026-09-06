@@ -113,16 +113,23 @@ def _ordenar_en_filas(cajas: list[tuple[int, int, int, int]]) -> list[Celda]:
     return celdas
 
 
-def detectar_celdas(
+def _detectar_celdas_por_huecos(
     gris: np.ndarray,
+    binaria: np.ndarray,
     *,
-    area_min_rel: float = 0.004,
-    area_max_rel: float = 0.30,
-) -> list[Celda]:
-    """Encuentra las casillas de una planilla impresa."""
+    area_min_rel: float,
+    area_max_rel: float,
+) -> list[tuple[int, int, int, int]]:
+    """Casillas dibujadas como rectángulos independientes, con espacio entre sí.
+
+    Es el estilo de `marcas/pdf/planilla.py::generar_plantilla_captura`: cada
+    casilla es su propio contorno cerrado, así que alcanza con pedir los
+    contornos que son "huecos" (tienen padre) dentro de la máscara de líneas.
+    Falla en una tabla continua real, donde el borde exterior puede estar
+    interrumpido (ver `_detectar_celdas_por_lineas`).
+    """
     alto, ancho = gris.shape
     area_hoja = alto * ancho
-    binaria = _binaria_inversa(gris)
     horiz, vert = _mascaras_de_lineas(binaria)
     grilla = cv2.dilate(cv2.bitwise_or(horiz, vert), np.ones((3, 3), np.uint8))
 
@@ -145,7 +152,157 @@ def detectar_celdas(
         if not 0.25 <= w / h <= 4.0:
             continue
         cajas.append((x, y, w, h))
-    return _ordenar_en_filas(cajas)
+    return cajas
+
+
+def _agrupar_picos(indices: list[int], separacion_min: int) -> list[int]:
+    """Reduce una lista de posiciones de píxel a un centro por racha contigua.
+
+    ``separacion_min`` tolera el "doble borde" que deja el JPEG de una foto de
+    celular alrededor de una línea impresa (ringing de la compresión).
+    """
+    if not indices:
+        return []
+    grupos = [[indices[0]]]
+    for i in indices[1:]:
+        if i - grupos[-1][-1] <= separacion_min:
+            grupos[-1].append(i)
+        else:
+            grupos.append([i])
+    return [int(np.mean(g)) for g in grupos]
+
+
+def _lineas_regulares(posiciones: list[int], tolerancia_rel: float = 0.15) -> list[int]:
+    """De todas las posiciones candidatas, la corrida más larga con paso parejo.
+
+    Un formulario real trae más de una tabla (el encabezado con el N° de guía,
+    la grilla de marcas). Sus líneas se mezclan en el mismo perfil de
+    proyección, pero sólo la grilla de marcas tiene muchas filas/columnas
+    igual de espaciadas: es la corrida que se busca, sin necesidad de saber de
+    antemano cuántas filas o columnas tiene.
+    """
+    if len(posiciones) < 3:
+        return posiciones
+    posiciones = sorted(posiciones)
+    gaps = [b - a for a, b in zip(posiciones, posiciones[1:])]
+    mejor = (0, 0)
+    i = 0
+    while i < len(gaps):
+        j = i
+        base = gaps[i]
+        while j + 1 < len(gaps) and abs(gaps[j + 1] - base) <= tolerancia_rel * base:
+            j += 1
+        if (j - i) > (mejor[1] - mejor[0]):
+            mejor = (i, j)
+        i = j + 1
+    return posiciones[mejor[0]:mejor[1] + 2]
+
+
+def _posiciones_de_lineas(mascara: np.ndarray, eje: int) -> list[int]:
+    """Posiciones de las líneas de una grilla, tolerando tramos borrados.
+
+    Se prueba con varios umbrales (relativos a la fracción de píxeles blancos
+    por fila/columna) y se queda con el que arma la corrida más larga y
+    pareja: una línea real casi siempre sigue siendo la corrida más larga
+    aunque un anillo de carpeta, una mancha o una esquina rota le borren un
+    tramo, porque conserva señal en el resto de su longitud.
+    """
+    perfil = (mascara > 0).mean(axis=eje)
+    mejor: list[int] = []
+    for umbral in (0.10, 0.08, 0.07, 0.06, 0.05):
+        candidatos = np.where(perfil > umbral)[0]
+        grupos = _agrupar_picos(list(candidatos), separacion_min=25)
+        regulares = _lineas_regulares(grupos)
+        if len(regulares) > len(mejor):
+            mejor = regulares
+    return mejor
+
+
+def _detectar_celdas_por_lineas(
+    binaria: np.ndarray,
+    *,
+    area_min_rel: float,
+    area_max_rel: float,
+) -> list[tuple[int, int, int, int]]:
+    """Casillas de una tabla continua, como la de un formulario oficial.
+
+    Acá las celdas comparten el borde con sus vecinas, así que el borde
+    exterior de la tabla no tiene por qué estar intacto para reconocer cada
+    celda (al revés que en ``_detectar_celdas_por_huecos``): se ubican
+    directamente las líneas de la grilla por su posición, y las celdas salen
+    de cruzar cada línea vertical con cada horizontal.
+    """
+    alto, ancho = binaria.shape
+    area_hoja = alto * ancho
+    horiz, vert = _mascaras_de_lineas(binaria)
+
+    xs = _posiciones_de_lineas(vert, eje=0)
+    ys = _posiciones_de_lineas(horiz, eje=1)
+    if len(xs) < 2 or len(ys) < 2:
+        return []
+
+    cajas = []
+    for y0, y1 in zip(ys, ys[1:]):
+        for x0, x1 in zip(xs, xs[1:]):
+            w, h = x1 - x0, y1 - y0
+            area = w * h
+            if not (area_min_rel * area_hoja <= area <= area_max_rel * area_hoja):
+                continue
+            # Acá la celda va "de línea a línea": el borde compartido con la
+            # vecina queda a mitad de camino, con su propio grosor más el
+            # halo de compresión de una foto. Sin este margen, un resto de
+            # línea sobrevive dentro del recorte y limpiar_marca lo toma
+            # como si fuera parte del trazo.
+            margen = max(6, round(0.035 * min(w, h)))
+            cajas.append((
+                x0 + margen, y0 + margen,
+                w - 2 * margen, h - 2 * margen,
+            ))
+    return cajas
+
+
+def _mas_completa(a: list[tuple[int, int, int, int]], b: list[tuple[int, int, int, int]]):
+    """Prefiere la lista con más celdas y, a igualdad, la de tamaños más parejos."""
+    def puntaje(cajas):
+        if not cajas:
+            return (0, 0.0)
+        anchos = [c[2] for c in cajas]
+        return (len(cajas), -float(np.std(anchos)) / max(1.0, np.mean(anchos)))
+    return a if puntaje(a) >= puntaje(b) else b
+
+
+def detectar_celdas(
+    gris: np.ndarray,
+    *,
+    area_min_rel: float = 0.004,
+    area_max_rel: float = 0.30,
+) -> list[Celda]:
+    """Encuentra las casillas de una planilla impresa.
+
+    Prueba primero el método de huecos (casillas dibujadas como rectángulos
+    independientes: la plantilla de captura propia). Si el resultado tiene
+    huecos irregulares —señal de que en realidad es una tabla continua con el
+    borde exterior dañado, como una foto de un formulario ya impreso—, se
+    compara contra el método de líneas y se usa el que arme la grilla más
+    completa.
+    """
+    binaria = _binaria_inversa(gris)
+    por_huecos = _detectar_celdas_por_huecos(
+        gris, binaria, area_min_rel=area_min_rel, area_max_rel=area_max_rel
+    )
+    filas_huecos = _ordenar_en_filas(por_huecos)
+    conteos = {}
+    for c in filas_huecos:
+        conteos[c.fila] = conteos.get(c.fila, 0) + 1
+    grilla_pareja = len(set(conteos.values())) <= 1 and len(filas_huecos) >= 4
+
+    if grilla_pareja:
+        return filas_huecos
+
+    por_lineas = _detectar_celdas_por_lineas(
+        binaria, area_min_rel=area_min_rel, area_max_rel=area_max_rel
+    )
+    return _ordenar_en_filas(_mas_completa(por_huecos, por_lineas))
 
 
 def detectar_grupos(

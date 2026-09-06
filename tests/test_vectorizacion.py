@@ -103,6 +103,71 @@ def test_detectar_celdas_encuentra_la_grilla(hoja_escaneada):
     assert max(anchos) - min(anchos) < 0.1 * max(anchos), "casillas de tamaño parejo"
 
 
+def _tabla_continua(filas=6, columnas=5, ancho_celda=260, alto_celda=250,
+                     origen=(80, 80), grosor=4):
+    """Una tabla de líneas compartidas, como un formulario real (no como
+    generar_hoja_demo.py, que dibuja cada casilla como un rectángulo
+    independiente con espacio alrededor)."""
+    ox, oy = origen
+    alto = oy + filas * alto_celda + 80
+    ancho = ox + columnas * ancho_celda + 80
+    img = np.full((alto, ancho), 250, np.uint8)
+    for f in range(filas + 1):
+        y = oy + f * alto_celda
+        cv2.line(img, (ox, y), (ox + columnas * ancho_celda, y), 40, grosor)
+    for c in range(columnas + 1):
+        x = ox + c * ancho_celda
+        cv2.line(img, (x, oy), (x, oy + filas * alto_celda), 40, grosor)
+    return img, ox, oy, ancho_celda, alto_celda
+
+
+def test_detectar_celdas_recupera_borde_danado_de_una_tabla_continua():
+    """Regresión: en una foto real, los anillos de una carpeta taparon el
+    borde izquierdo de la tabla en varias filas, y el borde inferior se
+    perdió cerca de la firma. El método basado en huecos (pensado para
+    generar_hoja_demo.py / generar_plantilla_captura, que dibujan cada
+    casilla como un rectángulo separado) descartaba esas celdas enteras
+    -perdiendo marcas reales- porque ya no formaban un hueco cerrado.
+
+    Acá se reproduce el mismo daño sobre una tabla de líneas compartidas
+    (como la de un formulario real) y se verifica que la grilla completa se
+    recupera de todos modos.
+    """
+    img, ox, oy, aw, ah = _tabla_continua(filas=6, columnas=5)
+
+    # Borde izquierdo (columna 1) tapado en las primeras 4 filas: se lo pinta
+    # de blanco, como si un anillo de carpeta o una mancha lo cubriera.
+    cv2.line(img, (ox, oy), (ox, oy + 4 * ah), 250, 6)
+    # Borde inferior (fila 6) interrumpido en la mitad derecha de la tabla.
+    y_ultimo = oy + 6 * ah
+    cv2.line(img, (ox + 2 * aw, y_ultimo), (ox + 5 * aw, y_ultimo), 250, 6)
+
+    celdas = detectar_celdas(img)
+    assert len(celdas) == 30, (
+        f"se esperaban 5x6=30 casillas pese al daño, se detectaron {len(celdas)}"
+    )
+    assert sorted(set(c.columna for c in celdas)) == [1, 2, 3, 4, 5]
+    assert sorted(set(c.fila for c in celdas)) == [1, 2, 3, 4, 5, 6]
+    # La primera columna (la del borde tapado) tiene que seguir estando.
+    assert sum(1 for c in celdas if c.columna == 1) == 6
+    assert sum(1 for c in celdas if c.fila == 6) == 5
+
+
+def test_detectar_celdas_recorta_el_borde_compartido():
+    """En una tabla continua el recorte crudo de una celda no debe incluir
+    el trazo del borde que comparte con la vecina: si lo incluyera,
+    `limpiar_marca` lo confundiría con parte del dibujo (ver
+    marcas/vectorizacion/limpiar.py)."""
+    img, ox, oy, aw, ah = _tabla_continua(filas=3, columnas=3)
+    celdas = detectar_celdas(img)
+    assert len(celdas) == 9
+    primera = next(c for c in celdas if c.fila == 1 and c.columna == 1)
+    recorte = primera.recortar(img)
+    # El interior de la celda es blanco (250); si el recorte llegara a tocar
+    # el borde (40, grueso), el mínimo de la imagen bajaría mucho.
+    assert recorte.min() > 200, "el recorte no debería incluir el borde de la tabla"
+
+
 def test_bbox_tinta_de_mascara_vacia():
     assert bbox_tinta(np.zeros((10, 10), np.uint8)) is None
 
