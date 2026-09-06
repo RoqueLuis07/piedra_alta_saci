@@ -218,3 +218,43 @@ def test_web_estampa_la_guia_subida(cliente, catalogo, tmp_path):
 
 def test_web_guia_sin_archivo_vuelve_al_inicio(cliente):
     assert cliente.post("/guia", data={"marca": ["H01-F01C01"]}).status_code == 302
+
+
+def test_actualizar_marca_permite_renombrar_el_codigo(catalogo):
+    """Pasar 'codigo' en **campos renombra la fila sin chocar con el parámetro posicional.
+
+    Regresión: el primer parámetro de actualizar_marca identificaba la fila y
+    se llamaba 'codigo', igual que la clave usada para renombrar. Python no
+    permite que un mismo nombre llegue a la vez posicional y por **kwargs.
+    """
+    ruta_db, _, _ = catalogo
+    n = db.actualizar_marca("H01-F01C01", ruta_db, codigo="H01-NUEVO",
+                            descripcion="renombrada")
+    assert n == 1
+    assert db.obtener_marcas(["H01-F01C01"], ruta_db) == []
+    marca = db.obtener_marcas(["H01-NUEVO"], ruta_db)[0]
+    assert marca["descripcion"] == "renombrada"
+
+
+def test_web_edita_una_marca_cambiando_el_codigo(cliente, catalogo):
+    """El formulario de edición de la ficha permite pasar del código automático
+    de la digitalización al código oficial del registro."""
+    ruta_db, _, _ = catalogo
+    r = cliente.post("/marca/H01-F01C01", data={
+        "codigo": "M-0001", "descripcion": "Círculo con barra", "estado": "activa",
+    })
+    assert r.status_code == 302
+    assert db.obtener_marcas(["H01-F01C01"], ruta_db) == []
+    marca = db.obtener_marcas(["M-0001"], ruta_db)[0]
+    assert marca["descripcion"] == "Círculo con barra"
+
+
+def test_web_edita_una_marca_sin_cambiar_el_codigo(cliente, catalogo):
+    """El caso normal (sin tocar el código) sigue funcionando igual que antes."""
+    ruta_db, _, _ = catalogo
+    r = cliente.post("/marca/H01-F01C01", data={
+        "codigo": "H01-F01C01", "descripcion": "Otra desc", "estado": "revisar",
+    })
+    assert r.status_code == 302
+    marca = db.obtener_marcas(["H01-F01C01"], ruta_db)[0]
+    assert marca["descripcion"] == "Otra desc" and marca["estado"] == "revisar"

@@ -3,6 +3,9 @@ numpy>=1.26
 opencv-python-headless>=4.9      # segmentación y limpieza de imágenes
 pillow>=10.2                     # lectura de formatos varios
 reportlab>=4.1                   # generación de los PDF
+pypdf>=4.0                       # lectura/fusión de PDF (guía oficial, PDF escaneados)
+pypdfium2>=4.30                  # rasterizado de PDF (páginas sin imagen embebida)
+openpyxl>=3.1                    # planilla del registro en Excel (.xlsx); el CSV no la necesita
 flask>=3.0                       # selector visual (sólo para `marcas web`)
 
 # Dependencia del sistema (no se instala con pip):

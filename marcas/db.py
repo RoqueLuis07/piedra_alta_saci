@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS propietarios (
     nombre          TEXT NOT NULL,
     documento       TEXT,
     establecimiento TEXT,
+    establecimiento_codigo TEXT,
     localidad       TEXT,
     departamento    TEXT,
     telefono        TEXT,
@@ -93,10 +94,29 @@ def conectar(ruta: Path | None = None) -> Iterator[sqlite3.Connection]:
         con.close()
 
 
+# Columnas agregadas después de la primera versión del esquema. SQLite acepta
+# ALTER TABLE ADD COLUMN, así que una base existente se actualiza sin recrearla
+# ni perder datos.
+COLUMNAS_AGREGADAS = {
+    "propietarios": {"establecimiento_codigo": "TEXT"},
+}
+
+
+def _migrar(con: sqlite3.Connection) -> None:
+    for tabla, columnas in COLUMNAS_AGREGADAS.items():
+        existentes = {
+            f["name"] for f in con.execute(f"PRAGMA table_info({tabla})")
+        }
+        for nombre, tipo in columnas.items():
+            if nombre not in existentes:
+                con.execute(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}")
+
+
 def inicializar(ruta: Path | None = None) -> Path:
     ruta = Path(ruta or config.BASE_DATOS)
     with conectar(ruta) as con:
         con.executescript(ESQUEMA)
+        _migrar(con)
     return ruta
 
 
@@ -160,6 +180,7 @@ def listar_marcas(
     busqueda: str | None = None,
     estado: str | None = None,
     propietario_id: int | None = None,
+    sin_imagen: bool | None = None,
     limite: int | None = None,
     ruta_db: Path | None = None,
 ) -> list[sqlite3.Row]:
@@ -180,6 +201,10 @@ def listar_marcas(
     if propietario_id:
         sql.append("AND m.propietario_id = ?")
         params.append(propietario_id)
+    if sin_imagen is True:
+        sql.append("AND (m.archivo_png IS NULL OR m.archivo_png = '')")
+    elif sin_imagen is False:
+        sql.append("AND m.archivo_png IS NOT NULL AND m.archivo_png <> ''")
     sql.append("ORDER BY m.codigo")
     if limite:
         sql.append("LIMIT ?")
@@ -205,8 +230,15 @@ def obtener_marcas(codigos: Iterable[str], ruta_db: Path | None = None) -> list[
     return [por_codigo[c] for c in codigos if c in por_codigo]
 
 
-def actualizar_marca(codigo: str, ruta_db: Path | None = None, **campos) -> int:
-    """Edita campos sueltos de una marca (propietario, descripción, estado)."""
+def actualizar_marca(codigo_actual: str, ruta_db: Path | None = None, **campos) -> int:
+    """Edita campos sueltos de una marca (propietario, descripción, estado).
+
+    ``codigo_actual`` identifica la fila a editar; si ``campos`` trae a su vez
+    una clave ``codigo``, es un pedido de renombrar la marca (por ejemplo, para
+    reemplazar el código automático de la digitalización por el código
+    oficial del registro). Los dos no pueden compartir nombre de parámetro:
+    de ahí que el que identifica la fila lleve el sufijo ``_actual``.
+    """
     permitidos = {"descripcion", "propietario_id", "estado", "observaciones", "codigo"}
     campos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos:
@@ -216,28 +248,56 @@ def actualizar_marca(codigo: str, ruta_db: Path | None = None, **campos) -> int:
         cur = con.execute(
             f"UPDATE marcas SET {asignaciones}, actualizado_en = datetime('now') "
             "WHERE codigo = ?",
-            (*campos.values(), codigo),
+            (*campos.values(), codigo_actual),
         )
         return cur.rowcount
 
 
+CAMPOS_PROPIETARIO = (
+    "documento", "establecimiento", "establecimiento_codigo",
+    "localidad", "departamento", "telefono",
+)
+
+
 def alta_propietario(nombre: str, ruta_db: Path | None = None, **datos) -> int:
-    columnas = ["nombre"] + [k for k in datos if k in {
-        "documento", "establecimiento", "localidad", "departamento", "telefono"
-    }]
-    valores = [nombre] + [datos[k] for k in columnas[1:]]
-    marcadores = ",".join("?" * len(columnas))
+    """Crea el propietario o devuelve el existente, completando lo que falte.
+
+    La identidad es el documento (CI/RUC) cuando está: dos estancias pueden
+    llamarse parecido, pero el RUC es único. Sin documento, se usa el nombre.
+    """
+    inicializar(ruta_db)
+    datos = {k: v for k, v in datos.items() if k in CAMPOS_PROPIETARIO and v}
+    documento = datos.get("documento")
     with conectar(ruta_db) as con:
-        cur = con.execute(
-            f"INSERT OR IGNORE INTO propietarios ({','.join(columnas)}) "
-            f"VALUES ({marcadores})",
-            valores,
-        )
-        if cur.lastrowid:
+        fila = None
+        if documento:
+            fila = con.execute(
+                "SELECT * FROM propietarios WHERE documento = ?", (documento,)
+            ).fetchone()
+        if fila is None:
+            fila = con.execute(
+                "SELECT * FROM propietarios WHERE nombre = ? AND documento IS NULL",
+                (nombre,),
+            ).fetchone()
+
+        if fila is None:
+            columnas = ["nombre", *datos]
+            marcadores = ",".join("?" * len(columnas))
+            cur = con.execute(
+                f"INSERT INTO propietarios ({','.join(columnas)}) VALUES ({marcadores})",
+                [nombre, *datos.values()],
+            )
             return cur.lastrowid
-        fila = con.execute(
-            "SELECT id FROM propietarios WHERE nombre = ?", (nombre,)
-        ).fetchone()
+
+        # Existe: se completan sólo los campos que estaban vacíos, para no
+        # pisar datos corregidos a mano con los de una planilla incompleta.
+        faltantes = {k: v for k, v in datos.items() if not fila[k]}
+        if faltantes:
+            asignaciones = ", ".join(f"{k} = ?" for k in faltantes)
+            con.execute(
+                f"UPDATE propietarios SET {asignaciones} WHERE id = ?",
+                [*faltantes.values(), fila["id"]],
+            )
         return fila["id"]
 
 
@@ -287,11 +347,16 @@ def estadisticas(ruta_db: Path | None = None) -> dict:
             "SELECT COUNT(*) c FROM (SELECT sha1 FROM marcas WHERE sha1 IS NOT NULL "
             "GROUP BY sha1 HAVING COUNT(*) > 1)"
         ).fetchone()["c"]
+        sin_imagen = con.execute(
+            "SELECT COUNT(*) c FROM marcas WHERE archivo_png IS NULL "
+            "OR archivo_png = ''"
+        ).fetchone()["c"]
     return {
         "marcas": total,
         "por_estado": por_estado,
         "propietarios": propietarios,
         "sin_propietario": sin_duenio,
+        "sin_imagen": sin_imagen,
         "imagenes_duplicadas": duplicados,
         "generado": datetime.now().isoformat(timespec="seconds"),
     }

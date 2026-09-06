@@ -25,6 +25,9 @@
   .casilla.elegida { border-color:var(--acento); box-shadow:0 0 0 2px rgba(138,90,43,.18); }
   .casilla label { display:block; cursor:pointer; padding:10px; }
   .casilla img { display:block; width:100%; height:104px; object-fit:contain; }
+  .sin-imagen { height:104px; display:flex; align-items:center; justify-content:center;
+                border:1px dashed var(--linea); border-radius:6px; color:var(--suave);
+                font-size:11px; background:#fcfbf9; }
   .codigo { font-size:11px; font-weight:600; text-align:center; margin-top:8px;
             padding-top:6px; border-top:1px solid #efece6; word-break:break-all; }
   .meta { font-size:10px; color:var(--suave); text-align:center; }
@@ -50,6 +53,7 @@
     <h1>Marcas de ganado</h1>
     <div class="sub">
       {{ estadisticas.marcas }} en el catálogo ·
+      {{ estadisticas.sin_imagen }} sin digitalizar ·
       {{ estadisticas.por_estado.get('revisar', 0) }} a revisar ·
       {{ estadisticas.sin_propietario }} sin propietario
     </div>
@@ -61,6 +65,11 @@
       {% for e in ['activa','revisar','baja'] %}
       <option value="{{ e }}" {% if estado == e %}selected{% endif %}>{{ e }}</option>
       {% endfor %}
+    </select>
+    <select name="imagen">
+      <option value="">con y sin imagen</option>
+      <option value="con" {% if imagen == 'con' %}selected{% endif %}>con imagen</option>
+      <option value="sin" {% if imagen == 'sin' %}selected{% endif %}>sin digitalizar</option>
     </select>
     <button>Filtrar</button>
   </form>
@@ -75,7 +84,11 @@
     <div class="casilla" id="c-{{ m.codigo }}">
       <label>
         <input type="checkbox" name="marca" value="{{ m.codigo }}">
+        {% if m.archivo_png %}
         <img src="{{ url_for('imagen', codigo=m.codigo) }}" alt="Marca {{ m.codigo }}" loading="lazy">
+        {% else %}
+        <div class="sin-imagen">sin digitalizar</div>
+        {% endif %}
         <div class="codigo">{{ m.codigo }}</div>
         <div class="meta {% if m.estado == 'revisar' %}revisar{% endif %}">
           {{ m.propietario or m.descripcion or m.estado }}
@@ -83,6 +96,8 @@
       </label>
       <details>
         <summary>editar</summary>
+        <input form="editar-{{ loop.index }}" type="text" name="codigo"
+               value="{{ m.codigo }}" placeholder="código">
         <input form="editar-{{ loop.index }}" type="text" name="descripcion"
                value="{{ m.descripcion or '' }}" placeholder="descripción">
         <select form="editar-{{ loop.index }}" name="estado">

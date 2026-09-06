@@ -35,14 +35,18 @@ def crear_app(ruta_db: Path | None = None) -> Flask:
     def inicio():
         busqueda = request.args.get("q") or None
         estado = request.args.get("estado") or None
+        imagen = request.args.get("imagen") or ""
+        sin_imagen = {"sin": True, "con": False}.get(imagen)
         filas = db.listar_marcas(
-            busqueda=busqueda, estado=estado, ruta_db=app.config["RUTA_DB"]
+            busqueda=busqueda, estado=estado, sin_imagen=sin_imagen,
+            ruta_db=app.config["RUTA_DB"],
         )
         return render_template(
             "index.html",
             marcas=filas,
             busqueda=busqueda or "",
             estado=estado or "",
+            imagen=imagen,
             estadisticas=db.estadisticas(app.config["RUTA_DB"]),
             columnas_def=config.PLANILLA_COLUMNAS,
             filas_def=config.PLANILLA_FILAS,
@@ -60,12 +64,16 @@ def crear_app(ruta_db: Path | None = None) -> Flask:
 
     @app.post("/marca/<codigo>")
     def editar(codigo: str):
-        db.actualizar_marca(
-            codigo,
-            app.config["RUTA_DB"],
-            descripcion=request.form.get("descripcion") or None,
-            estado=request.form.get("estado") or "activa",
-        )
+        campos = {
+            "descripcion": request.form.get("descripcion") or None,
+            "estado": request.form.get("estado") or "activa",
+        }
+        # Cambiar el código es lo que permite pasar del código automático de la
+        # digitalización (HOJA-01-F01C01) al código oficial del registro.
+        nuevo = (request.form.get("codigo") or "").strip()
+        if nuevo and nuevo != codigo:
+            campos["codigo"] = nuevo
+        db.actualizar_marca(codigo, app.config["RUTA_DB"], **campos)
         return redirect(request.referrer or url_for("inicio"))
 
     @app.post("/guia")

@@ -85,6 +85,46 @@ Genera hojas escaneadas sintéticas (con inclinación, sombra y ruido, como un
 escaneo real), las procesa, carga el catálogo y arma los tres PDF en
 `datos/salida/`. Sirve para ver el resultado antes de tener escaneos propios.
 
+## Cargar la base con las marcas que ya tenemos
+
+Una marca en el catálogo tiene dos mitades que llegan por separado, y **no
+hace falta esperar a tener la imagen para cargar la primera**:
+
+* los **datos** — código oficial, propietario, establecimiento — están en una
+  planilla del registro, no en el escaneo;
+* la **imagen** sale de digitalizar el papel (`marcas procesar`).
+
+Las dos se unen por el código de la marca. Si el registro ya existe en Excel o
+CSV, se carga tal cual, aunque todavía no haya un solo escaneo:
+
+```bash
+python -m marcas datos registro.xlsx
+```
+
+No hace falta acomodar la planilla a un formato exacto: las columnas se
+reconocen por el nombre del encabezado ("Nº de Marca", "CI/RUC", "Nombre y
+Apellido / Razón Social"…), tolerando tildes y mayúsculas, y las que no se
+reconocen se listan y se ignoran en vez de hacer fallar la carga. Si no hay
+una planilla armada, `marcas plantilla-datos` deja un CSV de ejemplo con las
+columnas que se entienden.
+
+Las marcas cargadas así quedan **sin imagen** hasta que se digitalicen; el
+catálogo las distingue (`marcas estado`, o el filtro *sin digitalizar* del
+selector web) para saber cuánto falta escanear. Cuando llegan los escaneos,
+`marcas procesar` + `marcas importar` (o el atajo `marcas cargar`, que hace
+las dos cosas de una) las completa por código, sin duplicar ni pisar los
+datos ya cargados.
+
+```bash
+# Todo junto: datos del registro + digitalizar + catálogo
+python -m marcas cargar datos/escaneos --datos registro.xlsx --codigos codigos.csv
+```
+
+`--codigos` es el CSV que asigna, por hoja/fila/columna, el código real de
+cada casilla escaneada (lo mismo que acepta `marcas procesar`); sin él, cada
+marca queda con el código automático de su posición y se renombra después,
+a mano, desde el selector web.
+
 ## Flujo de trabajo real
 
 ```bash
@@ -134,9 +174,12 @@ la tabla `planillas`, así que una planilla se puede reimprimir idéntica.
 | Comando | Para qué |
 |---|---|
 | `marcas captura` | PDF en blanco con casillas numeradas, para dibujar |
+| `marcas datos` | Planilla del registro (CSV/Excel) → catálogo |
+| `marcas plantilla-datos` | CSV de ejemplo con las columnas que se reconocen |
 | `marcas procesar` | Escaneos → PNG + SVG + `manifiesto.csv` |
 | `marcas importar` | `manifiesto.csv` → catálogo SQLite |
-| `marcas listar` | Ver el catálogo, con filtros |
+| `marcas cargar` | Datos + digitalización + catálogo, en un paso |
+| `marcas listar` | Ver el catálogo, con filtros (`--sin-imagen`, `--estado`…) |
 | `marcas control` | Hoja de contactos para revisar un lote |
 | `marcas planilla` | PDF general con las marcas en casillas |
 | `marcas guia` | Estampar marcas sobre la Guía de Traslado oficial |

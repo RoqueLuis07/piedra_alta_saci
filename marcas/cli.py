@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from marcas import config, db
+from marcas.importacion import importar_datos, plantilla_csv
 from marcas.pdf import (
     ItemPlanilla,
     generar_hoja_control,
@@ -94,8 +95,71 @@ def _seleccionar(args) -> list:
         ]
         return db.obtener_marcas(codigos, args.db)
     return db.listar_marcas(
-        busqueda=args.buscar, estado=args.estado, limite=args.limite, ruta_db=args.db
+        busqueda=args.buscar, estado=args.estado,
+        sin_imagen=getattr(args, "sin_imagen", None),
+        limite=args.limite, ruta_db=args.db,
     )
+
+
+def cmd_datos(args) -> int:
+    """Carga los datos del registro (códigos, propietarios) desde una planilla."""
+    try:
+        r = importar_datos(args.planilla, args.db)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    res = r.resumen()
+    print(
+        f"Planilla leída: {res['filas_leidas']} filas\n"
+        f"  marcas nuevas ......... {res['marcas_nuevas']}\n"
+        f"  marcas actualizadas ... {res['marcas_actualizadas']}\n"
+        f"  propietarios .......... {res['propietarios_tocados']}"
+    )
+    if r.columnas_ignoradas:
+        print(f"  columnas ignoradas .... {', '.join(r.columnas_ignoradas)}")
+    for aviso in r.omitidas[:10]:
+        print(f"  ! {aviso}")
+    if len(r.omitidas) > 10:
+        print(f"  ! ... y {len(r.omitidas) - 10} avisos más")
+    return 0
+
+
+def cmd_plantilla_datos(args) -> int:
+    ruta = plantilla_csv(args.salida)
+    print(f"Plantilla de datos: {ruta}")
+    print("Completar una fila por marca y cargar con:  python -m marcas datos "
+          f"{ruta}")
+    return 0
+
+
+def cmd_cargar(args) -> int:
+    """Digitaliza un lote y lo deja cargado en el catálogo, en un solo paso."""
+    if args.datos:
+        print("1) Datos del registro...")
+        codigo_salida = cmd_datos(argparse.Namespace(planilla=args.datos, db=args.db))
+        if codigo_salida:
+            return codigo_salida
+        print()
+
+    print("2) Digitalizando los escaneos...")
+    procesar = argparse.Namespace(
+        entrada=args.entrada, png=config.DIR_PNG, svg=config.DIR_SVG,
+        sin_svg=args.sin_svg, modo=args.modo, codigos=args.codigos,
+        manifiesto=None, lienzo=None, dpi=args.dpi,
+    )
+    if cmd_procesar(procesar):
+        return 1
+
+    print("\n3) Cargando las imágenes al catálogo...")
+    manifiesto = config.DIR_MARCAS / "manifiesto.csv"
+    stats = db.importar_manifiesto(manifiesto, args.db)
+    print(
+        f"  {stats['nuevas']} nuevas, {stats['actualizadas']} actualizadas, "
+        f"{stats['omitidas']} omitidas (casillas vacías)"
+    )
+
+    print()
+    return cmd_estado(argparse.Namespace(db=args.db))
 
 
 def cmd_listar(args) -> int:
@@ -185,6 +249,7 @@ def cmd_estado(args) -> int:
         print(f"  {estado:<18} {cantidad}")
     print(f"Propietarios .......... {e['propietarios']}")
     print(f"Sin propietario ....... {e['sin_propietario']}")
+    print(f"Sin imagen ............ {e['sin_imagen']}  (datos cargados, falta digitalizar)")
     print(f"Imágenes duplicadas ... {e['imagenes_duplicadas']}")
     return 0
 
@@ -256,6 +321,25 @@ def construir_parser() -> argparse.ArgumentParser:
                    help="resolución al rasterizar un PDF sin imagen escaneada")
     p.set_defaults(func=cmd_procesar)
 
+    p = sub.add_parser("datos", help="planilla del registro (CSV/Excel) -> catálogo")
+    p.add_argument("planilla", type=Path)
+    p.set_defaults(func=cmd_datos)
+
+    p = sub.add_parser("plantilla-datos", help="CSV vacío con las columnas esperadas")
+    p.add_argument("--salida", type=Path, default=config.DIR_SALIDA / "plantilla_datos.csv")
+    p.set_defaults(func=cmd_plantilla_datos)
+
+    p = sub.add_parser("cargar", help="digitalizar e importar en un solo paso")
+    p.add_argument("entrada", type=Path, nargs="?", default=config.DIR_ESCANEOS)
+    p.add_argument("--datos", type=Path, default=None,
+                   help="planilla del registro para cargar antes")
+    p.add_argument("--codigos", type=Path, default=None,
+                   help="CSV hoja,fila,columna,codigo para nombrar las marcas")
+    p.add_argument("--modo", choices=["grilla", "libre"], default="grilla")
+    p.add_argument("--sin-svg", action="store_true")
+    p.add_argument("--dpi", type=int, default=400)
+    p.set_defaults(func=cmd_cargar)
+
     p = sub.add_parser("importar", help="manifiesto -> catálogo")
     p.add_argument("manifiesto", type=Path, nargs="?",
                    default=config.DIR_MARCAS / "manifiesto.csv")
@@ -269,6 +353,10 @@ def construir_parser() -> argparse.ArgumentParser:
         p.add_argument("--limite", type=int, default=None)
         p.add_argument("--todas", action="store_true",
                        help="todo el catálogo (es lo que pasa si no se filtra)")
+        p.add_argument("--sin-imagen", dest="sin_imagen", action="store_true",
+                       default=None, help="sólo las que esperan digitalización")
+        p.add_argument("--con-imagen", dest="sin_imagen", action="store_false",
+                       help="sólo las que ya tienen imagen")
 
     p = sub.add_parser("listar", help="ver el catálogo")
     opciones_seleccion(p)
