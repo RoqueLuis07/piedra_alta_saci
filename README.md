@@ -210,7 +210,8 @@ marcas/
 scripts/
 ├── generar_hoja_demo.py     hojas escaneadas sintéticas para pruebas
 ├── generar_guia_demo.py     guía de traslado sintética para pruebas
-└── extraer_muestra.py       recorta una muestra de un PDF escaneado grande
+├── extraer_muestra.py       recorta una muestra de un PDF escaneado grande
+└── muestrear_zip.py         saca una muestra de un ZIP grande, sin descomprimirlo
 datos/                        escaneos, imágenes generadas, base y PDF (fuera del repo)
 muestras/                     documentos reales de ejemplo (ver muestras/README.md)
 ```

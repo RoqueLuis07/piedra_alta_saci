@@ -90,6 +90,40 @@ El informe dice, por página, el tamaño de la hoja, a cuántos dpi está escane
 y cuánto pesa. **Ese informe solo ya sirve**: se puede pegar en el chat sin
 mandar ningún archivo, y con eso se ajustan los umbrales del pipeline.
 
+## Si tenés todo en un ZIP de varios GB
+
+Un ZIP de 1.8 GB con cientos de formularios **no se sube entero, y no hace
+falta**: ni por el navegador (25 MB por archivo) ni por git (cada `git push`
+tendría que subir eso mismo, y un repositorio no está pensado para guardar
+gigabytes de binarios — queda en su historial para siempre, así se borre el
+archivo después, e infla la descarga del proyecto para todo el que lo clone
+de ahí en más).
+
+Con 6 a 10 documentos representativos alcanza para ajustar el pipeline a
+cómo son los formularios reales. `scripts/muestrear_zip.py` los saca **sin
+descomprimir el ZIP entero**: lee y extrae archivo por archivo.
+
+```bash
+# 1. Ver qué hay adentro: cuántos archivos, de qué tipo, en qué carpetas
+python scripts/muestrear_zip.py formularios.zip --listar
+
+# 2. Sacar una muestra al azar (reparte entre carpetas si el ZIP viene
+#    organizado en ellas, por ejemplo por año o por lote)
+python scripts/muestrear_zip.py formularios.zip --extraer 8 --salida muestra_zip/
+
+# 3. O elegir archivos puntuales por nombre
+python scripts/muestrear_zip.py formularios.zip --nombres "GE291181750.pdf,GE...*" --salida muestra_zip/
+```
+
+`--extraer` con `--semilla` (por defecto 0) es reproducible: la misma semilla
+sobre el mismo ZIP saca siempre la misma muestra, así que si hace falta
+agrandarla después no hay que empezar de cero.
+
+Si algún archivo extraído es a su vez un PDF grande de muchas páginas, se le
+aplica `extraer_muestra.py` encima (ver la sección anterior) antes de subirlo.
+Recién esa muestra chica —la carpeta `muestra_zip/`, no el ZIP— es lo que va a
+`muestras/marcas_escaneadas/`.
+
 ## Límites
 
 - Por el navegador: hasta **25 MB por archivo** y 100 archivos por carga.
