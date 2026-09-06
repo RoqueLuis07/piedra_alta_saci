@@ -9,7 +9,9 @@ fijo, y no tiene por qué tenerlo.
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from marcas import db
@@ -249,3 +251,85 @@ def test_plantilla_csv_se_puede_reimportar(tmp_path):
     r = importar_datos(ruta, tmp_path / "t.db")
     assert r.marcas_nuevas == 2
     assert not r.columnas_ignoradas
+
+
+# --- tipo, numero_guia y archivo_imagen (salida de un lote de extracción) --
+
+def test_importar_datos_reconoce_tipo_y_numero_guia(tmp_path):
+    ruta = _csv(tmp_path, "r.csv", ["codigo", "tipo", "numero_guia"],
+                [["M-01", "dominante", "90947260"],
+                 ["M-02", "complementaria", "90947260"]])
+    r = importar_datos(ruta, tmp_path / "t.db")
+    assert not r.columnas_ignoradas
+    filas = {f["codigo"]: f for f in db.listar_marcas(ruta_db=tmp_path / "t.db")}
+    assert filas["M-01"]["tipo"] == "dominante"
+    assert filas["M-02"]["tipo"] == "complementaria"
+    assert filas["M-01"]["numero_guia"] == filas["M-02"]["numero_guia"] == "90947260"
+
+
+def test_importar_datos_avisa_tipo_desconocido_sin_fallar(tmp_path):
+    ruta = _csv(tmp_path, "r.csv", ["codigo", "tipo"], [["M-01", "secundaria"]])
+    r = importar_datos(ruta, tmp_path / "t.db")
+    assert r.marcas_nuevas == 1
+    assert any("tipo" in o and "secundaria" in o for o in r.omitidas)
+    assert db.obtener_marcas(["M-01"], tmp_path / "t.db")[0]["tipo"] is None
+
+
+def test_importar_datos_resuelve_imagen_relativa_a_la_planilla(tmp_path):
+    """El caso real: un CSV con una carpeta de PNG al lado (lo que entrega un
+    lote de extracción), con la ruta escrita relativa al CSV, no al cwd."""
+    import cv2
+    imagenes = tmp_path / "recortes"
+    imagenes.mkdir()
+    png = imagenes / "90947260-dominante.png"
+    cv2.imwrite(str(png), np.zeros((50, 50, 4), np.uint8))
+
+    ruta = _csv(tmp_path, "registro.csv", ["codigo", "archivo_imagen"],
+                [["M-01", "recortes/90947260-dominante.png"]])
+    importar_datos(ruta, tmp_path / "t.db")
+    marca = db.obtener_marcas(["M-01"], tmp_path / "t.db")[0]
+    assert marca["archivo_png"]
+    assert Path(marca["archivo_png"]).is_absolute() or (
+        Path(marca["archivo_png"]).exists()
+    )
+    # La ruta guardada, resuelta desde donde corresponda, apunta al PNG real.
+    from marcas import config
+    guardada = Path(marca["archivo_png"])
+    if not guardada.is_absolute():
+        guardada = config.RAIZ / guardada
+    assert guardada.samefile(png)
+
+
+def test_importar_datos_avisa_imagen_faltante_sin_fallar_la_fila(tmp_path):
+    ruta = _csv(tmp_path, "r.csv", ["codigo", "archivo_imagen"],
+                [["M-01", "no_existe/marca.png"]])
+    r = importar_datos(ruta, tmp_path / "t.db")
+    assert r.marcas_nuevas == 1
+    assert any("no se encontró la imagen" in o for o in r.omitidas)
+    assert db.obtener_marcas(["M-01"], tmp_path / "t.db")[0]["archivo_png"] is None
+
+
+def test_importar_datos_acepta_encabezados_del_brief_de_cowork(tmp_path):
+    """Mismos nombres de columna que se le pidieron a Cowork en el prompt de
+    extracción: codigo, propietario/vendedor, tipo, numero_guia, archivo_imagen."""
+    import cv2
+    imagenes = tmp_path / "imgs"
+    imagenes.mkdir()
+    cv2.imwrite(str(imagenes / "d.png"), np.zeros((40, 40, 4), np.uint8))
+    cv2.imwrite(str(imagenes / "c1.png"), np.zeros((40, 40, 4), np.uint8))
+
+    ruta = _csv(tmp_path, "marcas.csv",
+                ["codigo", "vendedor_nombre", "vendedor_documento", "tipo",
+                 "numero_guia", "archivo_imagen"],
+                [["90947260-D", "MIRCO XANDER KLASSEN TOEWS", "5355841",
+                  "dominante", "90947260", "imgs/d.png"],
+                 ["90947260-C1", "MIRCO XANDER KLASSEN TOEWS", "5355841",
+                  "complementaria", "90947260", "imgs/c1.png"]])
+    r = importar_datos(ruta, tmp_path / "t.db")
+    assert not r.columnas_ignoradas
+    assert r.marcas_nuevas == 2
+    assert len(r.propietarios) == 1, "las dos marcas deben quedar bajo el mismo vendedor"
+    filas = db.listar_marcas(ruta_db=tmp_path / "t.db")
+    assert all(f["propietario"] == "MIRCO XANDER KLASSEN TOEWS" for f in filas)
+    assert all(f["numero_guia"] == "90947260" for f in filas)
+    assert all(f["archivo_png"] for f in filas)

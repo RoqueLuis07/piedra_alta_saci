@@ -125,6 +125,29 @@ cada casilla escaneada (lo mismo que acepta `marcas procesar`); sin él, cada
 marca queda con el código automático de su posición y se renombra después,
 a mano, desde el selector web.
 
+### Cargar el resultado de un lote de extracción (varias marcas por operación)
+
+Si las marcas ya vienen recortadas y clasificadas por otro proceso —por
+ejemplo, la salida de extraer datos de guías de traslado con varias marcas por
+operación (una dominante y N complementarias) más los recortes de cada una—
+`marcas datos` reconoce además estas columnas:
+
+| Columna | Qué es |
+|---|---|
+| `tipo` | `dominante` o `complementaria` |
+| `numero_guia` | identificador de la operación de origen (no es el código de la marca; sirve para agrupar y para trazabilidad) |
+| `archivo_imagen` | ruta al PNG ya recortado de esa marca, **relativa a la ubicación de la planilla** |
+
+```bash
+python -m marcas datos marcas_extraidas.csv
+```
+
+El propietario se identifica por `documento` (CI/RUC): varias marcas de la
+misma operación, o de operaciones distintas del mismo vendedor con el nombre
+escrito distinto, quedan bajo un solo propietario. Si una imagen referenciada
+no aparece en disco, la fila se carga igual (con sus datos de texto) y queda
+un aviso en vez de fallar todo el lote.
+
 ## Flujo de trabajo real
 
 ```bash

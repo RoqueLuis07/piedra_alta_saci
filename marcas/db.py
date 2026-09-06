@@ -99,6 +99,17 @@ def conectar(ruta: Path | None = None) -> Iterator[sqlite3.Connection]:
 # ni perder datos.
 COLUMNAS_AGREGADAS = {
     "propietarios": {"establecimiento_codigo": "TEXT"},
+    "marcas": {
+        # "dominante" o "complementaria": para el caso de una operación con
+        # varias marcas (una guía de traslado trae 1 dominante + hasta N
+        # complementarias). Nula para una marca cargada suelta, sin ese
+        # contexto.
+        "tipo": "TEXT",
+        # Número de guía/orden del documento de origen (no es el código de
+        # la marca): sirve para volver a agrupar las marcas de una misma
+        # operación y para trazabilidad hacia el documento original.
+        "numero_guia": "TEXT",
+    },
 }
 
 

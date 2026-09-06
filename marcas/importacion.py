@@ -25,7 +25,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from marcas import db
+from marcas import config, db
 
 # Campo del catálogo -> nombres de columna aceptados (ya normalizados).
 ALIAS: dict[str, tuple[str, ...]] = {
@@ -41,17 +41,33 @@ ALIAS: dict[str, tuple[str, ...]] = {
     "observaciones": ("observaciones", "observacion", "nota", "notas"),
     "propietario": (
         "propietario", "nombre", "nombre y apellido", "razon social",
-        "nombre y apellido razon social", "titular", "dueno", "productor",
+        "nombre y apellido razon social", "vendedor", "vendedor nombre",
+        "titular", "dueno", "productor",
     ),
-    "documento": ("documento", "ci", "ruc", "ci ruc", "cedula", "cedula de identidad"),
-    "establecimiento": ("establecimiento", "estancia", "campo", "finca"),
+    "documento": (
+        "documento", "ci", "ruc", "ci ruc", "cedula", "cedula de identidad",
+        "vendedor documento", "vendedor ci ruc",
+    ),
+    "establecimiento": (
+        "establecimiento", "estancia", "campo", "finca", "vendedor establecimiento",
+    ),
     "establecimiento_codigo": (
         "codigo de establecimiento", "cod establecimiento", "codigo establecimiento",
-        "cod est", "codigo de est",
+        "cod est", "codigo de est", "vendedor establecimiento codigo",
     ),
     "localidad": ("localidad", "distrito", "ciudad"),
     "departamento": ("departamento", "depto"),
     "telefono": ("telefono", "tel", "celular", "contacto"),
+    "tipo": ("tipo", "tipo de marca"),
+    "numero_guia": (
+        "numero guia", "numero de guia", "n de guia", "no de guia",
+        "nro de guia", "nro guia", "guia", "numero de orden", "n de orden",
+        "no de orden", "nro de orden", "n de guia orden",
+    ),
+    "archivo_imagen": (
+        "archivo imagen", "archivo", "imagen", "archivo png", "png",
+        "archivo de imagen", "ruta imagen", "ruta de imagen",
+    ),
 }
 
 CAMPOS_PROPIETARIO = (
@@ -59,6 +75,7 @@ CAMPOS_PROPIETARIO = (
     "localidad", "departamento", "telefono",
 )
 ESTADOS = ("activa", "revisar", "baja")
+TIPOS_MARCA = ("dominante", "complementaria")
 
 
 @dataclass
@@ -170,6 +187,27 @@ def _texto(valor) -> str:
     return str(valor).strip()
 
 
+def _resolver_imagen(valor: str, carpeta_base: Path) -> tuple[str | None, str | None]:
+    """Ubica el archivo de imagen de una fila y lo deja listo para guardar.
+
+    ``valor`` suele venir como ruta relativa a la propia planilla (el caso
+    típico: un CSV con una carpeta de PNG al lado, como entrega un lote de
+    extracción). Devuelve ``(ruta_para_guardar, aviso)``: la ruta queda
+    relativa a la raíz del proyecto cuando es posible, igual que hace el
+    resto del pipeline; si el archivo no aparece, se devuelve ``None`` y un
+    aviso en vez de fallar la fila entera.
+    """
+    ruta = Path(valor)
+    candidatos = [ruta] if ruta.is_absolute() else [carpeta_base / ruta, ruta]
+    for candidata in candidatos:
+        if candidata.exists():
+            candidata = candidata.resolve()
+            if candidata.is_relative_to(config.RAIZ):
+                return str(candidata.relative_to(config.RAIZ)), None
+            return str(candidata), None
+    return None, f"no se encontró la imagen '{valor}'"
+
+
 def importar_datos(
     ruta: Path | str, ruta_db: Path | None = None
 ) -> ResultadoImportacion:
@@ -193,6 +231,7 @@ def importar_datos(
         )
 
     db.inicializar(ruta_db)
+    carpeta_base = Path(ruta).resolve().parent
     for numero, fila in enumerate(filas, start=2):     # 1 es el encabezado
         resultado.filas_leidas += 1
         datos = {campo: _texto(fila[i]) if i < len(fila) else ""
@@ -217,6 +256,20 @@ def importar_datos(
             )
             estado = None
 
+        tipo = normalizar(datos.get("tipo", "")) or None
+        if tipo and tipo not in TIPOS_MARCA:
+            resultado.omitidas.append(
+                f"fila {numero}: tipo '{datos['tipo']}' desconocido "
+                f"(se esperaba dominante o complementaria)"
+            )
+            tipo = None
+
+        archivo_png = None
+        if datos.get("archivo_imagen"):
+            archivo_png, aviso = _resolver_imagen(datos["archivo_imagen"], carpeta_base)
+            if aviso:
+                resultado.omitidas.append(f"fila {numero}: {aviso}")
+
         with db.conectar(ruta_db) as con:
             existe = con.execute(
                 "SELECT id FROM marcas WHERE codigo = ?", (codigo,)
@@ -225,9 +278,13 @@ def importar_datos(
                 "descripcion": datos.get("descripcion") or None,
                 "observaciones": datos.get("observaciones") or None,
                 "propietario_id": propietario_id,
+                "numero_guia": datos.get("numero_guia") or None,
+                "archivo_png": archivo_png,
             }
             if estado:
                 campos["estado"] = estado
+            if tipo:
+                campos["tipo"] = tipo
             # Sólo se escriben los campos con valor: una planilla incompleta no
             # tiene por qué borrar lo que ya estaba cargado.
             campos = {k: v for k, v in campos.items() if v is not None}
@@ -254,13 +311,15 @@ def importar_datos(
 ENCABEZADOS_PLANTILLA = [
     "codigo", "descripcion", "propietario", "ci_ruc", "establecimiento",
     "codigo_de_establecimiento", "localidad", "departamento", "telefono",
-    "estado", "observaciones",
+    "estado", "observaciones", "tipo", "numero_guia", "archivo_imagen",
 ]
 EJEMPLOS = [
     ["M-0001", "Círculo con barra", "PIEDRA ALTA S.A. INMOBILIARIA", "80020081",
-     "LA PATRICIA", "1706020006", "Concepción", "Concepción", "", "activa", ""],
+     "LA PATRICIA", "1706020006", "Concepción", "Concepción", "", "activa", "",
+     "dominante", "90947260", ""],
     ["M-0002", "Ancla", "PIEDRA ALTA S.A. INMOBILIARIA", "80020081",
-     "LA PATRICIA", "1706020006", "", "", "", "activa", "marca heredada"],
+     "LA PATRICIA", "1706020006", "", "", "", "activa", "marca heredada",
+     "complementaria", "90947260", ""],
 ]
 
 
