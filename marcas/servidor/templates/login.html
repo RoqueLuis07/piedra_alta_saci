@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Piedra Alta — Registro de marcas</title>
+</head>
+<body>
+  <h1>Registro de marcas — Piedra Alta</h1>
+  {% if error %}<p style="color:#a63244;">{{ error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('login_post') }}">
+    <div><label>Usuario (email)<br><input type="email" name="email" required autofocus></label></div>
+    <div><label>Contraseña<br><input type="password" name="contrasena" required></label></div>
+    <button type="submit">Ingresar</button>
+  </form>
+</body>
+</html>

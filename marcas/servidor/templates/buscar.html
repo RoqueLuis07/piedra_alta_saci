@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Buscar — Piedra Alta</title>
+</head>
+<body>
+  <header>
+    <strong>Piedra Alta</strong> — Registro de marcas
+    <span style="float:right;">
+      {{ perfil.nombre }} ({{ perfil.rol }})
+      {% if perfil.rol == 'administrador' %}· <a href="{{ url_for('panel') }}">Panel</a>{% endif %}
+      · <form method="post" action="{{ url_for('logout') }}" style="display:inline"><button type="submit">Salir</button></form>
+    </span>
+  </header>
+  <hr>
+
+  <form method="get" action="{{ url_for('buscar') }}">
+    <input type="text" name="q" value="{{ texto }}" placeholder="Código, número de guía, propietario o documento…" style="width:320px;">
+    <button type="submit">Buscar</button>
+  </form>
+
+  <table border="1" cellpadding="6" cellspacing="0" style="margin-top:12px; width:100%;">
+    <thead>
+      <tr><th>Código</th><th>Tipo</th><th>Propietario</th><th>N° de guía</th><th>Estado</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for m in resultados %}
+      <tr {% if ficha and ficha.marca.codigo == m.codigo %}style="background:#eee;"{% endif %}>
+        <td>{{ m.codigo }}</td>
+        <td>{{ m.tipo or '—' }}</td>
+        <td>{{ m.propietarios.nombre if m.propietarios else '—' }}</td>
+        <td>{{ m.operaciones.numero_guia if m.operaciones else '—' }}</td>
+        <td>{{ m.estado }}</td>
+        <td><a href="{{ url_for('buscar', q=texto, ver=m.codigo) }}">Ver ficha</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Sin resultados.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if ficha %}
+  <hr>
+  <h2>Ficha — {{ ficha.marca.codigo }}</h2>
+  <div style="display:flex; gap:24px;">
+    <div>
+      {% if ficha.marca.imagen_url %}<img src="{{ ficha.marca.imagen_url }}" alt="{{ ficha.marca.codigo }}" width="160">{% endif %}
+      <p><strong>{{ ficha.marca.tipo }}</strong> · estado: {{ ficha.marca.estado }}</p>
+    </div>
+    <div>
+      {% if ficha.operacion %}
+      <p>
+        <strong>Formulario de origen</strong><br>
+        N° de guía: {{ ficha.operacion.numero_guia or '—' }}<br>
+        Fecha: {{ ficha.operacion.fecha or '—' }}<br>
+        Vendedor: {{ ficha.operacion.vendedor_nombre or '—' }} ({{ ficha.operacion.vendedor_documento or '—' }})<br>
+        Establecimiento: {{ ficha.operacion.vendedor_establecimiento or '—' }}
+      </p>
+      {% else %}
+      <p>Esta marca no tiene un formulario de origen vinculado.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <h3>Marcas que la acompañan ({{ ficha.acompanantes|length }})</h3>
+  <div style="display:flex; gap:12px; flex-wrap:wrap;">
+    {% for a in ficha.acompanantes %}
+    <div style="text-align:center;">
+      {% if a.imagen_url %}<img src="{{ a.imagen_url }}" alt="{{ a.codigo }}" width="80">{% endif %}
+      <div>{{ a.codigo }} ({{ a.tipo }})</div>
+    </div>
+    {% else %}
+    <p>Ninguna.</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</body>
+</html>

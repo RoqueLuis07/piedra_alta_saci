@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><title>Panel — Piedra Alta</title></head>
+<body>
+  <p><a href="{{ url_for('buscar') }}">&larr; Volver a Buscar</a></p>
+  <h1>Panel de administración</h1>
+
+  <h2>Usuarios</h2>
+  <table border="1" cellpadding="6" cellspacing="0" style="width:100%;">
+    <thead><tr><th>Nombre</th><th>Rol</th><th>Activo</th><th></th></tr></thead>
+    <tbody>
+      {% for u in usuarios %}
+      <tr>
+        <td>{{ u.nombre }}</td>
+        <td>
+          <form method="post" action="{{ url_for('actualizar_usuario', usuario_id=u.id) }}" style="display:flex; gap:6px;">
+            <select name="rol">
+              {% for r in ['consulta', 'operador', 'administrador'] %}
+              <option value="{{ r }}" {% if u.rol == r %}selected{% endif %}>{{ r }}</option>
+              {% endfor %}
+            </select>
+        </td>
+        <td>
+            <select name="activo">
+              <option value="1" {% if u.activo %}selected{% endif %}>Sí</option>
+              <option value="0" {% if not u.activo %}selected{% endif %}>No</option>
+            </select>
+        </td>
+        <td><button type="submit">Guardar</button></form></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Cambios pendientes de aprobación ({{ cambios|length }})</h2>
+  <table border="1" cellpadding="6" cellspacing="0" style="width:100%;">
+    <thead><tr><th>Tabla</th><th>Fila</th><th>Cambios propuestos</th><th>Propuesto</th><th>Acción</th></tr></thead>
+    <tbody>
+      {% for c in cambios %}
+      <tr>
+        <td>{{ c.tabla }}</td>
+        <td>{{ c.fila_id }}</td>
+        <td><code>{{ c.cambios }}</code></td>
+        <td>{{ c.propuesto_en }}</td>
+        <td>
+          <form method="post" action="{{ url_for('resolver_cambio', cambio_id=c.id) }}" style="display:flex; gap:6px;">
+            <button type="submit" name="decision" value="aprobado">Aprobar</button>
+            <button type="submit" name="decision" value="rechazado">Rechazar</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No hay cambios pendientes.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
