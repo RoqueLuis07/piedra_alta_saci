@@ -1,14 +1,23 @@
 # Dependencias de Python
 numpy>=1.26
-opencv-python-headless>=4.9      # segmentación y limpieza de imágenes
-pillow>=10.2                     # lectura de formatos varios
-reportlab>=4.1                   # generación de los PDF
-pypdf>=4.0                       # lectura/fusión de PDF (guía oficial, PDF escaneados)
-pypdfium2>=4.30                  # rasterizado de PDF (páginas sin imagen embebida)
-openpyxl>=3.1                    # planilla del registro en Excel (.xlsx); el CSV no la necesita
-flask>=3.0                       # selector visual (sólo para `marcas web`)
-gunicorn>=22.0                   # servidor de producción (Railway, no el de desarrollo de Flask)
-supabase>=2.9                    # cliente de Supabase (login, base de datos, storage) para `marcas.servidor`
+# segmentación y limpieza de imágenes
+opencv-python-headless>=4.9
+# lectura de formatos varios
+pillow>=10.2
+# generación de los PDF
+reportlab>=4.1
+# lectura/fusión de PDF (guía oficial, PDF escaneados)
+pypdf>=4.0
+# rasterizado de PDF (páginas sin imagen embebida)
+pypdfium2>=4.30
+# planilla del registro en Excel (.xlsx); el CSV no la necesita
+openpyxl>=3.1
+# selector visual (sólo para `marcas web`)
+flask>=3.0
+# servidor de producción (Railway, no el de desarrollo de Flask)
+gunicorn>=22.0
+# cliente de Supabase (login, base de datos, storage) para `marcas.servidor`
+supabase>=2.9
 
 # Dependencia del sistema (no se instala con pip):
 #   potrace  ->  sudo apt install potrace  /  brew install potrace
