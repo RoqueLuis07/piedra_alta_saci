@@ -7,6 +7,7 @@ pypdf>=4.0                       # lectura/fusión de PDF (guía oficial, PDF es
 pypdfium2>=4.30                  # rasterizado de PDF (páginas sin imagen embebida)
 openpyxl>=3.1                    # planilla del registro en Excel (.xlsx); el CSV no la necesita
 flask>=3.0                       # selector visual (sólo para `marcas web`)
+gunicorn>=22.0                   # servidor de producción (Railway, no el de desarrollo de Flask)
 
 # Dependencia del sistema (no se instala con pip):
 #   potrace  ->  sudo apt install potrace  /  brew install potrace
