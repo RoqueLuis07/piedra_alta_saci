@@ -154,7 +154,20 @@ def subir_imagenes(supabase) -> None:
 
     print(f"imágenes subidas: {len(subidos_png)} png, {len(subidos_svg)} svg")
 
-    marcas = supabase.table("marcas").select("id, origen_archivo").execute().data
+    marcas: list[dict] = []
+    desde = 0
+    while True:
+        pagina = (
+            supabase.table("marcas")
+            .select("id, origen_archivo")
+            .range(desde, desde + TAM_LOTE - 1)
+            .execute()
+            .data
+        )
+        marcas.extend(pagina)
+        if len(pagina) < TAM_LOTE:
+            break
+        desde += TAM_LOTE
     for m in marcas:
         if not m["origen_archivo"]:
             continue

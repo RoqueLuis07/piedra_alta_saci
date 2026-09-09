@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Registro de marcas{% endblock %} — Piedra Alta</title>
+<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='favicon/favicon-16.png') }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon/favicon-32.png') }}">
+<link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='favicon/favicon-192.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon/favicon-192.png') }}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -28,10 +32,10 @@
   .shell { display: flex; align-items: stretch; min-height: 100vh; }
 
   .nav { flex: 0 0 236px; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; }
-  .nav-brand { padding: 22px 20px 18px; border-bottom: 1px solid rgba(250,250,247,0.22); display: flex; align-items: center; gap: 10px; }
-  .nav-logo { width: 26px; height: 26px; border: 1.5px solid var(--dorado); display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 700; color: var(--dorado); flex-shrink: 0; }
-  .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; line-height: 1.1; }
-  .nav-sub { font-size: 9px; letter-spacing: 0.18em; color: rgba(250,250,247,0.62); margin-top: 2px; }
+  .nav-brand { padding: 22px 20px 18px; border-bottom: 1px solid rgba(250,250,247,0.22); }
+  .nav-logo { width: 46px; display: block; margin-bottom: 12px; }
+  .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 14.5px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.2; }
+  .nav-sub { font-size: 8.5px; letter-spacing: 0.12em; color: rgba(250,250,247,0.62); margin-top: 4px; line-height: 1.5; }
   .nav-seccion { padding: 18px 20px 8px; font-size: 9.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.55); }
   .nav-item { display: block; width: 100%; text-align: left; background: transparent; color: rgba(250,250,247,0.88); border: 0; border-left: 3px solid transparent; padding: 11px 20px; font-size: 13.5px; letter-spacing: 0.02em; cursor: pointer; text-decoration: none; box-sizing: border-box; }
   .nav-item:hover { background: rgba(127,174,107,0.28); color: rgba(250,250,247,0.95); }
@@ -92,11 +96,9 @@
 <div class="shell">
   <nav class="nav">
     <div class="nav-brand">
-      <div class="nav-logo">P</div>
-      <div>
-        <div class="nav-titulo">PIEDRA ALTA</div>
-        <div class="nav-sub">S.A.C.I. · PARAGUAY</div>
-      </div>
+      <img class="nav-logo" src="{{ url_for('static', filename='logo/emblema.png') }}" srcset="{{ url_for('static', filename='logo/emblema.png') }} 1x, {{ url_for('static', filename='logo/emblema@2x.png') }} 2x" alt="Estancia La Patricia">
+      <div class="nav-titulo">PIEDRA ALTA S.A.C.I.</div>
+      <div class="nav-sub">ESTANCIA LA PATRICIA · PARAGUAY</div>
     </div>
     <div class="nav-seccion">REGISTRO DE MARCAS</div>
     <div>
