@@ -37,6 +37,40 @@ CREATE TABLE IF NOT EXISTS propietarios (
     UNIQUE (nombre, documento)
 );
 
+-- Una fila por formulario de compra/guía de traslado. Es la entidad
+-- "documento de origen": una marca (dominante o complementaria) siempre
+-- pertenece a una operación, y una misma operación reúne su dominante con
+-- todas sus complementarias (o, si no entraron todas en una sola hoja, con
+-- las de su hoja de anexo).
+CREATE TABLE IF NOT EXISTS operaciones (
+    id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+    numero_guia                     TEXT,
+    fecha                           TEXT,
+    vendedor_nombre                 TEXT,
+    vendedor_documento              TEXT,
+    vendedor_establecimiento        TEXT,
+    vendedor_establecimiento_codigo TEXT,
+    comprador_nombre                TEXT,
+    comprador_documento             TEXT,
+    cantidad_animales               INTEGER,
+    categoria_animales              TEXT,
+    categoria_animales_original     TEXT,
+    tipo_formulario                 TEXT,
+    guia_colisionada                INTEGER NOT NULL DEFAULT 0,
+    revisar                         TEXT,
+    -- Identidad del lote que la entregó (por ejemplo "cowork") + el id que
+    -- traía en su propia base, para poder reimportar el mismo lote sin
+    -- duplicar filas. Ninguna de las dos solas alcanza: el id sin el lote
+    -- podría chocar con el de una entrega distinta.
+    origen                          TEXT,
+    origen_id                       INTEGER,
+    creado_en                       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (origen, origen_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_operaciones_numero_guia    ON operaciones(numero_guia);
+CREATE INDEX IF NOT EXISTS ix_operaciones_vendedor_doc   ON operaciones(vendedor_documento);
+
 CREATE TABLE IF NOT EXISTS marcas (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     codigo         TEXT NOT NULL UNIQUE,
@@ -106,9 +140,27 @@ COLUMNAS_AGREGADAS = {
         # contexto.
         "tipo": "TEXT",
         # Número de guía/orden del documento de origen (no es el código de
-        # la marca): sirve para volver a agrupar las marcas de una misma
-        # operación y para trazabilidad hacia el documento original.
+        # la marca). Es solo informativo/de búsqueda: el número de guía
+        # puede repetirse entre operaciones distintas cuando el OCR no lo
+        # pudo leer, así que NO sirve para agrupar las marcas de un mismo
+        # formulario -- para eso está operacion_id.
         "numero_guia": "TEXT",
+        # Vínculo real hacia el formulario de origen (operaciones.id).
+        "operacion_id": "INTEGER",
+        # Posición dentro de la grilla de SU página ("F01C02"), para poder
+        # reconstruir el orden original. No es única dentro de la operación:
+        # un formulario con más de una foto (por ej. hoja + Anexo) repite
+        # "F01C01" en cada página, así que no sirve como identificador.
+        "posicion": "TEXT",
+        # Nombre del archivo tal como lo entregó el lote de origen (ej.
+        # "pag_001_F01C01.png") -- a diferencia de "posicion", este sí es
+        # único en todo el lote (una celda de una página física concreta) y
+        # no cambia si después alguien renombra "codigo" al código oficial
+        # del registro. Es la clave real para reimportar sin duplicar.
+        "origen_archivo": "TEXT",
+        "sospechosa_calidad": "INTEGER",
+        "motivo_calidad": "TEXT",
+        "borde_limpiado": "INTEGER",
     },
 }
 
@@ -128,6 +180,13 @@ def inicializar(ruta: Path | None = None) -> Path:
     with conectar(ruta) as con:
         con.executescript(ESQUEMA)
         _migrar(con)
+        # Estos índices dependen de columnas agregadas por _migrar (no
+        # existen todavía cuando se crea la tabla en una base nueva), por
+        # eso se crean acá y no dentro de ESQUEMA.
+        con.execute("CREATE INDEX IF NOT EXISTS ix_marcas_operacion ON marcas(operacion_id)")
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS ix_marcas_origen_archivo ON marcas(origen_archivo)"
+        )
     return ruta
 
 
@@ -310,6 +369,143 @@ def alta_propietario(nombre: str, ruta_db: Path | None = None, **datos) -> int:
                 [*faltantes.values(), fila["id"]],
             )
         return fila["id"]
+
+
+CAMPOS_OPERACION = (
+    "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento",
+    "vendedor_establecimiento", "vendedor_establecimiento_codigo",
+    "comprador_nombre", "comprador_documento", "cantidad_animales",
+    "categoria_animales", "categoria_animales_original", "tipo_formulario",
+    "guia_colisionada", "revisar",
+)
+
+
+def alta_operacion(
+    origen: str, origen_id: int, ruta_db: Path | None = None, **campos
+) -> tuple[int, bool]:
+    """Crea o actualiza una operación (formulario) identificada por lote+id.
+
+    ``(origen, origen_id)`` es la identidad externa: el nombre del lote que
+    la entregó (por ejemplo "cowork") más el id que traía en su propia base.
+    Reimportar el mismo lote actualiza la fila en vez de duplicarla.
+    Devuelve ``(id, es_nueva)``.
+    """
+    inicializar(ruta_db)
+    campos = {k: v for k, v in campos.items() if k in CAMPOS_OPERACION}
+    with conectar(ruta_db) as con:
+        fila = con.execute(
+            "SELECT id FROM operaciones WHERE origen = ? AND origen_id = ?",
+            (origen, origen_id),
+        ).fetchone()
+        if fila:
+            if campos:
+                asignaciones = ", ".join(f"{k} = ?" for k in campos)
+                con.execute(
+                    f"UPDATE operaciones SET {asignaciones} WHERE id = ?",
+                    [*campos.values(), fila["id"]],
+                )
+            return fila["id"], False
+        columnas = [*campos, "origen", "origen_id"]
+        marcadores = ",".join("?" * len(columnas))
+        cur = con.execute(
+            f"INSERT INTO operaciones ({','.join(columnas)}) VALUES ({marcadores})",
+            [*campos.values(), origen, origen_id],
+        )
+        return cur.lastrowid, True
+
+
+CAMPOS_MARCA_OPERACION = (
+    "tipo", "numero_guia", "posicion", "archivo_png", "archivo_svg",
+    "propietario_id", "sospechosa_calidad", "motivo_calidad", "borde_limpiado",
+    "estado",
+)
+
+
+def alta_marca_de_operacion(
+    codigo: str, operacion_id: int, origen_archivo: str,
+    ruta_db: Path | None = None, **campos,
+) -> tuple[int, bool]:
+    """Crea o actualiza una marca de un lote masivo, identificada por su archivo de origen.
+
+    A diferencia de :func:`actualizar_marca` (que ubica la fila por
+    ``codigo``), acá la identidad natural es ``origen_archivo`` -- el nombre
+    de archivo tal como lo entregó el lote (por ej. "pag_001_F01C01.png"),
+    único por cada celda de cada página física. No se puede usar
+    ``(operacion_id, posicion)`` para esto: un formulario con más de una
+    foto repite la misma posición de grilla en cada página. Reimportar el
+    mismo lote no duplica la marca aunque el código provisional cambie, y si
+    la fila ya existe no se le pisa el ``codigo`` (puede haber sido
+    renombrado a mano al código oficial del registro). Devuelve
+    ``(id, es_nueva)``.
+    """
+    inicializar(ruta_db)
+    campos = {
+        k: v for k, v in campos.items()
+        if k in CAMPOS_MARCA_OPERACION and v is not None
+    }
+    with conectar(ruta_db) as con:
+        fila = con.execute(
+            "SELECT id FROM marcas WHERE origen_archivo = ?", (origen_archivo,)
+        ).fetchone()
+        if fila:
+            if campos:
+                asignaciones = ", ".join(f"{k} = ?" for k in campos)
+                con.execute(
+                    f"UPDATE marcas SET {asignaciones}, actualizado_en = datetime('now') "
+                    "WHERE id = ?",
+                    [*campos.values(), fila["id"]],
+                )
+            return fila["id"], False
+        columnas = ["codigo", "operacion_id", "origen_archivo", *campos]
+        marcadores = ",".join("?" * len(columnas))
+        cur = con.execute(
+            f"INSERT INTO marcas ({','.join(columnas)}) VALUES ({marcadores})",
+            [codigo, operacion_id, origen_archivo, *campos.values()],
+        )
+        return cur.lastrowid, True
+
+
+def obtener_operacion(operacion_id: int, ruta_db: Path | None = None) -> sqlite3.Row | None:
+    with conectar(ruta_db) as con:
+        return con.execute(
+            "SELECT * FROM operaciones WHERE id = ?", (operacion_id,)
+        ).fetchone()
+
+
+def listar_marcas_de_operacion(
+    operacion_id: int, ruta_db: Path | None = None
+) -> list[sqlite3.Row]:
+    """Todas las marcas de un formulario, dominante primero."""
+    with conectar(ruta_db) as con:
+        return con.execute(
+            """SELECT m.*, p.nombre AS propietario
+                 FROM marcas m LEFT JOIN propietarios p ON p.id = m.propietario_id
+                WHERE m.operacion_id = ?
+                ORDER BY CASE m.tipo WHEN 'dominante' THEN 0 ELSE 1 END, m.posicion""",
+            (operacion_id,),
+        ).fetchall()
+
+
+def obtener_ficha_marca(codigo: str, ruta_db: Path | None = None) -> dict | None:
+    """La marca, el formulario donde está y las marcas que la acompañan.
+
+    Es la consulta que responde "¿dónde está esta marca y con quién
+    aparece?": la búsqueda encuentra la marca, y esto arma la ficha completa
+    del formulario para poder elegir cuál de las marcas usar.
+    """
+    marcas = obtener_marcas([codigo], ruta_db)
+    if not marcas:
+        return None
+    marca = marcas[0]
+    operacion = None
+    acompanantes: list[sqlite3.Row] = []
+    if marca["operacion_id"] is not None:
+        operacion = obtener_operacion(marca["operacion_id"], ruta_db)
+        acompanantes = [
+            h for h in listar_marcas_de_operacion(marca["operacion_id"], ruta_db)
+            if h["codigo"] != codigo
+        ]
+    return {"marca": marca, "operacion": operacion, "acompanantes": acompanantes}
 
 
 def guardar_planilla(
