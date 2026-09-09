@@ -74,6 +74,66 @@ def crear_app() -> Flask:
     def cuenta_pendiente():
         return render_template("cuenta_pendiente.html")
 
+    @app.get("/recuperar")
+    def recuperar():
+        return render_template("recuperar.html", enviado=False, error=None)
+
+    @app.post("/recuperar")
+    def recuperar_post():
+        email = request.form.get("email", "").strip()
+        if email:
+            destino = request.host_url.rstrip("/") + url_for("restablecer")
+            try:
+                cliente_anonimo().auth.reset_password_for_email(email, {"redirect_to": destino})
+            except Exception:
+                pass  # nunca revelar si el email existe o no
+        return render_template("recuperar.html", enviado=True, error=None)
+
+    @app.get("/restablecer")
+    def restablecer():
+        return render_template("restablecer.html", error=None)
+
+    @app.post("/restablecer")
+    def restablecer_post():
+        access_token = request.form.get("access_token", "")
+        refresh_token = request.form.get("refresh_token", "")
+        nueva = request.form.get("nueva_contrasena", "")
+        if not access_token or not refresh_token or len(nueva) < 6:
+            return render_template(
+                "restablecer.html",
+                error="Datos incompletos o contraseña muy corta (mínimo 6 caracteres).",
+            ), 400
+        try:
+            cliente = cliente_anonimo()
+            cliente.auth.set_session(access_token, refresh_token)
+            cliente.auth.update_user({"password": nueva})
+        except Exception:
+            return render_template(
+                "restablecer.html", error="El enlace venció o no es válido. Pedí uno nuevo."
+            ), 400
+        return redirect(url_for("login"))
+
+    @app.context_processor
+    def inyectar_pendientes():
+        perfil = perfil_actual()
+        if not perfil or perfil.get("rol") not in ("administrador", "operador"):
+            return {}
+        cliente = cliente_actual()
+        if not cliente:
+            return {}
+        try:
+            n = (
+                cliente.table("cambios_pendientes")
+                .select("id", count="exact")
+                .eq("estado", "pendiente")
+                .execute()
+                .count
+                or 0
+            )
+        except Exception:
+            n = 0
+        return {"pendientes_nav": n}
+
     @app.get("/")
     @requiere_sesion
     def inicio():

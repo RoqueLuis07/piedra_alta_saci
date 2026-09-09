@@ -2,39 +2,47 @@
 {% block titulo %}Usuarios{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · ADMINISTRACIÓN{% endblock %}
 {% block titulo_pagina %}Usuarios{% endblock %}
+{% block meta_encabezado %}{{ usuarios|length }} CUENTA{{ '' if usuarios|length == 1 else 'S' }}{% endblock %}
 
 {% block contenido %}
 <div class="contenido">
-  <table class="registro" style="margin-top: 22px;">
-    <thead>
-      <tr>
-        <th style="padding-left: 28px;">NOMBRE</th>
-        <th>ROL</th>
-        <th>ACTIVO</th>
-        <th style="padding-right: 28px;"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in usuarios %}
-      <tr>
-        <td style="padding-left: 28px;">{{ u.nombre }}</td>
-        <td colspan="3" style="padding: 0;">
-          <form method="post" action="{{ url_for('actualizar_usuario', usuario_id=u.id) }}" style="display: flex; gap: 10px; align-items: center; padding: 9px 10px;">
-            <select name="rol" style="border: 1px solid var(--texto); padding: 6px;">
-              {% for r in ['consulta', 'operador', 'administrador'] %}
-              <option value="{{ r }}" {% if u.rol == r %}selected{% endif %}>{{ r }}</option>
-              {% endfor %}
-            </select>
-            <select name="activo" style="border: 1px solid var(--texto); padding: 6px;">
-              <option value="1" {% if u.activo %}selected{% endif %}>Activo</option>
-              <option value="0" {% if not u.activo %}selected{% endif %}>Inactivo</option>
-            </select>
-            <button type="submit" class="boton" style="min-height: auto; padding: 7px 14px;">Guardar</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Rol y estado de cada persona con acceso al sistema. Un Administrador que edita una marca u operación ya cargada no aplica el cambio directo: otro Operador o Administrador tiene que confirmarlo desde Aprobaciones.
+  </p>
+
+  <div style="margin-top: 28px; border-top: 1px solid var(--texto);">
+    {% for u in usuarios %}
+    <form method="post" action="{{ url_for('actualizar_usuario', usuario_id=u.id) }}"
+          style="display: flex; align-items: center; gap: 28px; flex-wrap: wrap; padding: 20px 0; border-bottom: 1px solid var(--borde-suave);">
+      <div style="flex: 1 1 200px; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">{{ u.nombre }}</div>
+        <div class="sub mono">{{ u.id }}</div>
+      </div>
+
+      <label style="margin: 0; flex: 0 0 auto;">
+        <span class="etiqueta" style="display: block; margin-bottom: 6px;">ROL</span>
+        <select name="rol" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 160px;">
+          {% for r in ['consulta', 'operador', 'administrador'] %}
+          <option value="{{ r }}" {% if u.rol == r %}selected{% endif %}>{{ {'consulta': 'Consulta', 'operador': 'Operador', 'administrador': 'Administrador'}.get(r, r) }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label style="margin: 0; flex: 0 0 auto;">
+        <span class="etiqueta" style="display: block; margin-bottom: 6px;">ESTADO</span>
+        <select name="activo" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 130px;">
+          <option value="1" {% if u.activo %}selected{% endif %}>Activo</option>
+          <option value="0" {% if not u.activo %}selected{% endif %}>Inactivo</option>
+        </select>
+      </label>
+
+      <div style="flex: 0 0 auto; align-self: flex-end;">
+        <button type="submit" class="boton boton-primario" style="min-height: auto; padding: 9px 20px;">Guardar</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="sub" style="padding: 20px 0;">Todavía no hay cuentas registradas.</p>
+    {% endfor %}
+  </div>
 </div>
 {% endblock %}

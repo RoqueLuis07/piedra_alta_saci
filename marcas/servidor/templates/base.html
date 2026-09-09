@@ -102,7 +102,10 @@
     <div>
       <a class="nav-item {{ 'activo' if activo == 'inicio' }}" href="{{ url_for('inicio') }}">Inicio</a>
       <a class="nav-item {{ 'activo' if activo == 'buscar' }}" href="{{ url_for('buscar') }}">Buscar marcas</a>
-      <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}">Aprobaciones</a>
+      <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" style="display: flex; align-items: center; justify-content: space-between;">
+        <span>Aprobaciones</span>
+        {% if pendientes_nav %}<span class="mono" style="background: var(--dorado); color: var(--verde-mas-oscuro, #163823); font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.5;">{{ pendientes_nav }}</span>{% endif %}
+      </a>
       {% if perfil and perfil.rol == 'administrador' %}
       <a class="nav-item {{ 'activo' if activo == 'panel' }}" href="{{ url_for('panel') }}">Usuarios</a>
       {% endif %}

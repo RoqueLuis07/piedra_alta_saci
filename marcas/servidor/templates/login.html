@@ -6,35 +6,102 @@
   <title>Ingresar — Piedra Alta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    :root { --verde-oscuro:#1F4D34; --dorado:#F2C230; --fondo:#FAFAF7; --texto:#14181A; --texto-secundario:#5B6560; }
+    :root {
+      --verde-oscuro: #1F4D34;
+      --verde-mas-oscuro: #163823;
+      --verde-claro: #7FAE6B;
+      --dorado: #F2C230;
+      --fondo: #FAFAF7;
+      --texto: #14181A;
+      --texto-secundario: #5B6560;
+    }
     * { box-sizing: border-box; border-radius: 0 !important; }
     html, body { margin: 0; height: 100%; background: var(--fondo); font-family: 'Public Sans', system-ui, sans-serif; color: var(--texto); }
-    .envoltorio { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .panel { width: 100%; max-width: 380px; border: 1px solid var(--texto); background: #fff; padding: 32px; }
-    .logo { width: 30px; height: 30px; border: 1.5px solid var(--dorado); display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 700; color: var(--verde-oscuro); margin-bottom: 14px; }
-    h1 { font-family: 'Source Serif 4', serif; font-size: 22px; font-weight: 600; margin: 0 0 4px; }
-    .sub { font-size: 12px; letter-spacing: 0.1em; color: var(--texto-secundario); text-transform: uppercase; margin-bottom: 26px; }
-    label { display: block; margin-bottom: 16px; font-size: 12px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
-    input { width: 100%; border: 1px solid var(--texto); padding: 10px; font-size: 14px; margin-top: 6px; font-family: inherit; }
-    button { width: 100%; background: var(--verde-oscuro); color: var(--fondo); border: 1px solid var(--verde-oscuro); padding: 12px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 6px; }
-    button:hover { background: #7FAE6B; border-color: #7FAE6B; color: var(--texto); }
-    .error { color: #a63244; font-size: 13px; margin-bottom: 16px; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+
+    .pantalla { min-height: 100vh; display: flex; }
+
+    /* Panel de marca -- izquierda, oculto en mobile */
+    .marca {
+      flex: 1 1 46%;
+      background: linear-gradient(160deg, var(--verde-oscuro) 0%, var(--verde-mas-oscuro) 100%);
+      color: var(--fondo);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 56px 56px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .marca::before {
+      content: "";
+      position: absolute;
+      right: -120px;
+      bottom: -160px;
+      width: 420px;
+      height: 420px;
+      border: 1px solid rgba(242,194,48,0.18);
+    }
+    .marca::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      bottom: -100px;
+      width: 300px;
+      height: 300px;
+      border: 1px solid rgba(242,194,48,0.28);
+    }
+    .marca-emblema { width: 52px; height: 52px; border: 1.5px solid var(--dorado); display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', serif; font-size: 26px; font-weight: 700; color: var(--dorado); }
+    .marca-nombre { font-family: 'Source Serif 4', serif; font-size: 20px; font-weight: 700; letter-spacing: 0.06em; margin-top: 18px; }
+    .marca-sub { font-size: 10.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.62); margin-top: 4px; }
+    .marca-frase { position: relative; font-family: 'Source Serif 4', serif; font-size: 27px; font-weight: 600; line-height: 1.32; max-width: 20ch; letter-spacing: -0.01em; }
+    .marca-pie { position: relative; font-size: 11.5px; letter-spacing: 0.04em; color: rgba(250,250,247,0.6); line-height: 1.7; border-top: 1px solid rgba(250,250,247,0.22); padding-top: 16px; }
+
+    /* Panel de formulario -- derecha */
+    .form-lado { flex: 1 1 54%; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .form-panel { width: 100%; max-width: 360px; }
+    .form-etiqueta { font-size: 10.5px; letter-spacing: 0.2em; color: var(--texto-secundario); text-transform: uppercase; margin-bottom: 10px; }
+    .form-panel h1 { font-family: 'Source Serif 4', serif; font-size: 26px; font-weight: 600; margin: 0 0 30px; letter-spacing: -0.01em; }
+    label { display: block; margin-bottom: 18px; font-size: 12px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
+    input { width: 100%; border: 1px solid var(--texto); background: #fff; padding: 11px 12px; font-size: 14px; margin-top: 7px; font-family: inherit; transition: border-color .15s; }
+    input:focus { outline: none; border-color: var(--verde-oscuro); border-width: 1.5px; }
+    button { width: 100%; background: var(--verde-oscuro); color: var(--fondo); border: 1px solid var(--verde-oscuro); padding: 13px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; transition: background .15s, border-color .15s, color .15s; }
+    button:hover { background: var(--verde-claro); border-color: var(--verde-claro); color: var(--texto); }
+    .error { border-left: 3px solid #a63244; background: #FBEFEF; color: #a63244; font-size: 13px; padding: 10px 12px; margin-bottom: 20px; }
+    .recuperar { display: block; text-align: right; margin-top: 12px; font-size: 12px; color: var(--texto-secundario); text-decoration: none; }
+    .recuperar:hover { color: var(--verde-oscuro); text-decoration: underline; }
+
+    @media (max-width: 860px) {
+      .marca { display: none; }
+      .form-lado { flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
-  <div class="envoltorio">
-    <div class="panel">
-      <div class="logo">P</div>
-      <h1>Piedra Alta</h1>
-      <div class="sub">Registro de marcas</div>
-      {% if error %}<div class="error">{{ error }}</div>{% endif %}
-      <form method="post" action="{{ url_for('login_post') }}">
-        <label>Usuario (email)<input type="email" name="email" required autofocus></label>
-        <label>Contraseña<input type="password" name="contrasena" required></label>
-        <button type="submit">Ingresar</button>
-      </form>
+  <div class="pantalla">
+    <aside class="marca">
+      <div>
+        <div class="marca-emblema">P</div>
+        <div class="marca-nombre">PIEDRA ALTA</div>
+        <div class="marca-sub">S.A.C.I. · PARAGUAY</div>
+      </div>
+      <p class="marca-frase">Registro de marcas de ganado, ordenado y trazable.</p>
+      <div class="marca-pie mono">SISTEMA INTERNO &middot; ACCESO RESTRINGIDO<br>Cada operación queda asociada a la persona que la realiza.</div>
+    </aside>
+    <div class="form-lado">
+      <div class="form-panel">
+        <div class="form-etiqueta">Registro de marcas</div>
+        <h1>Ingresar</h1>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="post" action="{{ url_for('login_post') }}">
+          <label>Usuario (email)<input type="email" name="email" required autofocus></label>
+          <label>Contraseña<input type="password" name="contrasena" required></label>
+          <button type="submit">Ingresar</button>
+        </form>
+        <a class="recuperar" href="{{ url_for('recuperar') }}">¿Olvidaste tu contraseña?</a>
+      </div>
     </div>
   </div>
 </body>

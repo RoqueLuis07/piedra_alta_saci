@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recuperar contraseña — Piedra Alta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --verde-oscuro:#1F4D34; --dorado:#F2C230; --fondo:#FAFAF7; --texto:#14181A; --texto-secundario:#5B6560; }
+    * { box-sizing: border-box; border-radius: 0 !important; }
+    html, body { margin: 0; height: 100%; background: var(--fondo); font-family: 'Public Sans', system-ui, sans-serif; color: var(--texto); }
+    .envoltorio { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .panel { width: 100%; max-width: 380px; border: 1px solid var(--texto); background: #fff; padding: 32px; }
+    .logo { width: 30px; height: 30px; border: 1.5px solid var(--dorado); display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', serif; font-size: 16px; font-weight: 700; color: var(--verde-oscuro); margin-bottom: 14px; }
+    h1 { font-family: 'Source Serif 4', serif; font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+    .sub { font-size: 12px; letter-spacing: 0.1em; color: var(--texto-secundario); text-transform: uppercase; margin-bottom: 26px; }
+    p.info { font-size: 13px; line-height: 1.6; color: var(--texto-secundario); margin-bottom: 20px; }
+    label { display: block; margin-bottom: 16px; font-size: 12px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
+    input { width: 100%; border: 1px solid var(--texto); padding: 10px; font-size: 14px; margin-top: 6px; font-family: inherit; }
+    button { width: 100%; background: var(--verde-oscuro); color: var(--fondo); border: 1px solid var(--verde-oscuro); padding: 12px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 6px; transition: background .15s, border-color .15s, color .15s; }
+    button:hover { background: #7FAE6B; border-color: #7FAE6B; color: var(--texto); }
+    .error { color: #a63244; font-size: 13px; margin-bottom: 16px; }
+    .volver { display: block; text-align: center; margin-top: 16px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="envoltorio">
+    <div class="panel">
+      <div class="logo">P</div>
+      <h1>Recuperar contraseña</h1>
+      <div class="sub">Registro de marcas</div>
+      {% if error %}<div class="error">{{ error }}</div>{% endif %}
+      {% if enviado %}
+      <p class="info">Si el email corresponde a una cuenta activa, te enviamos un correo con instrucciones para elegir una nueva contraseña.</p>
+      {% else %}
+      <p class="info">Ingresá el email de tu cuenta y te enviamos un enlace para elegir una nueva contraseña.</p>
+      <form method="post" action="{{ url_for('recuperar_post') }}">
+        <label>Email<input type="email" name="email" required autofocus></label>
+        <button type="submit">Enviar enlace</button>
+      </form>
+      {% endif %}
+      <a class="volver" href="{{ url_for('login') }}">Volver a ingresar</a>
+    </div>
+  </div>
+</body>
+</html>
