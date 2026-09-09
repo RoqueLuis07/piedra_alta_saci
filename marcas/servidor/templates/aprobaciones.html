@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block titulo %}Aprobaciones{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · CAMBIOS PENDIENTES{% endblock %}
+{% block titulo_pagina %}Aprobaciones{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p class="sub" style="max-width: 62ch; margin-top: 22px;">
+    Modificaciones propuestas por un Administrador sobre un registro ya cargado. Quedan acá hasta que otra persona
+    (nunca quien las propuso) las apruebe o las rechace.
+  </p>
+
+  {% for c in cambios %}
+  <div style="margin-top: 22px; border: 1px solid var(--texto); background: var(--superficie); padding: 18px;">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+      <div>
+        <div class="etiqueta">{{ c.tabla|upper }}</div>
+        <div class="mono" style="font-size: 17px; font-weight: 500; margin-top: 4px;">{{ c.referencia }}</div>
+      </div>
+      <div class="mono sub">Propuesto {{ c.propuesto_en }}</div>
+    </div>
+
+    <div style="margin-top: 14px; border-top: 1px solid var(--borde-fina); padding-top: 12px;">
+      {% for campo, valor in c.cambios.items() %}
+      <div class="campo-fila">
+        <div class="campo-etiqueta">{{ campo }}</div>
+        <div class="campo-valor">
+          <span class="sub" style="text-decoration: line-through;">{{ c.valores_anteriores.get(campo, '—') }}</span>
+          &rarr; <strong>{{ valor }}</strong>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="{{ url_for('resolver_cambio', cambio_id=c.id) }}" style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center;">
+      <input type="text" name="motivo" placeholder="Motivo (solo si rechazás)" style="flex: 1 1 240px; min-width: 0;">
+      <button type="submit" name="decision" value="aprobado" class="boton boton-primario">Aprobar</button>
+      <button type="submit" name="decision" value="rechazado" class="boton">Rechazar</button>
+    </form>
+  </div>
+  {% else %}
+  <p class="sub" style="margin-top: 30px;">No hay cambios pendientes de aprobación.</p>
+  {% endfor %}
+</div>
+{% endblock %}

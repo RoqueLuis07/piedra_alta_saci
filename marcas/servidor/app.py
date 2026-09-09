@@ -20,7 +20,15 @@ from marcas.servidor.auth import (
     requiere_rol,
     requiere_sesion,
 )
-from marcas.servidor.consultas import buscar_marcas, ficha_marca, url_imagen
+from marcas.servidor.consultas import (
+    buscar_marcas,
+    cambios_pendientes_detalle,
+    estadisticas,
+    ficha_marca,
+    marcas_a_revisar,
+    ultimos_asientos,
+    url_imagen,
+)
 from marcas.servidor.supa import cliente_anonimo
 
 
@@ -36,7 +44,7 @@ def crear_app() -> Flask:
     @app.get("/login")
     def login():
         if session.get("access_token"):
-            return redirect(url_for("buscar"))
+            return redirect(url_for("inicio"))
         return render_template("login.html", error=None)
 
     @app.post("/login")
@@ -55,7 +63,7 @@ def crear_app() -> Flask:
             resultado.user.id,
             resultado.user.email,
         )
-        return redirect(url_for("buscar"))
+        return redirect(url_for("inicio"))
 
     @app.post("/logout")
     def logout():
@@ -68,10 +76,25 @@ def crear_app() -> Flask:
 
     @app.get("/")
     @requiere_sesion
+    def inicio():
+        cliente = cliente_actual()
+        return render_template(
+            "inicio.html",
+            activo="inicio",
+            perfil=perfil_actual(),
+            stats=estadisticas(cliente),
+            asientos=ultimos_asientos(cliente),
+            a_revisar=marcas_a_revisar(cliente),
+        )
+
+    @app.get("/buscar")
+    @requiere_sesion
     def buscar():
         cliente = cliente_actual()
         texto = request.args.get("q") or None
         resultados = buscar_marcas(cliente, texto)
+        for fila in resultados:
+            fila["imagen_url"] = url_imagen(cliente, fila.get("archivo_png"))
         codigo_visto = request.args.get("ver")
         ficha = ficha_marca(cliente, codigo_visto) if codigo_visto else None
         if ficha:
@@ -80,43 +103,26 @@ def crear_app() -> Flask:
                 acompanante["imagen_url"] = url_imagen(cliente, acompanante.get("archivo_png"))
         return render_template(
             "buscar.html",
+            activo="buscar",
             resultados=resultados,
             texto=texto or "",
             ficha=ficha,
             perfil=perfil_actual(),
         )
 
-    @app.get("/panel")
+    @app.get("/aprobaciones")
     @requiere_sesion
-    @requiere_rol("administrador")
-    def panel():
+    @requiere_rol("administrador", "operador")
+    def aprobaciones():
         cliente = cliente_actual()
-        usuarios = cliente.table("perfiles").select("*").order("creado_en").execute().data
-        cambios = (
-            cliente.table("cambios_pendientes")
-            .select("*")
-            .eq("estado", "pendiente")
-            .order("propuesto_en")
-            .execute()
-            .data
+        return render_template(
+            "aprobaciones.html",
+            activo="aprobaciones",
+            cambios=cambios_pendientes_detalle(cliente),
+            perfil=perfil_actual(),
         )
-        return render_template("panel.html", usuarios=usuarios, cambios=cambios)
 
-    @app.post("/panel/usuarios/<usuario_id>")
-    @requiere_sesion
-    @requiere_rol("administrador")
-    def actualizar_usuario(usuario_id: str):
-        cliente = cliente_actual()
-        campos = {}
-        if request.form.get("rol"):
-            campos["rol"] = request.form["rol"]
-        if "activo" in request.form:
-            campos["activo"] = request.form["activo"] == "1"
-        if campos:
-            cliente.table("perfiles").update(campos).eq("id", usuario_id).execute()
-        return redirect(url_for("panel"))
-
-    @app.post("/panel/cambios/<int:cambio_id>")
+    @app.post("/aprobaciones/<int:cambio_id>")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def resolver_cambio(cambio_id: int):
@@ -130,6 +136,30 @@ def crear_app() -> Flask:
             ).execute()
         except Exception as exc:
             return f"No se pudo resolver el cambio: {exc}", 400
+        return redirect(url_for("aprobaciones"))
+
+    @app.get("/panel")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def panel():
+        cliente = cliente_actual()
+        usuarios = cliente.table("perfiles").select("*").order("creado_en").execute().data
+        return render_template(
+            "panel.html", activo="panel", usuarios=usuarios, perfil=perfil_actual()
+        )
+
+    @app.post("/panel/usuarios/<usuario_id>")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def actualizar_usuario(usuario_id: str):
+        cliente = cliente_actual()
+        campos = {}
+        if request.form.get("rol"):
+            campos["rol"] = request.form["rol"]
+        if "activo" in request.form:
+            campos["activo"] = request.form["activo"] == "1"
+        if campos:
+            cliente.table("perfiles").update(campos).eq("id", usuario_id).execute()
         return redirect(url_for("panel"))
 
     return app

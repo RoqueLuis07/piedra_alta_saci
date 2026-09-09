@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}Inicio{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · RESUMEN OPERATIVO{% endblock %}
+{% block titulo_pagina %}Inicio{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Estado del registro al cierre de la última carga. Los totales corresponden a formularios de origen procesados.
+  </p>
+
+  <div style="margin-top: 30px; border-top: 1px solid var(--texto);">
+    <div style="display: flex; align-items: baseline; gap: 28px; padding: 22px 0 20px; border-bottom: 1px solid var(--borde-suave); flex-wrap: wrap;">
+      <div style="font-family: 'Source Serif 4', serif; font-size: 56px; font-weight: 600; line-height: 0.95; letter-spacing: -0.02em; min-width: 140px;">{{ stats.total }}</div>
+      <div style="flex: 1 1 260px; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">Marcas cargadas en el registro</div>
+        <div class="sub" style="max-width: 54ch;">Formularios de origen digitalizados y catalogados hasta el momento.</div>
+      </div>
+    </div>
+    <div style="display: flex; align-items: baseline; gap: 28px; padding: 22px 0 20px; border-bottom: 1px solid var(--borde-suave); flex-wrap: wrap;">
+      <div style="font-family: 'Source Serif 4', serif; font-size: 56px; font-weight: 600; line-height: 0.95; letter-spacing: -0.02em; min-width: 140px;">{{ stats.a_revisar }}</div>
+      <div style="flex: 1 1 260px; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">Pendientes de revisión documental</div>
+        <div class="sub" style="max-width: 54ch;">Marcas que el pipeline marcó con algún motivo para revisar antes de darlas por buenas.</div>
+      </div>
+    </div>
+    <div style="display: flex; align-items: baseline; gap: 28px; padding: 22px 0 20px; border-bottom: 1px solid var(--borde-suave); flex-wrap: wrap;">
+      <div style="font-family: 'Source Serif 4', serif; font-size: 56px; font-weight: 600; line-height: 0.95; letter-spacing: -0.02em; min-width: 140px;">{{ stats.pendientes }}</div>
+      <div style="flex: 1 1 260px; min-width: 0;">
+        <div style="font-size: 15px; font-weight: 600;">Cambios pendientes de aprobación</div>
+        <div class="sub" style="max-width: 54ch;">Modificaciones propuestas que esperan que alguien más las confirme.</div>
+      </div>
+      <div><a href="{{ url_for('aprobaciones') }}">Ver cola &rarr;</a></div>
+    </div>
+  </div>
+
+  <div style="margin-top: 40px; display: flex; gap: 0; align-items: stretch; flex-wrap: wrap;" class="buscar-cols">
+    <section style="flex: 1 1 420px; min-width: 0; padding-right: 32px;">
+      <h2 class="subtitulo">Últimos formularios cargados</h2>
+      {% for a in asientos %}
+      <div style="display: flex; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--borde-fina); font-size: 13px; align-items: baseline;">
+        <span class="mono" style="font-size: 11.5px; color: var(--texto-secundario); flex: 0 0 84px;">{{ a.fecha or '—' }}</span>
+        <span class="mono" style="font-size: 11.5px; flex: 0 0 100px;">{{ a.numero_guia or '—' }}</span>
+        <span style="flex: 1 1 auto; min-width: 0; line-height: 1.5;">{{ a.vendedor_nombre or 'Vendedor no identificado' }}</span>
+      </div>
+      {% else %}
+      <p class="sub">Sin formularios cargados todavía.</p>
+      {% endfor %}
+    </section>
+    <section style="flex: 1 1 280px; min-width: 0; border-left: 1px solid var(--borde-suave); padding-left: 32px;">
+      <h2 class="subtitulo">Marcas para revisar</h2>
+      {% for m in a_revisar %}
+      <div style="padding: 11px 0; border-bottom: 1px solid var(--borde-fina);">
+        <div style="display: flex; justify-content: space-between; gap: 12px; align-items: baseline;">
+          <a class="mono" style="font-size: 12px; font-weight: 500;" href="{{ url_for('buscar', ver=m.codigo) }}">{{ m.codigo }}</a>
+          <span class="estado estado-revisar">REVISAR</span>
+        </div>
+        <div class="sub" style="line-height: 1.5;">{{ m.motivo_calidad or 'Sin motivo registrado.' }}</div>
+      </div>
+      {% else %}
+      <p class="sub">Ninguna por ahora.</p>
+      {% endfor %}
+    </section>
+  </div>
+</div>
+{% endblock %}

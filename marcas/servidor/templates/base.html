@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Registro de marcas{% endblock %} — Piedra Alta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --verde-oscuro: #1F4D34;
+    --verde-claro: #7FAE6B;
+    --dorado: #F2C230;
+    --fondo: #FAFAF7;
+    --texto: #14181A;
+    --texto-secundario: #5B6560;
+    --borde-suave: #D8D8D0;
+    --borde-fina: #E4E4DC;
+    --superficie: #FFFFFF;
+  }
+  * { box-sizing: border-box; border-radius: 0 !important; }
+  html, body { margin: 0; padding: 0; background: var(--fondo); font-family: 'Public Sans', system-ui, sans-serif; color: var(--texto); -webkit-font-smoothing: antialiased; }
+  a { color: var(--verde-oscuro); text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: var(--verde-claro); }
+  input, select, button { font-family: inherit; border-radius: 0; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  .shell { display: flex; align-items: stretch; min-height: 100vh; }
+
+  .nav { flex: 0 0 236px; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; }
+  .nav-brand { padding: 22px 20px 18px; border-bottom: 1px solid rgba(250,250,247,0.22); display: flex; align-items: center; gap: 10px; }
+  .nav-logo { width: 26px; height: 26px; border: 1.5px solid var(--dorado); display: flex; align-items: center; justify-content: center; font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 700; color: var(--dorado); flex-shrink: 0; }
+  .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; line-height: 1.1; }
+  .nav-sub { font-size: 9px; letter-spacing: 0.18em; color: rgba(250,250,247,0.62); margin-top: 2px; }
+  .nav-seccion { padding: 18px 20px 8px; font-size: 9.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.55); }
+  .nav-item { display: block; width: 100%; text-align: left; background: transparent; color: rgba(250,250,247,0.88); border: 0; border-left: 3px solid transparent; padding: 11px 20px; font-size: 13.5px; letter-spacing: 0.02em; cursor: pointer; text-decoration: none; box-sizing: border-box; }
+  .nav-item:hover { background: rgba(127,174,107,0.28); color: rgba(250,250,247,0.95); }
+  .nav-item.activo { background: var(--verde-claro); color: var(--texto); border-left-color: var(--dorado); font-weight: 600; }
+  .nav-pie { margin-top: auto; padding: 16px 20px; border-top: 1px solid rgba(250,250,247,0.22); font-size: 11px; line-height: 1.6; color: rgba(250,250,247,0.72); }
+  .nav-pie button { background: transparent; border: 1px solid rgba(250,250,247,0.4); color: inherit; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-top: 8px; }
+  .nav-pie button:hover { border-color: var(--dorado); color: var(--dorado); }
+
+  .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .encabezado { border-bottom: 1px solid var(--texto); padding: 20px 28px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .migaja { font-size: 9.5px; letter-spacing: 0.2em; color: var(--texto-secundario); margin-bottom: 6px; }
+  h1.titulo { margin: 0; font-family: 'Source Serif 4', serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+  .meta-encabezado { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--texto-secundario); text-align: right; line-height: 1.7; }
+  .contenido { padding: 0 28px 48px; }
+
+  .etiqueta { font-size: 9.5px; letter-spacing: 0.16em; color: var(--texto-secundario); text-transform: uppercase; }
+  h2.subtitulo { font-family: 'Source Serif 4', serif; font-size: 17px; font-weight: 600; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--texto); }
+
+  table.registro { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.registro thead tr { background: var(--verde-oscuro); color: var(--fondo); }
+  table.registro th { text-align: left; font-weight: 600; font-size: 9.5px; letter-spacing: 0.14em; padding: 8px 10px; }
+  table.registro td { padding: 9px 10px; vertical-align: top; border-bottom: 1px solid var(--borde-fina); }
+  table.registro tr.seleccionada { background: var(--verde-oscuro); color: var(--fondo); }
+  table.registro tr.seleccionada td { border-bottom-color: var(--verde-oscuro); }
+  table.registro tr.seleccionada .sub { color: rgba(250,250,247,0.72) !important; }
+  table.registro tbody tr:hover:not(.seleccionada) { background: #F0F2EA; cursor: pointer; }
+  .sub { font-size: 11.5px; color: var(--texto-secundario); margin-top: 2px; }
+
+  .estado { display: inline-block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 6px; white-space: nowrap; }
+  .estado-activa { color: #3F6B2E; }
+  .estado-revisar { border: 1px solid var(--verde-claro); color: #3F6B2E; }
+  .estado-baja { border-bottom: 2px solid var(--dorado); color: #7A6410; }
+
+  .boton { border: 1px solid var(--texto); background: transparent; color: var(--texto); padding: 11px 16px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; min-height: 44px; }
+  .boton:hover { border-color: var(--verde-claro); color: #3F6B2E; }
+  .boton-primario { background: var(--verde-oscuro); border-color: var(--verde-oscuro); color: var(--fondo); }
+  .boton-primario:hover { background: var(--verde-claro); border-color: var(--verde-claro); color: var(--texto); }
+
+  .campo-fila { display: flex; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--borde-fina); align-items: baseline; }
+  .campo-etiqueta { flex: 0 0 118px; font-size: 11px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
+  .campo-valor { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.5; }
+
+  input[type=text], input[type=search] { border: 1px solid var(--texto); background: var(--superficie); padding: 9px 10px; font-size: 13.5px; font-family: 'IBM Plex Mono', monospace; }
+
+  @media (max-width: 760px) {
+    .shell { flex-direction: column; }
+    .nav { width: 100%; flex-direction: row; flex-wrap: wrap; }
+    .nav-brand, .nav-seccion, .nav-pie { display: none; }
+    .nav-item { flex: 1 1 auto; text-align: center; border-left: 0; border-top: 3px solid transparent; }
+    .nav-item.activo { border-top-color: var(--dorado); }
+    .ficha-panel { border-left: 0 !important; border-top: 1px solid var(--texto); max-width: none !important; }
+    .buscar-cols { flex-direction: column; }
+  }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<div class="shell">
+  <nav class="nav">
+    <div class="nav-brand">
+      <div class="nav-logo">P</div>
+      <div>
+        <div class="nav-titulo">PIEDRA ALTA</div>
+        <div class="nav-sub">S.A.C.I. · PARAGUAY</div>
+      </div>
+    </div>
+    <div class="nav-seccion">REGISTRO DE MARCAS</div>
+    <div>
+      <a class="nav-item {{ 'activo' if activo == 'inicio' }}" href="{{ url_for('inicio') }}">Inicio</a>
+      <a class="nav-item {{ 'activo' if activo == 'buscar' }}" href="{{ url_for('buscar') }}">Buscar marcas</a>
+      <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}">Aprobaciones</a>
+      {% if perfil and perfil.rol == 'administrador' %}
+      <a class="nav-item {{ 'activo' if activo == 'panel' }}" href="{{ url_for('panel') }}">Usuarios</a>
+      {% endif %}
+    </div>
+    <div class="nav-pie">
+      <div class="mono">SESIÓN · {{ perfil.nombre if perfil else '' }}</div>
+      <div class="mono" style="color: rgba(250,250,247,0.5)">{{ (perfil.rol if perfil else '')|upper }}</div>
+      <form method="post" action="{{ url_for('logout') }}"><button type="submit">Salir</button></form>
+    </div>
+  </nav>
+  <main class="main">
+    <header class="encabezado">
+      <div>
+        <div class="migaja">{% block migaja %}{% endblock %}</div>
+        <h1 class="titulo">{% block titulo_pagina %}{% endblock %}</h1>
+      </div>
+      <div class="meta-encabezado">{% block meta_encabezado %}{% endblock %}</div>
+    </header>
+    {% block contenido %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

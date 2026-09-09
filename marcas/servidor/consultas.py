@@ -72,6 +72,77 @@ def ficha_marca(cliente: Client, codigo: str) -> dict | None:
     return {"marca": marca, "operacion": operacion, "acompanantes": acompanantes}
 
 
+def estadisticas(cliente: Client) -> dict:
+    total = cliente.table("marcas").select("id", count="exact").execute().count or 0
+    a_revisar = (
+        cliente.table("marcas").select("id", count="exact").eq("estado", "revisar").execute().count
+        or 0
+    )
+    pendientes = (
+        cliente.table("cambios_pendientes")
+        .select("id", count="exact")
+        .eq("estado", "pendiente")
+        .execute()
+        .count
+        or 0
+    )
+    return {"total": total, "a_revisar": a_revisar, "pendientes": pendientes}
+
+
+def ultimos_asientos(cliente: Client, limite: int = 6) -> list[dict]:
+    return (
+        cliente.table("operaciones")
+        .select("id, numero_guia, fecha, vendedor_nombre, creado_en")
+        .order("creado_en", desc=True)
+        .limit(limite)
+        .execute()
+        .data
+    )
+
+
+def marcas_a_revisar(cliente: Client, limite: int = 6) -> list[dict]:
+    return (
+        cliente.table("marcas")
+        .select("codigo, motivo_calidad")
+        .eq("estado", "revisar")
+        .order("actualizado_en", desc=True)
+        .limit(limite)
+        .execute()
+        .data
+    )
+
+
+def cambios_pendientes_detalle(cliente: Client) -> list[dict]:
+    """Los cambios en cola de aprobación, con el código de la marca/operación."""
+    cambios = (
+        cliente.table("cambios_pendientes")
+        .select("*")
+        .eq("estado", "pendiente")
+        .order("propuesto_en")
+        .execute()
+        .data
+    )
+    for c in cambios:
+        c["referencia"] = c["fila_id"]
+        if c["tabla"] == "marcas":
+            fila = (
+                cliente.table("marcas").select("codigo").eq("id", c["fila_id"]).maybe_single().execute()
+            )
+            if fila and fila.data:
+                c["referencia"] = fila.data["codigo"]
+        elif c["tabla"] == "operaciones":
+            fila = (
+                cliente.table("operaciones")
+                .select("numero_guia")
+                .eq("id", c["fila_id"])
+                .maybe_single()
+                .execute()
+            )
+            if fila and fila.data:
+                c["referencia"] = fila.data["numero_guia"] or c["fila_id"]
+    return cambios
+
+
 def url_imagen(cliente: Client, ruta: str | None, expira_seg: int = 3600) -> str | None:
     """URL firmada y temporal hacia el bucket privado -- nunca una URL pública fija."""
     if not ruta:

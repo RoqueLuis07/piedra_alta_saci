@@ -1,79 +1,119 @@
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>Buscar — Piedra Alta</title>
-</head>
-<body>
-  <header>
-    <strong>Piedra Alta</strong> — Registro de marcas
-    <span style="float:right;">
-      {{ perfil.nombre }} ({{ perfil.rol }})
-      {% if perfil.rol == 'administrador' %}· <a href="{{ url_for('panel') }}">Panel</a>{% endif %}
-      · <form method="post" action="{{ url_for('logout') }}" style="display:inline"><button type="submit">Salir</button></form>
-    </span>
-  </header>
-  <hr>
+{% extends "base.html" %}
+{% block titulo %}Buscar marcas{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · CONSULTA DE ASIENTOS{% endblock %}
+{% block titulo_pagina %}Buscar marcas{% endblock %}
 
-  <form method="get" action="{{ url_for('buscar') }}">
-    <input type="text" name="q" value="{{ texto }}" placeholder="Código, número de guía, propietario o documento…" style="width:320px;">
-    <button type="submit">Buscar</button>
-  </form>
-
-  <table border="1" cellpadding="6" cellspacing="0" style="margin-top:12px; width:100%;">
-    <thead>
-      <tr><th>Código</th><th>Tipo</th><th>Propietario</th><th>N° de guía</th><th>Estado</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for m in resultados %}
-      <tr {% if ficha and ficha.marca.codigo == m.codigo %}style="background:#eee;"{% endif %}>
-        <td>{{ m.codigo }}</td>
-        <td>{{ m.tipo or '—' }}</td>
-        <td>{{ m.propietarios.nombre if m.propietarios else '—' }}</td>
-        <td>{{ m.operaciones.numero_guia if m.operaciones else '—' }}</td>
-        <td>{{ m.estado }}</td>
-        <td><a href="{{ url_for('buscar', q=texto, ver=m.codigo) }}">Ver ficha</a></td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6">Sin resultados.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {% if ficha %}
-  <hr>
-  <h2>Ficha — {{ ficha.marca.codigo }}</h2>
-  <div style="display:flex; gap:24px;">
-    <div>
-      {% if ficha.marca.imagen_url %}<img src="{{ ficha.marca.imagen_url }}" alt="{{ ficha.marca.codigo }}" width="160">{% endif %}
-      <p><strong>{{ ficha.marca.tipo }}</strong> · estado: {{ ficha.marca.estado }}</p>
+{% block contenido %}
+<div style="padding: 18px 28px 0; border-bottom: 1px solid var(--borde-suave);">
+  <form method="get" action="{{ url_for('buscar') }}" style="display: block; padding-bottom: 16px; max-width: 460px;">
+    <span class="etiqueta" style="display: block; margin-bottom: 6px;">CÓDIGO, PROPIETARIO, N.º DE GUÍA</span>
+    <div style="display: flex; gap: 0;">
+      <input type="text" name="q" value="{{ texto }}" placeholder="Ej. pag_001_F01C01 / Villalba / 90906711" style="flex: 1 1 auto; min-width: 0;">
+      <button type="submit" class="boton boton-primario" style="min-height: auto;">Buscar</button>
     </div>
-    <div>
+  </form>
+</div>
+
+<div style="display: flex; align-items: stretch; flex-wrap: wrap;" class="buscar-cols">
+  <div style="flex: 1 1 560px; min-width: 0;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 14px 28px 10px; gap: 16px;">
+      <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">{{ resultados|length }} ASIENTO{{ '' if resultados|length == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}</div>
+    </div>
+
+    <table class="registro">
+      <thead>
+        <tr>
+          <th style="padding-left: 28px;">MARCA</th>
+          <th>CÓDIGO</th>
+          <th>PROPIETARIO</th>
+          <th>N.º DE GUÍA</th>
+          <th style="padding-right: 28px;">ESTADO</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in resultados %}
+        <tr class="{{ 'seleccionada' if ficha and ficha.marca.codigo == m.codigo }}"
+            onclick="window.location='{{ url_for('buscar', q=texto, ver=m.codigo) }}'">
+          <td style="padding-left: 28px;">
+            {% if m.imagen_url %}
+            <img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="26" height="26" style="object-fit: contain; display: block;">
+            {% else %}
+            <span class="sub">—</span>
+            {% endif %}
+          </td>
+          <td class="mono" style="white-space: nowrap;">{{ m.codigo }}</td>
+          <td>
+            <div style="font-weight: 500;">{{ m.propietarios.nombre if m.propietarios else 'Sin identificar' }}</div>
+            <div class="sub">{{ m.propietarios.documento if m.propietarios else '' }}</div>
+          </td>
+          <td class="mono" style="white-space: nowrap;">
+            <div>{{ m.operaciones.numero_guia if m.operaciones else '—' }}</div>
+            <div class="sub">{{ m.operaciones.fecha if m.operaciones else '' }}</div>
+          </td>
+          <td style="padding-right: 28px;">
+            <span class="estado estado-{{ m.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" style="padding: 20px 28px; color: var(--texto-secundario);">Sin resultados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <aside class="ficha-panel" style="flex: 1 1 348px; min-width: 0; max-width: 420px; border-left: 1px solid var(--texto); background: var(--superficie);">
+    {% if ficha %}
+    <div style="padding: 16px 24px 40px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid var(--texto); padding-bottom: 10px;">
+        <div>
+          <div class="etiqueta">FICHA DE MARCA</div>
+          <div class="mono" style="font-size: 20px; font-weight: 500; margin-top: 4px;">{{ ficha.marca.codigo }}</div>
+        </div>
+        <span class="estado estado-{{ ficha.marca.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(ficha.marca.estado, ficha.marca.estado) }}</span>
+      </div>
+
+      <div style="margin-top: 20px; border: 1px solid var(--texto); padding: 18px; display: flex; gap: 20px; align-items: center; background: var(--superficie);">
+        {% if ficha.marca.imagen_url %}
+        <img src="{{ ficha.marca.imagen_url }}" alt="{{ ficha.marca.codigo }}" width="96" height="96" style="object-fit: contain; flex-shrink: 0;">
+        {% endif %}
+        <div style="min-width: 0;">
+          <div class="etiqueta">MARCA {{ ficha.marca.tipo|upper if ficha.marca.tipo else '' }}</div>
+          <div style="font-family: 'Source Serif 4', serif; font-size: 19px; font-weight: 600; margin-top: 4px; line-height: 1.25;">{{ ficha.marca.descripcion or ficha.marca.codigo }}</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <div class="etiqueta" style="padding-bottom: 8px; border-bottom: 1px solid var(--borde-suave);">MARCAS COMPLEMENTARIAS ({{ ficha.acompanantes|length }})</div>
+        <div style="display: flex; flex-wrap: wrap;">
+          {% for a in ficha.acompanantes %}
+          <div style="flex: 0 0 auto; width: 100px; border-right: 1px solid var(--borde-fina); padding: 12px 8px 10px; text-align: center; overflow: hidden;">
+            {% if a.imagen_url %}<img src="{{ a.imagen_url }}" alt="{{ a.codigo }}" width="44" height="44" style="object-fit: contain;">{% endif %}
+            <div class="mono sub" style="margin-top: 8px; word-break: break-all; line-height: 1.3;">{{ a.codigo }}</div>
+          </div>
+          {% else %}
+          <p class="sub">Ninguna.</p>
+          {% endfor %}
+        </div>
+      </div>
+
       {% if ficha.operacion %}
-      <p>
-        <strong>Formulario de origen</strong><br>
-        N° de guía: {{ ficha.operacion.numero_guia or '—' }}<br>
-        Fecha: {{ ficha.operacion.fecha or '—' }}<br>
-        Vendedor: {{ ficha.operacion.vendedor_nombre or '—' }} ({{ ficha.operacion.vendedor_documento or '—' }})<br>
-        Establecimiento: {{ ficha.operacion.vendedor_establecimiento or '—' }}
-      </p>
+      <div style="margin-top: 24px;">
+        <div style="font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; padding-bottom: 8px; border-bottom: 1px solid var(--texto);">Formulario de origen</div>
+        <div class="campo-fila"><div class="campo-etiqueta">Vendedor</div><div class="campo-valor">{{ ficha.operacion.vendedor_nombre or '—' }}</div></div>
+        <div class="campo-fila"><div class="campo-etiqueta">CI / RUC</div><div class="campo-valor mono">{{ ficha.operacion.vendedor_documento or '—' }}</div></div>
+        <div class="campo-fila"><div class="campo-etiqueta">N.º de guía</div><div class="campo-valor mono">{{ ficha.operacion.numero_guia or '—' }}</div></div>
+        <div class="campo-fila"><div class="campo-etiqueta">Fecha</div><div class="campo-valor mono">{{ ficha.operacion.fecha or '—' }}</div></div>
+        <div class="campo-fila"><div class="campo-etiqueta">Establecimiento</div><div class="campo-valor">{{ ficha.operacion.vendedor_establecimiento or '—' }}</div></div>
+      </div>
       {% else %}
-      <p>Esta marca no tiene un formulario de origen vinculado.</p>
+      <p class="sub" style="margin-top: 20px;">Esta marca no tiene un formulario de origen vinculado.</p>
       {% endif %}
     </div>
-  </div>
-
-  <h3>Marcas que la acompañan ({{ ficha.acompanantes|length }})</h3>
-  <div style="display:flex; gap:12px; flex-wrap:wrap;">
-    {% for a in ficha.acompanantes %}
-    <div style="text-align:center;">
-      {% if a.imagen_url %}<img src="{{ a.imagen_url }}" alt="{{ a.codigo }}" width="80">{% endif %}
-      <div>{{ a.codigo }} ({{ a.tipo }})</div>
-    </div>
     {% else %}
-    <p>Ninguna.</p>
-    {% endfor %}
-  </div>
-  {% endif %}
-</body>
-</html>
+    <div style="padding: 28px 24px; font-size: 13px; line-height: 1.6; color: var(--texto-secundario); border-bottom: 1px solid var(--borde-fina);">
+      Seleccioná un asiento del listado para ver la ficha completa y el formulario de origen.
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
