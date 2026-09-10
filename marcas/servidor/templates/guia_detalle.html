@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block titulo %}Guía {{ operacion.numero_guia or operacion.id }}{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
+{% block titulo_pagina %}Guía {{ operacion.numero_guia or ('#' ~ operacion.id) }}{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('guias') }}">&larr; Volver al listado</a>{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  {% if cambio_pendiente %}
+  <div class="aviso-pendiente">
+    Hay una modificación de esta guía esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en }}).
+    Los datos de abajo son los vigentes hasta que se apruebe en <a href="{{ url_for('aprobaciones') }}">Aprobaciones</a>.
+  </div>
+  {% endif %}
+
+  <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-top: 20px;" class="buscar-cols">
+    <div style="flex: 1 1 480px; min-width: 0;">
+      {% if perfil.rol in ('operador', 'administrador') %}
+      <form method="post" action="{{ url_for('editar_guia', operacion_id=operacion.id) }}">
+        <h2 class="subtitulo">Datos de la guía</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía</label><input type="text" name="numero_guia" value="{{ operacion.numero_guia or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>Fecha</label><input type="text" name="fecha" value="{{ operacion.fecha or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>Tipo de formulario</label><input type="text" name="tipo_formulario" value="{{ operacion.tipo_formulario or '' }}"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Vendedor</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre" value="{{ operacion.vendedor_nombre or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento" value="{{ operacion.vendedor_documento or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento" value="{{ operacion.vendedor_establecimiento or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo" value="{{ operacion.vendedor_establecimiento_codigo or '' }}"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Comprador</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="comprador_nombre" value="{{ operacion.comprador_nombre or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="comprador_documento" value="{{ operacion.comprador_documento or '' }}"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Animales</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 140px;"><label>Cantidad</label><input type="number" name="cantidad_animales" value="{{ operacion.cantidad_animales if operacion.cantidad_animales is not none else '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría</label><input type="text" name="categoria_animales" value="{{ operacion.categoria_animales or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría (original del formulario)</label><input type="text" name="categoria_animales_original" value="{{ operacion.categoria_animales_original or '' }}"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Revisión</h2>
+        <div class="campo-edicion"><label>Notas de revisar (vacío si está todo bien)</label><textarea name="revisar" rows="2">{{ operacion.revisar or '' }}</textarea></div>
+
+        <button type="submit" class="boton boton-primario" style="margin-top: 8px;">Guardar cambios</button>
+        {% if perfil.rol == 'administrador' %}
+        <p class="sub" style="margin-top: 10px;">Como Administrador, esto queda propuesto y necesita que otra persona lo apruebe en Aprobaciones antes de aplicarse.</p>
+        {% endif %}
+      </form>
+      {% else %}
+      <h2 class="subtitulo">Datos de la guía</h2>
+      <div class="campo-fila"><div class="campo-etiqueta">N.º de guía</div><div class="campo-valor mono">{{ operacion.numero_guia or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Fecha</div><div class="campo-valor mono">{{ operacion.fecha or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Vendedor</div><div class="campo-valor">{{ operacion.vendedor_nombre or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">CI / RUC vendedor</div><div class="campo-valor mono">{{ operacion.vendedor_documento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Establecimiento</div><div class="campo-valor">{{ operacion.vendedor_establecimiento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Comprador</div><div class="campo-valor">{{ operacion.comprador_nombre or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Cantidad</div><div class="campo-valor mono">{{ operacion.cantidad_animales if operacion.cantidad_animales is not none else '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Categoría</div><div class="campo-valor">{{ operacion.categoria_animales or '—' }}</div></div>
+      {% endif %}
+    </div>
+
+    <aside style="flex: 1 1 320px; min-width: 0; max-width: 400px;">
+      <h2 class="subtitulo">Marcas de esta guía ({{ marcas|length }})</h2>
+      {% for m in marcas %}
+      <a href="{{ url_for('buscar', ver=m.codigo) }}" style="display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--borde-fina); text-decoration: none; color: inherit;">
+        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="40" height="40" style="object-fit: contain; flex-shrink: 0;">
+        {% else %}<span class="sub" style="width: 40px; text-align: center; flex-shrink: 0;">—</span>{% endif %}
+        <div style="min-width: 0;">
+          <div class="mono" style="font-size: 12.5px;">{{ m.codigo }}</div>
+          <div class="sub">{{ m.tipo|capitalize if m.tipo else '' }}</div>
+        </div>
+        <span class="estado estado-{{ m.estado }}" style="margin-left: auto;">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
+      </a>
+      {% else %}
+      <p class="sub">Esta guía no tiene marcas asociadas.</p>
+      {% endfor %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

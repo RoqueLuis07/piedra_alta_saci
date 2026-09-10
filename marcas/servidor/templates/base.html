@@ -79,6 +79,19 @@
   .campo-valor { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.5; }
 
   input[type=text], input[type=search] { border: 1px solid var(--texto); background: var(--superficie); padding: 9px 10px; font-size: 13.5px; font-family: 'IBM Plex Mono', monospace; }
+  textarea, select, input[type=number], input[type=email] { border: 1px solid var(--texto); background: var(--superficie); padding: 9px 10px; font-size: 13.5px; font-family: 'Public Sans', sans-serif; }
+
+  .campo-edicion { margin-bottom: 14px; }
+  .campo-edicion label { display: block; font-size: 10.5px; letter-spacing: 0.1em; color: var(--texto-secundario); text-transform: uppercase; margin-bottom: 5px; }
+  .campo-edicion input, .campo-edicion select, .campo-edicion textarea { width: 100%; }
+
+  .paginado { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 28px; border-top: 1px solid var(--borde-suave); flex-wrap: wrap; }
+  .paginado .mono { font-size: 11px; color: var(--texto-secundario); }
+  .paginado .enlaces { display: flex; gap: 8px; }
+  .paginado a.boton, .paginado span.boton-inactivo { padding: 7px 14px; font-size: 12px; min-height: auto; }
+  .boton-inactivo { border: 1px solid var(--borde-suave); color: var(--borde-suave); padding: 7px 14px; font-size: 12px; display: inline-block; }
+
+  .aviso-pendiente { border-left: 3px solid var(--dorado); background: #FBF3D9; color: #7A6410; font-size: 12.5px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
 
   @media (max-width: 760px) {
     .shell { flex-direction: column; }
@@ -103,7 +116,8 @@
     <div class="nav-seccion">REGISTRO DE MARCAS</div>
     <div>
       <a class="nav-item {{ 'activo' if activo == 'inicio' }}" href="{{ url_for('inicio') }}">Inicio</a>
-      <a class="nav-item {{ 'activo' if activo == 'buscar' }}" href="{{ url_for('buscar') }}">Buscar marcas</a>
+      <a class="nav-item {{ 'activo' if activo == 'guias' }}" href="{{ url_for('guias') }}">Guías</a>
+      <a class="nav-item {{ 'activo' if activo == 'buscar' }}" href="{{ url_for('buscar') }}">Marcas</a>
       <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" style="display: flex; align-items: center; justify-content: space-between;">
         <span>Aprobaciones</span>
         {% if pendientes_nav %}<span class="mono" style="background: var(--dorado); color: var(--verde-mas-oscuro, #163823); font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.5;">{{ pendientes_nav }}</span>{% endif %}

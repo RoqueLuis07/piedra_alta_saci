@@ -7,16 +7,35 @@ formulario de origen + marcas que la acompañan).
 
 from __future__ import annotations
 
+import time
+
 from supabase import Client
 
 BUCKET_IMAGENES = "marcas-imagenes"
+POR_PAGINA_GUIAS = 40
+POR_PAGINA_MARCAS = 40
+
+# Deben coincidir exactamente con los arrays permitidos dentro de
+# resolver_cambio_pendiente() en la base -- esa función es quien de verdad
+# hace cumplir el límite (defensa en profundidad), esto es sólo para
+# construir los formularios y no ofrecer editar un campo que después la
+# aprobación va a rechazar.
+CAMPOS_MARCA_EDITABLES = ["codigo", "descripcion", "estado", "observaciones", "archivo_png", "archivo_svg"]
+CAMPOS_OPERACION_EDITABLES = [
+    "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento",
+    "vendedor_establecimiento", "vendedor_establecimiento_codigo",
+    "comprador_nombre", "comprador_documento", "cantidad_animales",
+    "categoria_animales", "categoria_animales_original", "tipo_formulario", "revisar",
+]
 
 
-def buscar_marcas(cliente: Client, texto: str | None, limite: int = 50) -> tuple[list[dict], int]:
-    """Los resultados (hasta ``limite``) y el total real de coincidencias."""
+def buscar_marcas(
+    cliente: Client, texto: str | None, pagina: int = 1, por_pagina: int = POR_PAGINA_MARCAS
+) -> tuple[list[dict], int]:
+    """Los resultados de la página pedida y el total real de coincidencias."""
     texto = (texto or "").strip()
     consulta = cliente.table("marcas").select(
-        "id, codigo, tipo, estado, posicion, propietario_id, operacion_id, "
+        "id, codigo, tipo, estado, posicion, propietario_id, operacion_id, archivo_png, "
         "propietarios(nombre, documento), operaciones(numero_guia, fecha)",
         count="exact",
     )
@@ -33,8 +52,83 @@ def buscar_marcas(cliente: Client, texto: str | None, limite: int = 50) -> tuple
             lista = ",".join(str(p["id"]) for p in coincidencias)
             filtro += f",propietario_id.in.({lista})"
         consulta = consulta.or_(filtro)
-    respuesta = consulta.order("codigo").limit(limite).execute()
+    desde = max(0, pagina - 1) * por_pagina
+    respuesta = consulta.order("codigo").range(desde, desde + por_pagina - 1).execute()
     return respuesta.data, (respuesta.count or 0)
+
+
+def listar_operaciones_paginado(
+    cliente: Client, pagina: int = 1, por_pagina: int = POR_PAGINA_GUIAS
+) -> tuple[list[dict], int]:
+    desde = max(0, pagina - 1) * por_pagina
+    respuesta = (
+        cliente.table("operaciones")
+        .select(
+            "id, numero_guia, fecha, vendedor_nombre, comprador_nombre, "
+            "cantidad_animales, categoria_animales, revisar, guia_colisionada",
+            count="exact",
+        )
+        .order("creado_en", desc=True)
+        .range(desde, desde + por_pagina - 1)
+        .execute()
+    )
+    return respuesta.data, (respuesta.count or 0)
+
+
+def obtener_operacion_por_id(cliente: Client, operacion_id: int) -> dict | None:
+    respuesta = cliente.table("operaciones").select("*").eq("id", operacion_id).maybe_single().execute()
+    return respuesta.data if respuesta else None
+
+
+def marcas_de_operacion(cliente: Client, operacion_id: int) -> list[dict]:
+    return (
+        cliente.table("marcas")
+        .select("id, codigo, tipo, posicion, archivo_png, estado")
+        .eq("operacion_id", operacion_id)
+        .order("tipo")
+        .order("posicion")
+        .execute()
+        .data
+    )
+
+
+def proponer_cambio(
+    cliente: Client, tabla: str, fila_id: int, cambios: dict, valores_anteriores: dict, propuesto_por: str
+) -> None:
+    cliente.table("cambios_pendientes").insert(
+        {
+            "tabla": tabla,
+            "fila_id": fila_id,
+            "cambios": cambios,
+            "valores_anteriores": valores_anteriores,
+            "propuesto_por": propuesto_por,
+            "estado": "pendiente",
+        }
+    ).execute()
+
+
+def cambio_pendiente_de(cliente: Client, tabla: str, fila_id: int) -> dict | None:
+    """Si esta fila ya tiene una modificación esperando aprobación, la trae."""
+    respuesta = (
+        cliente.table("cambios_pendientes")
+        .select("*")
+        .eq("tabla", tabla)
+        .eq("fila_id", fila_id)
+        .eq("estado", "pendiente")
+        .maybe_single()
+        .execute()
+    )
+    return respuesta.data if respuesta else None
+
+
+def subir_imagen_marca(cliente: Client, codigo: str, contenido: bytes, extension: str) -> str:
+    """Sube una imagen con nombre nuevo (no pisa la anterior) y devuelve el nombre de archivo."""
+    tipo_contenido = "image/svg+xml" if extension == "svg" else f"image/{extension}"
+    nombre = f"{codigo}_{int(time.time())}.{extension}"
+    cliente.storage.from_(BUCKET_IMAGENES).upload(
+        nombre, contenido, {"content-type": tipo_contenido, "upsert": "true"}
+    )
+    return nombre
 
 
 def ficha_marca(cliente: Client, codigo: str) -> dict | None:
@@ -133,6 +227,12 @@ def cambios_pendientes_detalle(cliente: Client) -> list[dict]:
             )
             if fila and fila.data:
                 c["referencia"] = fila.data["codigo"]
+            for campo_imagen in ("archivo_png", "archivo_svg"):
+                if campo_imagen in c["cambios"]:
+                    c[f"{campo_imagen}_anterior_url"] = url_imagen(
+                        cliente, c["valores_anteriores"].get(campo_imagen)
+                    )
+                    c[f"{campo_imagen}_nueva_url"] = url_imagen(cliente, c["cambios"].get(campo_imagen))
         elif c["tabla"] == "operaciones":
             fila = (
                 cliente.table("operaciones")

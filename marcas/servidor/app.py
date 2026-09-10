@@ -21,11 +21,20 @@ from marcas.servidor.auth import (
     requiere_sesion,
 )
 from marcas.servidor.consultas import (
+    CAMPOS_MARCA_EDITABLES,
+    CAMPOS_OPERACION_EDITABLES,
+    POR_PAGINA_MARCAS,
     buscar_marcas,
+    cambio_pendiente_de,
     cambios_pendientes_detalle,
     estadisticas,
     ficha_marca,
+    listar_operaciones_paginado,
     marcas_a_revisar,
+    marcas_de_operacion,
+    obtener_operacion_por_id,
+    proponer_cambio,
+    subir_imagen_marca,
     ultimos_asientos,
     url_imagen,
 )
@@ -152,24 +161,140 @@ def crear_app() -> Flask:
     def buscar():
         cliente = cliente_actual()
         texto = request.args.get("q") or None
-        resultados, total = buscar_marcas(cliente, texto)
+        pagina = max(1, request.args.get("pagina", 1, type=int))
+        resultados, total = buscar_marcas(cliente, texto, pagina=pagina)
         for fila in resultados:
             fila["imagen_url"] = url_imagen(cliente, fila.get("archivo_png"))
         codigo_visto = request.args.get("ver")
         ficha = ficha_marca(cliente, codigo_visto) if codigo_visto else None
+        cambio_pendiente = None
         if ficha:
             ficha["marca"]["imagen_url"] = url_imagen(cliente, ficha["marca"].get("archivo_png"))
             for acompanante in ficha["acompanantes"]:
                 acompanante["imagen_url"] = url_imagen(cliente, acompanante.get("archivo_png"))
+            cambio_pendiente = cambio_pendiente_de(cliente, "marcas", ficha["marca"]["id"])
         return render_template(
             "buscar.html",
             activo="buscar",
             resultados=resultados,
             total=total,
+            pagina=pagina,
+            por_pagina=POR_PAGINA_MARCAS,
             texto=texto or "",
             ficha=ficha,
+            cambio_pendiente=cambio_pendiente,
             perfil=perfil_actual(),
         )
+
+    @app.post("/marcas/<int:marca_id>")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def editar_marca(marca_id: int):
+        cliente = cliente_actual()
+        perfil = perfil_actual()
+        actual = cliente.table("marcas").select("*").eq("id", marca_id).maybe_single().execute()
+        marca_actual = actual.data if actual else None
+        if not marca_actual:
+            return "Marca no encontrada", 404
+
+        cambios: dict = {}
+        for campo in CAMPOS_MARCA_EDITABLES:
+            if campo in ("archivo_png", "archivo_svg"):
+                continue
+            if campo in request.form:
+                valor = request.form.get(campo, "").strip() or None
+                if campo == "codigo" and not valor:
+                    continue  # el código no puede quedar vacío
+                if valor != marca_actual.get(campo):
+                    cambios[campo] = valor
+
+        for campo, extension in (("nuevo_png", "png"), ("nuevo_svg", "svg")):
+            archivo = request.files.get(campo)
+            if archivo and archivo.filename:
+                nombre = subir_imagen_marca(cliente, marca_actual["codigo"], archivo.read(), extension)
+                cambios[f"archivo_{extension}"] = nombre
+
+        codigo_para_volver = marca_actual["codigo"]
+        if cambios:
+            try:
+                if perfil["rol"] == "operador":
+                    cliente.table("marcas").update(cambios).eq("id", marca_id).execute()
+                    codigo_para_volver = cambios.get("codigo", codigo_para_volver)
+                else:  # administrador -- pasa por modificación supervisada
+                    valores_anteriores = {k: marca_actual.get(k) for k in cambios}
+                    proponer_cambio(cliente, "marcas", marca_id, cambios, valores_anteriores, perfil["id"])
+            except Exception as exc:
+                return f"No se pudo guardar el cambio: {exc}", 400
+        return redirect(url_for("buscar", ver=codigo_para_volver))
+
+    @app.get("/guias")
+    @requiere_sesion
+    def guias():
+        cliente = cliente_actual()
+        pagina = max(1, request.args.get("pagina", 1, type=int))
+        operaciones, total = listar_operaciones_paginado(cliente, pagina=pagina)
+        return render_template(
+            "guias.html",
+            activo="guias",
+            operaciones=operaciones,
+            pagina=pagina,
+            total=total,
+            perfil=perfil_actual(),
+        )
+
+    @app.get("/guias/<int:operacion_id>")
+    @requiere_sesion
+    def ver_guia(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion:
+            return "Guía no encontrada", 404
+        marcas = marcas_de_operacion(cliente, operacion_id)
+        for m in marcas:
+            m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
+        cambio_pendiente = cambio_pendiente_de(cliente, "operaciones", operacion_id)
+        return render_template(
+            "guia_detalle.html",
+            activo="guias",
+            operacion=operacion,
+            marcas=marcas,
+            cambio_pendiente=cambio_pendiente,
+            perfil=perfil_actual(),
+        )
+
+    @app.post("/guias/<int:operacion_id>")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def editar_guia(operacion_id: int):
+        cliente = cliente_actual()
+        perfil = perfil_actual()
+        operacion_actual = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion_actual:
+            return "Guía no encontrada", 404
+
+        cambios: dict = {}
+        for campo in CAMPOS_OPERACION_EDITABLES:
+            if campo not in request.form:
+                continue
+            valor = request.form.get(campo, "").strip() or None
+            if campo == "cantidad_animales" and valor is not None:
+                try:
+                    valor = int(valor)
+                except ValueError:
+                    continue
+            if valor != operacion_actual.get(campo):
+                cambios[campo] = valor
+
+        if cambios:
+            try:
+                if perfil["rol"] == "operador":
+                    cliente.table("operaciones").update(cambios).eq("id", operacion_id).execute()
+                else:  # administrador -- pasa por modificación supervisada
+                    valores_anteriores = {k: operacion_actual.get(k) for k in cambios}
+                    proponer_cambio(cliente, "operaciones", operacion_id, cambios, valores_anteriores, perfil["id"])
+            except Exception as exc:
+                return f"No se pudo guardar el cambio: {exc}", 400
+        return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.get("/aprobaciones")
     @requiere_sesion

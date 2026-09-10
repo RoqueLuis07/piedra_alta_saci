@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block titulo %}Guías{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
+{% block titulo_pagina %}Guías{% endblock %}
+{% block meta_encabezado %}{{ total }} GUÍA{{ '' if total == 1 else 'S' }} EN TOTAL{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Todos los formularios de origen cargados. Hacé click en una fila para ver el detalle completo, las marcas de esa guía y editar lo que haga falta.
+  </p>
+
+  <table class="registro" style="margin-top: 20px;">
+    <thead>
+      <tr>
+        <th>FECHA</th>
+        <th>N.º DE GUÍA</th>
+        <th>VENDEDOR</th>
+        <th>COMPRADOR</th>
+        <th>CANTIDAD</th>
+        <th>ESTADO</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in operaciones %}
+      <tr onclick="window.location='{{ url_for('ver_guia', operacion_id=o.id) }}'">
+        <td class="mono" style="white-space: nowrap;">{{ o.fecha or '—' }}</td>
+        <td class="mono" style="white-space: nowrap;">{{ o.numero_guia or '—' }}</td>
+        <td>{{ o.vendedor_nombre or 'Sin identificar' }}</td>
+        <td>{{ o.comprador_nombre or '—' }}</td>
+        <td class="mono">{{ o.cantidad_animales if o.cantidad_animales is not none else '—' }}</td>
+        <td>
+          {% if o.guia_colisionada %}<span class="estado estado-revisar">COLISIONA</span>
+          {% elif o.revisar %}<span class="estado estado-revisar">REVISAR</span>
+          {% else %}<span class="estado estado-activa">AL DÍA</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding: 20px 0; color: var(--texto-secundario);">Todavía no hay guías cargadas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="paginado">
+  <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // 40) + 1 if total else 1 }}</div>
+  <div class="enlaces">
+    {% if pagina > 1 %}
+    <a class="boton" href="{{ url_for('guias', pagina=pagina - 1) }}">&larr; Anteriores 40</a>
+    {% else %}
+    <span class="boton-inactivo">&larr; Anteriores 40</span>
+    {% endif %}
+    {% if pagina * 40 < total %}
+    <a class="boton" href="{{ url_for('guias', pagina=pagina + 1) }}">Siguientes 40 &rarr;</a>
+    {% else %}
+    <span class="boton-inactivo">Siguientes 40 &rarr;</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
