@@ -72,6 +72,13 @@
       <h2 class="subtitulo">Editar esta marca</h2>
       <form method="post" action="{{ url_for('editar_marca', marca_id=ficha.marca.id) }}" enctype="multipart/form-data">
         <div class="campo-edicion"><label>Código</label><input type="text" name="codigo" value="{{ ficha.marca.codigo }}"></div>
+        <div class="campo-edicion">
+          <label>Tipo</label>
+          <select name="tipo">
+            <option value="dominante" {% if ficha.marca.tipo == 'dominante' %}selected{% endif %}>Dominante</option>
+            <option value="complementaria" {% if ficha.marca.tipo == 'complementaria' %}selected{% endif %}>Complementaria</option>
+          </select>
+        </div>
         <div class="campo-edicion"><label>Descripción</label><input type="text" name="descripcion" value="{{ ficha.marca.descripcion or '' }}"></div>
         <div class="campo-edicion">
           <label>Estado</label>

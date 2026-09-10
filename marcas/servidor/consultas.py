@@ -20,7 +20,7 @@ POR_PAGINA_MARCAS = 40
 # hace cumplir el límite (defensa en profundidad), esto es sólo para
 # construir los formularios y no ofrecer editar un campo que después la
 # aprobación va a rechazar.
-CAMPOS_MARCA_EDITABLES = ["codigo", "descripcion", "estado", "observaciones", "archivo_png", "archivo_svg"]
+CAMPOS_MARCA_EDITABLES = ["codigo", "tipo", "descripcion", "estado", "observaciones", "archivo_png", "archivo_svg"]
 CAMPOS_OPERACION_EDITABLES = [
     "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento",
     "vendedor_establecimiento", "vendedor_establecimiento_codigo",
