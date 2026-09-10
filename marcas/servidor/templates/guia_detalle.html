@@ -94,7 +94,7 @@
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
         <div style="font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 600; margin-bottom: 10px;">Agregar marca a esta guía</div>
         <form method="post" action="{{ url_for('agregar_marca_a_guia', operacion_id=operacion.id) }}" enctype="multipart/form-data">
-          <div class="campo-edicion"><label>Código</label><input type="text" name="codigo" required></div>
+          <p class="sub" style="margin: 0 0 12px;">El código (M-00001, M-00002...) se asigna solo.</p>
           <div class="campo-edicion">
             <label>Tipo</label>
             <select name="tipo">

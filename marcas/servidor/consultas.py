@@ -99,11 +99,15 @@ def crear_operacion(cliente: Client, campos: dict, creado_por: str) -> int:
     return respuesta.data[0]["id"]
 
 
-def crear_marca(cliente: Client, campos: dict, creado_por: str) -> int:
-    """Alta de una marca nueva -- no es una edición, así que se aplica directo."""
+def crear_marca(cliente: Client, campos: dict, creado_por: str) -> dict:
+    """Alta de una marca nueva -- no es una edición, así que se aplica directo.
+
+    No se manda ``codigo``: lo asigna la base (secuencial, M-00001, M-00002...)
+    para que nadie tenga que inventarlo ni se puedan pisar dos altas a la vez.
+    """
     datos = {**campos, "creado_por": creado_por}
     respuesta = cliente.table("marcas").insert(datos).execute()
-    return respuesta.data[0]["id"]
+    return respuesta.data[0]
 
 
 def proponer_cambio(

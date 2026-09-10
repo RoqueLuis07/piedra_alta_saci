@@ -358,25 +358,22 @@ def crear_app() -> Flask:
         if not operacion:
             return "Guía no encontrada", 404
 
-        codigo = request.form.get("codigo", "").strip()
-        if not codigo:
-            return "El código de la marca es obligatorio.", 400
-
         campos = {
-            "codigo": codigo,
             "tipo": request.form.get("tipo") or "complementaria",
             "descripcion": request.form.get("descripcion", "").strip() or None,
             "operacion_id": operacion_id,
         }
+        try:
+            nueva = crear_marca(cliente, campos, perfil["id"])
+        except Exception as exc:
+            return f"No se pudo agregar la marca: {exc}", 400
+
         archivo = request.files.get("imagen")
         if archivo and archivo.filename:
             extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
-            campos[f"archivo_{extension}"] = subir_imagen_marca(cliente, codigo, archivo.read(), extension)
+            nombre = subir_imagen_marca(cliente, nueva["codigo"], archivo.read(), extension)
+            cliente.table("marcas").update({f"archivo_{extension}": nombre}).eq("id", nueva["id"]).execute()
 
-        try:
-            crear_marca(cliente, campos, perfil["id"])
-        except Exception as exc:
-            return f"No se pudo agregar la marca: {exc}", 400
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.get("/guias/<int:operacion_id>/imprimir")
