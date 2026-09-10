@@ -2,7 +2,12 @@
 {% block titulo %}Guías{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
 {% block titulo_pagina %}Guías{% endblock %}
-{% block meta_encabezado %}{{ total }} GUÍA{{ '' if total == 1 else 'S' }} EN TOTAL{% endblock %}
+{% block meta_encabezado %}
+{{ total }} GUÍA{{ '' if total == 1 else 'S' }} EN TOTAL
+{% if perfil.rol in ('operador', 'administrador') %}
+&nbsp;·&nbsp;<a href="{{ url_for('nueva_guia') }}">+ Nueva guía</a>
+{% endif %}
+{% endblock %}
 
 {% block contenido %}
 <div class="contenido">

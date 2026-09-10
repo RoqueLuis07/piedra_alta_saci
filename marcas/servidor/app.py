@@ -8,9 +8,14 @@ barrera, es la primera.
 
 from __future__ import annotations
 
+import io
 import os
+import tempfile
+from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, session, url_for
+from flask import Flask, redirect, render_template, request, send_file, session, url_for
+
+from marcas.pdf.guia import completar_guia
 
 from marcas.servidor.auth import (
     cerrar_sesion,
@@ -27,6 +32,9 @@ from marcas.servidor.consultas import (
     buscar_marcas,
     cambio_pendiente_de,
     cambios_pendientes_detalle,
+    crear_marca,
+    crear_operacion,
+    descargar_imagen_marca,
     estadisticas,
     ficha_marca,
     listar_operaciones_paginado,
@@ -242,6 +250,33 @@ def crear_app() -> Flask:
             perfil=perfil_actual(),
         )
 
+    @app.get("/guias/nueva")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def nueva_guia():
+        return render_template("guia_nueva.html", activo="guias", perfil=perfil_actual())
+
+    @app.post("/guias/nueva")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def crear_guia():
+        cliente = cliente_actual()
+        perfil = perfil_actual()
+        campos = {}
+        for campo in CAMPOS_OPERACION_EDITABLES:
+            valor = request.form.get(campo, "").strip() or None
+            if campo == "cantidad_animales" and valor is not None:
+                try:
+                    valor = int(valor)
+                except ValueError:
+                    valor = None
+            campos[campo] = valor
+        try:
+            operacion_id = crear_operacion(cliente, campos, perfil["id"])
+        except Exception as exc:
+            return f"No se pudo crear la guía: {exc}", 400
+        return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
     @app.get("/guias/<int:operacion_id>")
     @requiere_sesion
     def ver_guia(operacion_id: int):
@@ -295,6 +330,105 @@ def crear_app() -> Flask:
             except Exception as exc:
                 return f"No se pudo guardar el cambio: {exc}", 400
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
+    @app.post("/guias/<int:operacion_id>/marcas")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def agregar_marca_a_guia(operacion_id: int):
+        cliente = cliente_actual()
+        perfil = perfil_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion:
+            return "Guía no encontrada", 404
+
+        codigo = request.form.get("codigo", "").strip()
+        if not codigo:
+            return "El código de la marca es obligatorio.", 400
+
+        campos = {
+            "codigo": codigo,
+            "tipo": request.form.get("tipo") or "complementaria",
+            "descripcion": request.form.get("descripcion", "").strip() or None,
+            "operacion_id": operacion_id,
+        }
+        archivo = request.files.get("imagen")
+        if archivo and archivo.filename:
+            extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
+            campos[f"archivo_{extension}"] = subir_imagen_marca(cliente, codigo, archivo.read(), extension)
+
+        try:
+            crear_marca(cliente, campos, perfil["id"])
+        except Exception as exc:
+            return f"No se pudo agregar la marca: {exc}", 400
+        return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
+    @app.get("/guias/<int:operacion_id>/imprimir")
+    @requiere_sesion
+    def imprimir_guia(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion:
+            return "Guía no encontrada", 404
+        marcas = marcas_de_operacion(cliente, operacion_id)
+        for m in marcas:
+            m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
+        return render_template(
+            "guia_imprimir.html",
+            activo="guias",
+            operacion=operacion,
+            marcas=marcas,
+            perfil=perfil_actual(),
+        )
+
+    @app.post("/guias/<int:operacion_id>/imprimir")
+    @requiere_sesion
+    def generar_guia_pdf(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion:
+            return "Guía no encontrada", 404
+
+        archivo_pdf = request.files.get("pdf_guia")
+        if not archivo_pdf or not archivo_pdf.filename:
+            return "Subí el PDF de la guía descargado de SENACSA.", 400
+
+        ids_elegidos = {int(v) for v in request.form.getlist("marca_id")}
+        if not ids_elegidos:
+            return "Seleccioná al menos una marca.", 400
+
+        marcas = [m for m in marcas_de_operacion(cliente, operacion_id) if m["id"] in ids_elegidos]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pdf_entrada = tmp_path / "entrada.pdf"
+            archivo_pdf.save(pdf_entrada)
+
+            rutas_imagenes = []
+            for m in marcas:
+                contenido = descargar_imagen_marca(cliente, m.get("archivo_png"))
+                if not contenido:
+                    continue
+                destino = tmp_path / f"{m['codigo']}.png"
+                destino.write_bytes(contenido)
+                rutas_imagenes.append(destino)
+
+            if not rutas_imagenes:
+                return "Ninguna de las marcas seleccionadas tiene una imagen disponible.", 400
+
+            salida = tmp_path / "salida.pdf"
+            try:
+                completar_guia(pdf_entrada, rutas_imagenes, salida)
+            except Exception as exc:
+                return f"No se pudo generar el PDF: {exc}", 400
+            contenido_pdf = salida.read_bytes()
+
+        nombre_descarga = f"guia_{operacion.get('numero_guia') or operacion_id}.pdf"
+        return send_file(
+            io.BytesIO(contenido_pdf),
+            as_attachment=True,
+            download_name=nombre_descarga,
+            mimetype="application/pdf",
+        )
 
     @app.get("/aprobaciones")
     @requiere_sesion

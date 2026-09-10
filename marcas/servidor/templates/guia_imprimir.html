@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block titulo %}Imprimir guía {{ operacion.numero_guia or operacion.id }}{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · IMPRESIÓN DE GUÍA{% endblock %}
+{% block titulo_pagina %}Imprimir guía {{ operacion.numero_guia or ('#' ~ operacion.id) }}{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('ver_guia', operacion_id=operacion.id) }}">&larr; Volver al detalle</a>{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 66ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Subí el PDF de la Guía de Traslado tal como lo descargás de SENACSA (con su número de orden, código de barras y QR).
+    El sistema coloca la imagen de cada marca que elijas en las casillas libres del anexo, respetando las cuatro copias, y te devuelve el PDF listo para imprimir.
+    No se toca ningún otro dato del formulario oficial.
+  </p>
+
+  {% if operacion.vendedor_nombre or operacion.numero_guia %}
+  <div style="margin-top: 18px; display: flex; gap: 28px; flex-wrap: wrap; font-size: 13px; color: var(--texto-secundario); border: 1px solid var(--borde-suave); padding: 12px 16px;">
+    <div><span class="etiqueta">N.º DE GUÍA</span><br>{{ operacion.numero_guia or '—' }}</div>
+    <div><span class="etiqueta">VENDEDOR</span><br>{{ operacion.vendedor_nombre or '—' }}</div>
+    <div><span class="etiqueta">COMPRADOR</span><br>{{ operacion.comprador_nombre or '—' }}</div>
+    <div><span class="etiqueta">CANTIDAD</span><br>{{ operacion.cantidad_animales if operacion.cantidad_animales is not none else '—' }}</div>
+    <div style="margin-left: auto;"><a href="{{ url_for('ver_guia', operacion_id=operacion.id) }}">Corregir estos datos primero &rarr;</a></div>
+  </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('generar_guia_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data" style="margin-top: 24px;">
+    <h2 class="subtitulo">1. Elegí qué marcas van en esta guía ({{ marcas|length }} disponibles)</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave); border-bottom: 0;">
+      {% for m in marcas %}
+      <label style="display: flex; align-items: center; gap: 10px; width: 260px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); cursor: pointer;">
+        <input type="checkbox" name="marca_id" value="{{ m.id }}" checked style="width: auto; flex-shrink: 0;">
+        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">{% endif %}
+        <div style="min-width: 0;">
+          <div class="mono" style="font-size: 12px;">{{ m.codigo }}</div>
+          <div class="sub">{{ m.tipo|capitalize if m.tipo else '' }}</div>
+        </div>
+      </label>
+      {% else %}
+      <p class="sub" style="padding: 14px;">Esta guía todavía no tiene marcas cargadas.</p>
+      {% endfor %}
+    </div>
+
+    <h2 class="subtitulo" style="margin-top: 28px;">2. Subí el PDF de SENACSA</h2>
+    <div class="campo-edicion" style="max-width: 420px;">
+      <input type="file" name="pdf_guia" accept="application/pdf" required>
+    </div>
+
+    <button type="submit" class="boton boton-primario" style="margin-top: 8px;">Generar PDF con las marcas</button>
+  </form>
+</div>
+{% endblock %}

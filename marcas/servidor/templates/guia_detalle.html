@@ -2,7 +2,11 @@
 {% block titulo %}Guía {{ operacion.numero_guia or operacion.id }}{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
 {% block titulo_pagina %}Guía {{ operacion.numero_guia or ('#' ~ operacion.id) }}{% endblock %}
-{% block meta_encabezado %}<a href="{{ url_for('guias') }}">&larr; Volver al listado</a>{% endblock %}
+{% block meta_encabezado %}
+<a href="{{ url_for('guias') }}">&larr; Volver al listado</a>
+&nbsp;·&nbsp;
+<a href="{{ url_for('imprimir_guia', operacion_id=operacion.id) }}">Imprimir guía &rarr;</a>
+{% endblock %}
 
 {% block contenido %}
 <div class="contenido">
@@ -81,6 +85,25 @@
       {% else %}
       <p class="sub">Esta guía no tiene marcas asociadas.</p>
       {% endfor %}
+
+      {% if perfil.rol in ('operador', 'administrador') %}
+      <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
+        <div style="font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 600; margin-bottom: 10px;">Agregar marca a esta guía</div>
+        <form method="post" action="{{ url_for('agregar_marca_a_guia', operacion_id=operacion.id) }}" enctype="multipart/form-data">
+          <div class="campo-edicion"><label>Código</label><input type="text" name="codigo" required></div>
+          <div class="campo-edicion">
+            <label>Tipo</label>
+            <select name="tipo">
+              <option value="dominante">Dominante</option>
+              <option value="complementaria" selected>Complementaria</option>
+            </select>
+          </div>
+          <div class="campo-edicion"><label>Descripción</label><input type="text" name="descripcion"></div>
+          <div class="campo-edicion"><label>Imagen (PNG o SVG)</label><input type="file" name="imagen" accept="image/png,image/svg+xml"></div>
+          <button type="submit" class="boton" style="min-height: auto; padding: 9px 16px;">Agregar</button>
+        </form>
+      </div>
+      {% endif %}
     </aside>
   </div>
 </div>

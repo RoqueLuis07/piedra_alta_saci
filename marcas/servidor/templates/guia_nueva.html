@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block titulo %}Nueva guía{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
+{% block titulo_pagina %}Cargar guía nueva{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('guias') }}">&larr; Volver al listado</a>{% endblock %}
+
+{% block contenido %}
+<div class="contenido" style="max-width: 700px;">
+  <p style="font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Cargá los datos del formulario de origen. Después de guardar vas a poder sumarle las marcas y generar el PDF de guía desde su propia página.
+  </p>
+
+  <form method="post" action="{{ url_for('crear_guia') }}" style="margin-top: 20px;">
+    <h2 class="subtitulo">Datos de la guía</h2>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía</label><input type="text" name="numero_guia"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Fecha</label><input type="text" name="fecha" placeholder="DD/MM/AAAA"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Tipo de formulario</label><input type="text" name="tipo_formulario"></div>
+    </div>
+
+    <h2 class="subtitulo" style="margin-top: 24px;">Vendedor</h2>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento"></div>
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo"></div>
+    </div>
+
+    <h2 class="subtitulo" style="margin-top: 24px;">Comprador</h2>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="comprador_nombre"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="comprador_documento"></div>
+    </div>
+
+    <h2 class="subtitulo" style="margin-top: 24px;">Animales</h2>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <div class="campo-edicion" style="flex: 1 1 140px;"><label>Cantidad</label><input type="number" name="cantidad_animales"></div>
+      <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría</label><input type="text" name="categoria_animales"></div>
+    </div>
+
+    <button type="submit" class="boton boton-primario" style="margin-top: 12px;">Crear guía</button>
+  </form>
+</div>
+{% endblock %}

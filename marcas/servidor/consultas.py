@@ -92,6 +92,20 @@ def marcas_de_operacion(cliente: Client, operacion_id: int) -> list[dict]:
     )
 
 
+def crear_operacion(cliente: Client, campos: dict, creado_por: str) -> int:
+    """Alta de una guía nueva -- no es una edición, así que se aplica directo."""
+    datos = {**campos, "origen": "manual", "creado_por": creado_por}
+    respuesta = cliente.table("operaciones").insert(datos).execute()
+    return respuesta.data[0]["id"]
+
+
+def crear_marca(cliente: Client, campos: dict, creado_por: str) -> int:
+    """Alta de una marca nueva -- no es una edición, así que se aplica directo."""
+    datos = {**campos, "creado_por": creado_por}
+    respuesta = cliente.table("marcas").insert(datos).execute()
+    return respuesta.data[0]["id"]
+
+
 def proponer_cambio(
     cliente: Client, tabla: str, fila_id: int, cambios: dict, valores_anteriores: dict, propuesto_por: str
 ) -> None:
@@ -119,6 +133,17 @@ def cambio_pendiente_de(cliente: Client, tabla: str, fila_id: int) -> dict | Non
         .execute()
     )
     return respuesta.data if respuesta else None
+
+
+def descargar_imagen_marca(cliente: Client, ruta: str | None) -> bytes | None:
+    """El contenido binario de una imagen del bucket -- para incrustarla en un PDF."""
+    if not ruta:
+        return None
+    try:
+        return cliente.storage.from_(BUCKET_IMAGENES).download(ruta)
+    except Exception as exc:
+        print(f"descargar_imagen_marca: no se pudo bajar {ruta!r}: {exc}")
+        return None
 
 
 def subir_imagen_marca(cliente: Client, codigo: str, contenido: bytes, extension: str) -> str:
