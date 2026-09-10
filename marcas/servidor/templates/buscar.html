@@ -5,6 +5,9 @@
 
 {% block contenido %}
 <div style="padding: 18px 28px 0; border-bottom: 1px solid var(--borde-suave);">
+  <p style="font-size: 13px; line-height: 1.6; color: var(--texto-secundario); max-width: 62ch; margin: 0 0 16px;">
+    Escribí un código de marca, el nombre de un propietario o un número de guía y presioná Buscar. Hacé click en un resultado para ver su ficha completa a la derecha.
+  </p>
   <form method="get" action="{{ url_for('buscar') }}" style="display: block; padding-bottom: 16px; max-width: 460px;">
     <span class="etiqueta" style="display: block; margin-bottom: 6px;">CÓDIGO, PROPIETARIO, N.º DE GUÍA</span>
     <div style="display: flex; gap: 0;">
@@ -17,7 +20,13 @@
 <div style="display: flex; align-items: stretch; flex-wrap: wrap;" class="buscar-cols">
   <div style="flex: 1 1 560px; min-width: 0;">
     <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 14px 28px 10px; gap: 16px;">
-      <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">{{ resultados|length }} ASIENTO{{ '' if resultados|length == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}</div>
+      <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
+        {% if total > resultados|length %}
+        MOSTRANDO {{ resultados|length }} DE {{ total }} ASIENTOS{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %} — REFINÁ LA BÚSQUEDA PARA VER EL RESTO
+        {% else %}
+        {{ total }} ASIENTO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
+        {% endif %}
+      </div>
     </div>
 
     <table class="registro">

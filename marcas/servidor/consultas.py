@@ -12,11 +12,13 @@ from supabase import Client
 BUCKET_IMAGENES = "marcas-imagenes"
 
 
-def buscar_marcas(cliente: Client, texto: str | None, limite: int = 50) -> list[dict]:
+def buscar_marcas(cliente: Client, texto: str | None, limite: int = 50) -> tuple[list[dict], int]:
+    """Los resultados (hasta ``limite``) y el total real de coincidencias."""
     texto = (texto or "").strip()
     consulta = cliente.table("marcas").select(
         "id, codigo, tipo, estado, posicion, propietario_id, operacion_id, "
-        "propietarios(nombre, documento), operaciones(numero_guia, fecha)"
+        "propietarios(nombre, documento), operaciones(numero_guia, fecha)",
+        count="exact",
     )
     if texto:
         coincidencias = (
@@ -31,7 +33,8 @@ def buscar_marcas(cliente: Client, texto: str | None, limite: int = 50) -> list[
             lista = ",".join(str(p["id"]) for p in coincidencias)
             filtro += f",propietario_id.in.({lista})"
         consulta = consulta.or_(filtro)
-    return consulta.order("codigo").limit(limite).execute().data
+    respuesta = consulta.order("codigo").limit(limite).execute()
+    return respuesta.data, (respuesta.count or 0)
 
 
 def ficha_marca(cliente: Client, codigo: str) -> dict | None:
@@ -149,6 +152,7 @@ def url_imagen(cliente: Client, ruta: str | None, expira_seg: int = 3600) -> str
         return None
     try:
         resultado = cliente.storage.from_(BUCKET_IMAGENES).create_signed_url(ruta, expira_seg)
-    except Exception:
+    except Exception as exc:
+        print(f"url_imagen: no se pudo firmar {ruta!r}: {exc}")
         return None
     return resultado.get("signedURL") or resultado.get("signed_url") or resultado.get("signedUrl")

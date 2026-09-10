@@ -40,10 +40,18 @@ def cliente_anonimo() -> Client:
 
 
 def cliente_sesion(access_token: str) -> Client:
-    """Cliente con las políticas de RLS aplicadas como el usuario logueado."""
+    """Cliente con las políticas de RLS aplicadas como el usuario logueado.
+
+    ``.postgrest.auth(...)`` sólo identifica al sub-cliente de PostgREST
+    (tablas). El de Storage arma sus headers aparte, a partir de
+    ``cliente.options.headers`` -- si no se pisa acá también, las imágenes
+    salen con la clave anónima y el bucket privado las rechaza en silencio
+    para cualquier usuario, sin importar su rol.
+    """
     _verificar_configuracion()
     cliente = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
     cliente.postgrest.auth(access_token)
+    cliente.options.headers["Authorization"] = f"Bearer {access_token}"
     return cliente
 
 

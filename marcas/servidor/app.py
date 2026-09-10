@@ -152,7 +152,7 @@ def crear_app() -> Flask:
     def buscar():
         cliente = cliente_actual()
         texto = request.args.get("q") or None
-        resultados = buscar_marcas(cliente, texto)
+        resultados, total = buscar_marcas(cliente, texto)
         for fila in resultados:
             fila["imagen_url"] = url_imagen(cliente, fila.get("archivo_png"))
         codigo_visto = request.args.get("ver")
@@ -165,6 +165,7 @@ def crear_app() -> Flask:
             "buscar.html",
             activo="buscar",
             resultados=resultados,
+            total=total,
             texto=texto or "",
             ficha=ficha,
             perfil=perfil_actual(),
