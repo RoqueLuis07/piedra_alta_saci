@@ -11,6 +11,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+  try { if (localStorage.getItem('nav-colapsado') === '1') document.documentElement.classList.add('nav-colapsado'); } catch (e) {}
+</script>
 <style>
   :root {
     --verde-oscuro: #1F4D34;
@@ -31,18 +34,39 @@
   .mono { font-family: 'IBM Plex Mono', monospace; }
   .shell { display: flex; align-items: stretch; min-height: 100vh; }
 
-  .nav { flex: 0 0 236px; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; }
+  .nav { flex: 0 0 236px; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; transition: flex-basis .16s ease; overflow: hidden; }
   .nav-brand { padding: 22px 20px 18px; border-bottom: 1px solid rgba(250,250,247,0.22); }
-  .nav-logo { width: 46px; display: block; margin-bottom: 12px; }
-  .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 14.5px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.2; }
-  .nav-sub { font-size: 8.5px; letter-spacing: 0.12em; color: rgba(250,250,247,0.62); margin-top: 4px; line-height: 1.5; }
-  .nav-seccion { padding: 18px 20px 8px; font-size: 9.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.55); }
-  .nav-item { display: block; width: 100%; text-align: left; background: transparent; color: rgba(250,250,247,0.88); border: 0; border-left: 3px solid transparent; padding: 11px 20px; font-size: 13.5px; letter-spacing: 0.02em; cursor: pointer; text-decoration: none; box-sizing: border-box; }
+  .nav-logo { width: 46px; display: block; margin-bottom: 12px; flex-shrink: 0; }
+  .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 14.5px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.2; white-space: nowrap; }
+  .nav-sub { font-size: 8.5px; letter-spacing: 0.12em; color: rgba(250,250,247,0.62); margin-top: 4px; line-height: 1.5; white-space: nowrap; }
+  .nav-seccion { padding: 18px 20px 8px; font-size: 9.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.55); white-space: nowrap; }
+  .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; color: rgba(250,250,247,0.88); border: 0; border-left: 3px solid transparent; padding: 11px 20px; font-size: 13.5px; letter-spacing: 0.02em; cursor: pointer; text-decoration: none; box-sizing: border-box; }
   .nav-item:hover { background: rgba(127,174,107,0.28); color: rgba(250,250,247,0.95); }
   .nav-item.activo { background: var(--verde-claro); color: var(--texto); border-left-color: var(--dorado); font-weight: 600; }
+  .nav-icono { width: 18px; height: 18px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .nav-icono svg { width: 18px; height: 18px; }
+  .nav-texto { white-space: nowrap; overflow: hidden; }
+  .nav-badge { background: var(--dorado); color: #163823; font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.5; flex-shrink: 0; margin-left: auto; }
+  .nav-toggle { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0; border-top: 1px solid rgba(250,250,247,0.22); color: rgba(250,250,247,0.6); padding: 11px 20px; font-size: 11.5px; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; }
+  .nav-toggle:hover { color: var(--dorado); }
+  .nav-toggle .nav-icono svg { transition: transform .16s ease; }
   .nav-pie { margin-top: auto; padding: 16px 20px; border-top: 1px solid rgba(250,250,247,0.22); font-size: 11px; line-height: 1.6; color: rgba(250,250,247,0.72); }
   .nav-pie button { background: transparent; border: 1px solid rgba(250,250,247,0.4); color: inherit; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-top: 8px; }
   .nav-pie button:hover { border-color: var(--dorado); color: var(--dorado); }
+
+  html.nav-colapsado .nav { flex-basis: 76px; }
+  html.nav-colapsado .nav-titulo,
+  html.nav-colapsado .nav-sub,
+  html.nav-colapsado .nav-seccion,
+  html.nav-colapsado .nav-texto,
+  html.nav-colapsado .nav-pie .mono { display: none; }
+  html.nav-colapsado .nav-brand { display: flex; flex-direction: column; align-items: center; padding-left: 8px; padding-right: 8px; }
+  html.nav-colapsado .nav-logo { margin-bottom: 0; }
+  html.nav-colapsado .nav-item,
+  html.nav-colapsado .nav-toggle { justify-content: center; padding-left: 8px; padding-right: 8px; }
+  html.nav-colapsado .nav-badge { margin-left: 0; }
+  html.nav-colapsado .nav-pie { display: flex; flex-direction: column; align-items: center; padding-left: 8px; padding-right: 8px; }
+  html.nav-colapsado .nav-toggle .nav-icono svg { transform: rotate(180deg); }
 
   .main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
   .encabezado { border-bottom: 1px solid var(--texto); padding: 20px 28px 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
@@ -95,10 +119,12 @@
 
   @media (max-width: 760px) {
     .shell { flex-direction: column; }
-    .nav { width: 100%; flex-direction: row; flex-wrap: wrap; }
-    .nav-brand, .nav-seccion, .nav-pie { display: none; }
-    .nav-item { flex: 1 1 auto; text-align: center; border-left: 0; border-top: 3px solid transparent; }
+    .nav, html.nav-colapsado .nav { width: 100%; flex-basis: auto; flex-direction: row; flex-wrap: wrap; }
+    .nav-brand, .nav-seccion, .nav-pie, .nav-toggle { display: none; }
+    .nav-item { flex: 1 1 auto; flex-direction: column; gap: 4px; text-align: center; border-left: 0; border-top: 3px solid transparent; padding: 8px 6px; }
     .nav-item.activo { border-top-color: var(--dorado); }
+    .nav-texto { display: block !important; font-size: 11px; }
+    .nav-badge { margin-left: 0; }
     .ficha-panel { border-left: 0 !important; border-top: 1px solid var(--texto); max-width: none !important; }
     .buscar-cols { flex-direction: column; }
   }
@@ -115,16 +141,33 @@
     </div>
     <div class="nav-seccion">REGISTRO DE MARCAS</div>
     <div>
-      <a class="nav-item {{ 'activo' if activo == 'inicio' }}" href="{{ url_for('inicio') }}">Inicio</a>
-      <a class="nav-item {{ 'activo' if activo == 'guias' }}" href="{{ url_for('guias') }}">Guías</a>
-      <a class="nav-item {{ 'activo' if activo == 'buscar' }}" href="{{ url_for('buscar') }}">Marcas</a>
-      <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" style="display: flex; align-items: center; justify-content: space-between;">
-        <span>Aprobaciones</span>
-        {% if pendientes_nav %}<span class="mono" style="background: var(--dorado); color: var(--verde-mas-oscuro, #163823); font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.5;">{{ pendientes_nav }}</span>{% endif %}
+      <a class="nav-item {{ 'activo' if activo == 'inicio' }}" href="{{ url_for('inicio') }}" title="Inicio">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg></span>
+        <span class="nav-texto">Inicio</span>
+      </a>
+      <a class="nav-item {{ 'activo' if activo == 'guias' }}" href="{{ url_for('guias') }}" title="Guías">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="3" width="15" height="18"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>
+        <span class="nav-texto">Guías</span>
+      </a>
+      <a class="nav-item {{ 'activo' if activo == 'buscar' }}" href="{{ url_for('buscar') }}" title="Marcas">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13 13 20a2 2 0 0 1-2.8 0L3 12.8V4h8.8L20 12.2a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+        <span class="nav-texto">Marcas</span>
+      </a>
+      <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" title="Aprobaciones">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg></span>
+        <span class="nav-texto" style="flex: 1;">Aprobaciones</span>
+        {% if pendientes_nav %}<span class="nav-badge mono">{{ pendientes_nav }}</span>{% endif %}
       </a>
       {% if perfil and perfil.rol == 'administrador' %}
-      <a class="nav-item {{ 'activo' if activo == 'panel' }}" href="{{ url_for('panel') }}">Usuarios</a>
+      <a class="nav-item {{ 'activo' if activo == 'panel' }}" href="{{ url_for('panel') }}" title="Usuarios">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15.8 14.3c2.3.5 4.2 2.6 4.2 5.7"/></svg></span>
+        <span class="nav-texto">Usuarios</span>
+      </a>
       {% endif %}
+      <button type="button" class="nav-toggle" id="nav-toggle" title="Contraer / expandir menú">
+        <span class="nav-icono" id="nav-toggle-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></span>
+        <span class="nav-texto">Contraer menú</span>
+      </button>
     </div>
     <div class="nav-pie">
       <div class="mono">SESIÓN · {{ perfil.nombre if perfil else '' }}</div>
@@ -143,5 +186,15 @@
     {% block contenido %}{% endblock %}
   </main>
 </div>
+<script>
+  (function () {
+    var boton = document.getElementById('nav-toggle');
+    if (!boton) return;
+    boton.addEventListener('click', function () {
+      var colapsado = document.documentElement.classList.toggle('nav-colapsado');
+      try { localStorage.setItem('nav-colapsado', colapsado ? '1' : '0'); } catch (e) {}
+    });
+  })();
+</script>
 </body>
 </html>

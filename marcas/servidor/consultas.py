@@ -121,6 +121,15 @@ def proponer_cambio(
     ).execute()
 
 
+def nombres_usuarios(cliente: Client, ids) -> dict[str, str]:
+    """Resuelve id de usuario -> nombre, para mostrar quién cargó o tocó un registro."""
+    ids_validos = {i for i in ids if i}
+    if not ids_validos:
+        return {}
+    filas = cliente.table("perfiles").select("id, nombre").in_("id", list(ids_validos)).execute().data
+    return {f["id"]: f["nombre"] for f in filas}
+
+
 def cambio_pendiente_de(cliente: Client, tabla: str, fila_id: int) -> dict | None:
     """Si esta fila ya tiene una modificación esperando aprobación, la trae."""
     respuesta = (

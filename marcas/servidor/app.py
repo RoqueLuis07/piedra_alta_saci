@@ -40,6 +40,7 @@ from marcas.servidor.consultas import (
     listar_operaciones_paginado,
     marcas_a_revisar,
     marcas_de_operacion,
+    nombres_usuarios,
     obtener_operacion_por_id,
     proponer_cambio,
     subir_imagen_marca,
@@ -173,14 +174,6 @@ def crear_app() -> Flask:
         resultados, total = buscar_marcas(cliente, texto, pagina=pagina)
         for fila in resultados:
             fila["imagen_url"] = url_imagen(cliente, fila.get("archivo_png"))
-        codigo_visto = request.args.get("ver")
-        ficha = ficha_marca(cliente, codigo_visto) if codigo_visto else None
-        cambio_pendiente = None
-        if ficha:
-            ficha["marca"]["imagen_url"] = url_imagen(cliente, ficha["marca"].get("archivo_png"))
-            for acompanante in ficha["acompanantes"]:
-                acompanante["imagen_url"] = url_imagen(cliente, acompanante.get("archivo_png"))
-            cambio_pendiente = cambio_pendiente_de(cliente, "marcas", ficha["marca"]["id"])
         return render_template(
             "buscar.html",
             activo="buscar",
@@ -189,6 +182,28 @@ def crear_app() -> Flask:
             pagina=pagina,
             por_pagina=POR_PAGINA_MARCAS,
             texto=texto or "",
+            perfil=perfil_actual(),
+        )
+
+    @app.get("/marcas/<codigo>")
+    @requiere_sesion
+    def ver_marca(codigo: str):
+        cliente = cliente_actual()
+        ficha = ficha_marca(cliente, codigo)
+        if not ficha:
+            return "Marca no encontrada", 404
+        ficha["marca"]["imagen_url"] = url_imagen(cliente, ficha["marca"].get("archivo_png"))
+        for acompanante in ficha["acompanantes"]:
+            acompanante["imagen_url"] = url_imagen(cliente, acompanante.get("archivo_png"))
+        nombres = nombres_usuarios(
+            cliente, [ficha["marca"].get("creado_por"), ficha["marca"].get("actualizado_por")]
+        )
+        ficha["marca"]["creado_por_nombre"] = nombres.get(ficha["marca"].get("creado_por"))
+        ficha["marca"]["actualizado_por_nombre"] = nombres.get(ficha["marca"].get("actualizado_por"))
+        cambio_pendiente = cambio_pendiente_de(cliente, "marcas", ficha["marca"]["id"])
+        return render_template(
+            "marca_detalle.html",
+            activo="buscar",
             ficha=ficha,
             cambio_pendiente=cambio_pendiente,
             perfil=perfil_actual(),
@@ -233,7 +248,7 @@ def crear_app() -> Flask:
                     proponer_cambio(cliente, "marcas", marca_id, cambios, valores_anteriores, perfil["id"])
             except Exception as exc:
                 return f"No se pudo guardar el cambio: {exc}", 400
-        return redirect(url_for("buscar", ver=codigo_para_volver))
+        return redirect(url_for("ver_marca", codigo=codigo_para_volver))
 
     @app.get("/guias")
     @requiere_sesion
@@ -287,6 +302,8 @@ def crear_app() -> Flask:
         marcas = marcas_de_operacion(cliente, operacion_id)
         for m in marcas:
             m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
+        nombres = nombres_usuarios(cliente, [operacion.get("creado_por")])
+        operacion["creado_por_nombre"] = nombres.get(operacion.get("creado_por"))
         cambio_pendiente = cambio_pendiente_de(cliente, "operaciones", operacion_id)
         return render_template(
             "guia_detalle.html",

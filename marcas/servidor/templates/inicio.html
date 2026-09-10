@@ -52,7 +52,7 @@
       {% for m in a_revisar %}
       <div style="padding: 11px 0; border-bottom: 1px solid var(--borde-fina);">
         <div style="display: flex; justify-content: space-between; gap: 12px; align-items: baseline;">
-          <a class="mono" style="font-size: 12px; font-weight: 500;" href="{{ url_for('buscar', ver=m.codigo) }}">{{ m.codigo }}</a>
+          <a class="mono" style="font-size: 12px; font-weight: 500;" href="{{ url_for('ver_marca', codigo=m.codigo) }}">{{ m.codigo }}</a>
           <span class="estado estado-revisar">REVISAR</span>
         </div>
         <div class="sub" style="line-height: 1.5;">{{ m.motivo_calidad or 'Sin motivo registrado.' }}</div>
