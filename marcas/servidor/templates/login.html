@@ -61,24 +61,55 @@
     .marca-sub { font-size: 10.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.62); margin-top: 4px; }
     .marca-frase { position: relative; font-family: 'Source Serif 4', serif; font-size: 27px; font-weight: 600; line-height: 1.32; max-width: 20ch; letter-spacing: -0.01em; }
     .marca-pie { position: relative; font-size: 11.5px; letter-spacing: 0.04em; color: rgba(250,250,247,0.6); line-height: 1.7; border-top: 1px solid rgba(250,250,247,0.22); padding-top: 16px; }
+    .marca > div:first-child { animation: aparecer .5s ease-out both; }
+    .marca-frase { animation: aparecer .5s ease-out .1s both; }
+    .marca-pie { animation: aparecer .5s ease-out .2s both; }
 
     /* Panel de formulario -- derecha */
-    .form-lado { flex: 1 1 54%; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    .form-panel { width: 100%; max-width: 360px; }
+    .form-lado { flex: 1 1 54%; display: flex; flex-direction: column; padding: 40px 56px; position: relative; overflow: hidden; }
+    .form-lado::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -180px;
+      width: 460px;
+      height: 320px;
+      border: 1px solid var(--borde-suave, #D8D8D0);
+      border-bottom: 0;
+      border-radius: 230px 230px 0 0 !important;
+      opacity: 0.6;
+    }
+    .form-arriba { position: relative; display: flex; justify-content: flex-end; }
+    .form-arriba span { font-size: 10.5px; letter-spacing: 0.14em; color: var(--texto-secundario); text-transform: uppercase; }
+    .form-medio { position: relative; flex: 1 1 auto; display: flex; align-items: center; }
+    .form-panel { width: 100%; max-width: 360px; animation: aparecer .5s ease-out .1s both; }
     .form-etiqueta { font-size: 10.5px; letter-spacing: 0.2em; color: var(--texto-secundario); text-transform: uppercase; margin-bottom: 10px; }
-    .form-panel h1 { font-family: 'Source Serif 4', serif; font-size: 26px; font-weight: 600; margin: 0 0 30px; letter-spacing: -0.01em; }
+    .form-panel h1 { font-family: 'Source Serif 4', serif; font-size: 26px; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+    .form-panel .bajada { font-size: 13px; line-height: 1.6; color: var(--texto-secundario); margin: 0 0 28px; }
     label { display: block; margin-bottom: 18px; font-size: 12px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
     input { width: 100%; border: 1px solid var(--texto); background: #fff; padding: 11px 12px; font-size: 14px; margin-top: 7px; font-family: inherit; transition: border-color .15s; }
     input:focus { outline: none; border-color: var(--verde-oscuro); border-width: 1.5px; }
-    button { width: 100%; background: var(--verde-oscuro); color: var(--fondo); border: 1px solid var(--verde-oscuro); padding: 13px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; transition: background .15s, border-color .15s, color .15s; }
+    button { width: 100%; background: var(--verde-oscuro); color: var(--fondo); border: 1px solid var(--verde-oscuro); padding: 13px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; transition: background .15s, border-color .15s, color .15s, transform .15s; }
     button:hover { background: var(--verde-claro); border-color: var(--verde-claro); color: var(--texto); }
+    button:active { transform: scale(0.99); }
     .error { border-left: 3px solid #a63244; background: #FBEFEF; color: #a63244; font-size: 13px; padding: 10px 12px; margin-bottom: 20px; }
     .recuperar { display: block; text-align: right; margin-top: 12px; font-size: 12px; color: var(--texto-secundario); text-decoration: none; }
     .recuperar:hover { color: var(--verde-oscuro); text-decoration: underline; }
+    .form-pie { position: relative; font-size: 11.5px; line-height: 1.7; color: var(--texto-secundario); border-top: 1px solid var(--borde-suave, #D8D8D0); padding-top: 16px; animation: aparecer .5s ease-out .25s both; }
+    .form-pie a { color: var(--verde-oscuro); }
+
+    @keyframes aparecer {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: none; }
+    }
 
     @media (max-width: 860px) {
       .marca { display: none; }
       .form-lado { flex: 1 1 100%; }
+      .form-lado::before { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .form-panel, .form-pie, .marca > div, .marca-frase { animation: none !important; }
     }
   </style>
 </head>
@@ -94,17 +125,22 @@
       <div class="marca-pie mono">SISTEMA INTERNO &middot; ACCESO RESTRINGIDO<br>Cada operación queda asociada a la persona que la realiza.</div>
     </aside>
     <div class="form-lado">
-      <div class="form-panel">
-        <div class="form-etiqueta">Registro de marcas</div>
-        <h1>Ingresar</h1>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="post" action="{{ url_for('login_post') }}">
-          <label>Usuario (email)<input type="email" name="email" required autofocus></label>
-          <label>Contraseña<input type="password" name="contrasena" required></label>
-          <button type="submit">Ingresar</button>
-        </form>
-        <a class="recuperar" href="{{ url_for('recuperar') }}">¿Olvidaste tu contraseña?</a>
+      <div class="form-arriba"><span>Piedra Alta · Sistema interno</span></div>
+      <div class="form-medio">
+        <div class="form-panel">
+          <div class="form-etiqueta">Registro de marcas</div>
+          <h1>Ingresar</h1>
+          <p class="bajada">Accedé con tu usuario para consultar el registro de marcas, guías y aprobaciones.</p>
+          {% if error %}<div class="error">{{ error }}</div>{% endif %}
+          <form method="post" action="{{ url_for('login_post') }}">
+            <label>Usuario (email)<input type="email" name="email" required autofocus></label>
+            <label>Contraseña<input type="password" name="contrasena" required></label>
+            <button type="submit">Ingresar</button>
+          </form>
+          <a class="recuperar" href="{{ url_for('recuperar') }}">¿Olvidaste tu contraseña?</a>
+        </div>
       </div>
+      <div class="form-pie">¿No tenés acceso todavía? Pedile a un Administrador que active tu cuenta desde el Panel de usuarios.</div>
     </div>
   </div>
 </body>
