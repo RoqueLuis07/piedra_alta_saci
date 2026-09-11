@@ -14,6 +14,7 @@
     {% for u in usuarios %}
     <form method="post" action="{{ url_for('actualizar_usuario', usuario_id=u.id) }}"
           style="display: flex; align-items: center; gap: 28px; flex-wrap: wrap; padding: 20px 0; border-bottom: 1px solid var(--borde-suave);">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div style="flex: 1 1 200px; min-width: 0;">
         <div style="font-size: 15px; font-weight: 600;">{{ u.nombre }}</div>
         <div class="sub mono">{{ u.id }}</div>

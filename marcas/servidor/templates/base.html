@@ -172,7 +172,7 @@
     <div class="nav-pie">
       <div class="mono">SESIÓN · {{ perfil.nombre if perfil else '' }}</div>
       <div class="mono" style="color: rgba(250,250,247,0.5)">{{ (perfil.rol if perfil else '')|upper }}</div>
-      <form method="post" action="{{ url_for('logout') }}"><button type="submit">Salir</button></form>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Salir</button></form>
     </div>
   </nav>
   <main class="main">

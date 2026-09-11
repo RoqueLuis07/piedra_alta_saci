@@ -11,6 +11,7 @@
   </p>
 
   <form method="post" action="{{ url_for('crear_guia') }}" style="margin-top: 20px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h2 class="subtitulo">Datos de la guía</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía</label><input type="text" name="numero_guia"></div>

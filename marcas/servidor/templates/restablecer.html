@@ -39,6 +39,7 @@
         <a class="volver" href="{{ url_for('recuperar') }}">Solicitar enlace nuevo</a>
       </div>
       <form id="form-nueva" method="post" action="{{ url_for('restablecer_post') }}" style="display:none;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="access_token" id="access_token">
         <input type="hidden" name="refresh_token" id="refresh_token">
         <label>Nueva contraseña<input type="password" name="nueva_contrasena" minlength="6" required autofocus></label>

@@ -14,6 +14,10 @@ import tempfile
 from pathlib import Path
 
 from flask import Flask, redirect, render_template, request, send_file, session, url_for
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf import CSRFProtect
+from flask_wtf.csrf import CSRFError
 
 from marcas.pdf.guia import completar_guia
 
@@ -59,6 +63,17 @@ def crear_app() -> Flask:
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
+    # Token oculto obligatorio en todo formulario POST -- protege contra
+    # peticiones falsificadas desde otro sitio (CSRF). Queda disponible en
+    # los templates como {{ csrf_token() }}, Flask-WTF lo registra solo.
+    CSRFProtect(app)
+
+    # Sin esto, el login no tiene freno: alguien podría probar contraseñas
+    # sin límite. El almacenamiento en memoria alcanza para un solo proceso;
+    # si el día de mañana corremos varios workers en paralelo, pasar a un
+    # backend compartido (Redis) para que el límite sea real entre todos.
+    limiter = Limiter(get_remote_address, app=app, default_limits=[])
+
     @app.get("/login")
     def login():
         if session.get("access_token"):
@@ -66,6 +81,7 @@ def crear_app() -> Flask:
         return render_template("login.html", error=None)
 
     @app.post("/login")
+    @limiter.limit("8 per minute; 30 per hour")
     def login_post():
         email = request.form.get("email", "").strip()
         contrasena = request.form.get("contrasena", "")
@@ -97,6 +113,7 @@ def crear_app() -> Flask:
         return render_template("recuperar.html", enviado=False, error=None)
 
     @app.post("/recuperar")
+    @limiter.limit("5 per hour")
     def recuperar_post():
         email = request.form.get("email", "").strip()
         if email:
@@ -112,6 +129,7 @@ def crear_app() -> Flask:
         return render_template("restablecer.html", error=None)
 
     @app.post("/restablecer")
+    @limiter.limit("10 per hour")
     def restablecer_post():
         access_token = request.form.get("access_token", "")
         refresh_token = request.form.get("refresh_token", "")
@@ -130,6 +148,22 @@ def crear_app() -> Flask:
                 "restablecer.html", error="El enlace venció o no es válido. Pedí uno nuevo."
             ), 400
         return redirect(url_for("login"))
+
+    @app.errorhandler(429)
+    def demasiados_intentos(_exc):
+        return render_template(
+            "error_simple.html",
+            titulo="Demasiados intentos",
+            mensaje="Probaste demasiadas veces en poco tiempo. Esperá unos minutos y volvé a intentar.",
+        ), 429
+
+    @app.errorhandler(CSRFError)
+    def token_invalido(_exc):
+        return render_template(
+            "error_simple.html",
+            titulo="La página venció",
+            mensaje="El formulario tardó demasiado o se abrió en otra pestaña. Volvé atrás y probá de nuevo.",
+        ), 400
 
     @app.context_processor
     def inyectar_pendientes():

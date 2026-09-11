@@ -18,6 +18,10 @@ flask>=3.0
 gunicorn>=22.0
 # cliente de Supabase (login, base de datos, storage) para `marcas.servidor`
 supabase>=2.9
+# protección CSRF en los formularios de `marcas.servidor`
+flask-wtf>=1.2
+# límite de intentos en login/recuperar contraseña, para frenar fuerza bruta
+flask-limiter>=3.7
 
 # Dependencia del sistema (no se instala con pip):
 #   potrace  ->  sudo apt install potrace  /  brew install potrace

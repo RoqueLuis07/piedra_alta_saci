@@ -23,6 +23,7 @@
   {% endif %}
 
   <form method="post" action="{{ url_for('generar_guia_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data" style="margin-top: 24px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h2 class="subtitulo">1. Elegí qué marcas van en esta guía ({{ marcas|length }} disponibles)</h2>
     <div style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave); border-bottom: 0;">
       {% for m in marcas %}

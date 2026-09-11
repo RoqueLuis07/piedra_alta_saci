@@ -39,6 +39,7 @@
       {% else %}
       <p class="info">Ingresá el email de tu cuenta y te enviamos un enlace para elegir una nueva contraseña.</p>
       <form method="post" action="{{ url_for('recuperar_post') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>Email<input type="email" name="email" required autofocus></label>
         <button type="submit">Enviar enlace</button>
       </form>

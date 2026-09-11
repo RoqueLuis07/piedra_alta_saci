@@ -133,6 +133,7 @@
           <p class="bajada">Accedé con tu usuario para consultar el registro de marcas, guías y aprobaciones.</p>
           {% if error %}<div class="error">{{ error }}</div>{% endif %}
           <form method="post" action="{{ url_for('login_post') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <label>Usuario (email)<input type="email" name="email" required autofocus></label>
             <label>Contraseña<input type="password" name="contrasena" required></label>
             <button type="submit">Ingresar</button>

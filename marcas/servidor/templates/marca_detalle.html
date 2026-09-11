@@ -71,6 +71,7 @@
     <aside style="flex: 1 1 360px; min-width: 0; max-width: 420px;">
       <h2 class="subtitulo">Editar esta marca</h2>
       <form method="post" action="{{ url_for('editar_marca', marca_id=ficha.marca.id) }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="campo-edicion"><label>Código</label><input type="text" name="codigo" value="{{ ficha.marca.codigo }}"></div>
         <div class="campo-edicion">
           <label>Tipo</label>

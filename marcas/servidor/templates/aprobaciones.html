@@ -50,6 +50,7 @@
     </div>
 
     <form method="post" action="{{ url_for('resolver_cambio', cambio_id=c.id) }}" style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; align-items: center;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="text" name="motivo" placeholder="Motivo (solo si rechazás)" style="flex: 1 1 240px; min-width: 0;">
       <button type="submit" name="decision" value="aprobado" class="boton boton-primario">Aprobar</button>
       <button type="submit" name="decision" value="rechazado" class="boton">Rechazar</button>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cuenta pendiente — Piedra Alta</title>
+  <title>{{ titulo }} — Piedra Alta</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon/favicon-32.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,15 +16,16 @@
     .panel { width: 100%; max-width: 400px; border: 1px solid var(--texto); background: #fff; padding: 32px; }
     h1 { font-family: 'Source Serif 4', serif; font-size: 20px; font-weight: 600; margin: 0 0 12px; }
     p { font-size: 13.5px; line-height: 1.6; color: var(--texto-secundario); }
-    button { border: 1px solid var(--texto); background: transparent; color: var(--texto); padding: 10px 16px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; }
+    a.boton { display: inline-block; border: 1px solid var(--texto); background: var(--verde-oscuro); color: var(--fondo); padding: 10px 16px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; text-decoration: none; margin-top: 8px; }
+    a.boton:hover { background: #7FAE6B; border-color: #7FAE6B; color: var(--texto); }
   </style>
 </head>
 <body>
   <div class="envoltorio">
     <div class="panel">
-      <h1>Tu cuenta todavía no está activada</h1>
-      <p>Un Administrador tiene que asignarte un rol y activar tu cuenta antes de que puedas entrar.</p>
-      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit">Volver al login</button></form>
+      <h1>{{ titulo }}</h1>
+      <p>{{ mensaje }}</p>
+      <a class="boton" href="javascript:history.back()">Volver</a>
     </div>
   </div>
 </body>

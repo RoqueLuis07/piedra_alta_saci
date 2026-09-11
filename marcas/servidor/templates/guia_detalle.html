@@ -25,6 +25,7 @@
     <div style="flex: 1 1 480px; min-width: 0;">
       {% if perfil.rol in ('operador', 'administrador') %}
       <form method="post" action="{{ url_for('editar_guia', operacion_id=operacion.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <h2 class="subtitulo">Datos de la guía</h2>
         <div style="display: flex; gap: 16px; flex-wrap: wrap;">
           <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía</label><input type="text" name="numero_guia" value="{{ operacion.numero_guia or '' }}"></div>
@@ -94,6 +95,7 @@
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
         <div style="font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 600; margin-bottom: 10px;">Agregar marca a esta guía</div>
         <form method="post" action="{{ url_for('agregar_marca_a_guia', operacion_id=operacion.id) }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <p class="sub" style="margin: 0 0 12px;">El código (M-00001, M-00002...) se asigna solo.</p>
           <div class="campo-edicion">
             <label>Tipo</label>
