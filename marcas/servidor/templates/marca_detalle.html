@@ -41,7 +41,7 @@
         </div>
       </div>
 
-      <h2 class="subtitulo" style="margin-top: 28px;">Marcas complementarias ({{ ficha.acompanantes|length }})</h2>
+      <h2 class="subtitulo" style="margin-top: 28px;">Otras marcas de esta guía ({{ ficha.acompanantes|length }})</h2>
       <div style="display: flex; flex-wrap: wrap; border: 1px solid var(--borde-fina); border-bottom: 0;">
         {% for a in ficha.acompanantes %}
         <a href="{{ url_for('ver_marca', codigo=a.codigo) }}" style="flex: 0 0 auto; width: 112px; border-right: 1px solid var(--borde-fina); border-bottom: 1px solid var(--borde-fina); padding: 14px 8px 12px; text-align: center; overflow: hidden; text-decoration: none; color: inherit;">

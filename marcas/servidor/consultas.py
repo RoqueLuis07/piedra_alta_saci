@@ -71,17 +71,31 @@ def buscar_marcas(
         consulta = consulta.eq("tipo", tipo)
     if texto:
         texto_seguro = _escapar_filtro(texto)
-        coincidencias = (
+        propietarios_coincidentes = (
             cliente.table("propietarios")
             .select("id")
             .or_(f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%")
             .execute()
             .data
         )
+        # "numero_guia" en marcas es una columna heredada de la migración inicial
+        # que no se completa para las marcas nuevas (se vinculan a su guía sólo
+        # por operacion_id) -- buscar el N.º de guía tiene que cruzar contra la
+        # guía real, del mismo modo que ya se hace para propietario.
+        operaciones_coincidentes = (
+            cliente.table("operaciones")
+            .select("id")
+            .ilike("numero_guia", f"%{texto_seguro}%")
+            .execute()
+            .data
+        )
         filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
-        if coincidencias:
-            lista = ",".join(str(p["id"]) for p in coincidencias)
+        if propietarios_coincidentes:
+            lista = ",".join(str(p["id"]) for p in propietarios_coincidentes)
             filtro += f",propietario_id.in.({lista})"
+        if operaciones_coincidentes:
+            lista = ",".join(str(o["id"]) for o in operaciones_coincidentes)
+            filtro += f",operacion_id.in.({lista})"
         consulta = consulta.or_(filtro)
     desde = max(0, pagina - 1) * por_pagina
     respuesta = consulta.order("codigo").range(desde, desde + por_pagina - 1).execute()
@@ -430,13 +444,22 @@ def actualizar_propietario(cliente: Client, propietario_id: int, campos: dict) -
     cliente.table("propietarios").update(campos).eq("id", propietario_id).execute()
 
 
-def _traer_todas_las_filas(consulta) -> list[dict]:
+def _traer_todas_las_filas(armar_consulta) -> list[dict]:
     """PostgREST devuelve como máximo 1000 filas por pedido -- para exportar
-    todo lo que cumple un filtro (no sólo una página) hay que pedir en lotes."""
+    todo lo que cumple un filtro (no sólo una página) hay que pedir en lotes.
+
+    ``armar_consulta`` es una función que arma la consulta DE CERO en cada
+    llamada (con los mismos filtros, sin ``.range()`` todavía) -- hace falta
+    un builder nuevo por página porque ``.range()`` en postgrest-py no
+    reemplaza el offset/límite anterior, los acumula (agrega otro par
+    offset/limit al pedido en vez de pisar el que ya estaba). Reusar el mismo
+    builder en el bucle hacía que la segunda página pidiera offset 0 de
+    nuevo -- un bucle que nunca terminaba de traer una página más chica que
+    el lote, y por lo tanto nunca cortaba."""
     filas: list[dict] = []
     inicio = 0
     while True:
-        lote = consulta.range(inicio, inicio + TAMANO_LOTE_EXPORTACION - 1).execute().data
+        lote = armar_consulta().range(inicio, inicio + TAMANO_LOTE_EXPORTACION - 1).execute().data
         filas.extend(lote)
         if len(lote) < TAMANO_LOTE_EXPORTACION:
             return filas
@@ -451,55 +474,77 @@ def exportar_operaciones(
     creada_hasta: str | None = None,
 ) -> list[dict]:
     """Todas las guías que cumplen el filtro activo (sin paginar), para el CSV."""
-    consulta = cliente.table("operaciones").select(
-        "numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento, "
-        "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en"
-    )
-    if estado == "revisar":
-        consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
-    elif estado == "colisiona":
-        consulta = consulta.eq("guia_colisionada", True)
-    elif estado == "al_dia":
-        consulta = consulta.eq("guia_colisionada", False).or_("revisar.is.null,revisar.eq.")
-    if creada_desde:
-        consulta = consulta.gte("creado_en", creada_desde)
-    if creada_hasta:
-        consulta = consulta.lte("creado_en", f"{creada_hasta}T23:59:59")
     texto = (texto or "").strip()
-    if texto:
-        texto_seguro = _escapar_filtro(texto)
-        consulta = consulta.or_(
-            f"numero_guia.ilike.%{texto_seguro}%,vendedor_nombre.ilike.%{texto_seguro}%,"
-            f"comprador_nombre.ilike.%{texto_seguro}%"
+
+    def armar():
+        consulta = cliente.table("operaciones").select(
+            "numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento, "
+            "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en"
         )
-    return _traer_todas_las_filas(consulta.order("creado_en", desc=True))
+        if estado == "revisar":
+            consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
+        elif estado == "colisiona":
+            consulta = consulta.eq("guia_colisionada", True)
+        elif estado == "al_dia":
+            consulta = consulta.eq("guia_colisionada", False).or_("revisar.is.null,revisar.eq.")
+        if creada_desde:
+            consulta = consulta.gte("creado_en", creada_desde)
+        if creada_hasta:
+            consulta = consulta.lte("creado_en", f"{creada_hasta}T23:59:59")
+        if texto:
+            texto_seguro = _escapar_filtro(texto)
+            consulta = consulta.or_(
+                f"numero_guia.ilike.%{texto_seguro}%,vendedor_nombre.ilike.%{texto_seguro}%,"
+                f"comprador_nombre.ilike.%{texto_seguro}%"
+            )
+        return consulta.order("creado_en", desc=True)
+
+    return _traer_todas_las_filas(armar)
 
 
 def exportar_marcas(cliente: Client, texto: str | None = None, estado: str | None = None, tipo: str | None = None) -> list[dict]:
     """Todas las marcas que cumplen el filtro activo (sin paginar), para el CSV."""
-    consulta = cliente.table("marcas").select(
-        "codigo, tipo, estado, vence_en, propietarios(nombre, documento), operaciones(numero_guia, fecha)"
-    )
-    if estado in ("activa", "revisar", "baja"):
-        consulta = consulta.eq("estado", estado)
-    if tipo in ("dominante", "complementaria"):
-        consulta = consulta.eq("tipo", tipo)
     texto = (texto or "").strip()
+    propietarios_coincidentes = None
+    operaciones_coincidentes = None
     if texto:
         texto_seguro = _escapar_filtro(texto)
-        coincidencias = (
+        propietarios_coincidentes = (
             cliente.table("propietarios")
             .select("id")
             .or_(f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%")
             .execute()
             .data
         )
-        filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
-        if coincidencias:
-            lista = ",".join(str(p["id"]) for p in coincidencias)
-            filtro += f",propietario_id.in.({lista})"
-        consulta = consulta.or_(filtro)
-    return _traer_todas_las_filas(consulta.order("codigo"))
+        operaciones_coincidentes = (
+            cliente.table("operaciones")
+            .select("id")
+            .ilike("numero_guia", f"%{texto_seguro}%")
+            .execute()
+            .data
+        )
+
+    def armar():
+        consulta = cliente.table("marcas").select(
+            "codigo, tipo, estado, vence_en, propietarios(nombre, documento), operaciones(numero_guia, fecha)"
+        )
+        if estado in ("activa", "revisar", "baja"):
+            consulta = consulta.eq("estado", estado)
+        if tipo in ("dominante", "complementaria"):
+            consulta = consulta.eq("tipo", tipo)
+        if texto:
+            texto_seguro = _escapar_filtro(texto)
+            filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
+            if propietarios_coincidentes:
+                lista = ",".join(str(p["id"]) for p in propietarios_coincidentes)
+                filtro += f",propietario_id.in.({lista})"
+            if operaciones_coincidentes:
+                lista = ",".join(str(o["id"]) for o in operaciones_coincidentes)
+                filtro += f",operacion_id.in.({lista})"
+            consulta = consulta.or_(filtro)
+        return consulta.order("codigo")
+
+    return _traer_todas_las_filas(armar)
 
 
 def ultimos_asientos(cliente: Client, limite: int = 6) -> list[dict]:

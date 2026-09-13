@@ -79,6 +79,10 @@ def _error_seguro(mensaje: str, exc: Exception):
     return render_template("error_simple.html", titulo="No se pudo completar", mensaje=mensaje), 400
 
 
+def _registro_no_encontrado(mensaje: str):
+    return render_template("error_simple.html", titulo="No encontrado", mensaje=mensaje), 404
+
+
 def crear_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -202,6 +206,25 @@ def crear_app() -> Flask:
             mensaje="El formulario tardó demasiado o se abrió en otra pestaña. Volvé atrás y probá de nuevo.",
         ), 400
 
+    @app.errorhandler(404)
+    def no_encontrado(_exc):
+        # Cubre tanto una URL que no matchea ninguna ruta (ej. /guias/abc con
+        # un id que no es numérico) como un abort(404) explícito -- antes de
+        # esto, el primer caso mostraba la página cruda de Flask, en inglés.
+        return render_template(
+            "error_simple.html",
+            titulo="No encontrado",
+            mensaje="No existe la página o el registro que buscás. Puede que el enlace esté mal escrito o ya no exista.",
+        ), 404
+
+    @app.errorhandler(405)
+    def metodo_no_permitido(_exc):
+        return render_template(
+            "error_simple.html",
+            titulo="Esa acción no se puede hacer así",
+            mensaje="Probaste acceder directo a una dirección pensada para un formulario. Usá los botones y enlaces del sitio en vez de escribir la URL a mano.",
+        ), 405
+
     @app.context_processor
     def inyectar_pendientes():
         perfil = perfil_actual()
@@ -265,12 +288,15 @@ def crear_app() -> Flask:
     @requiere_sesion
     def exportar_marcas_csv():
         cliente = cliente_actual()
-        filas = exportar_marcas(
-            cliente,
-            texto=request.args.get("q") or None,
-            estado=request.args.get("estado") or None,
-            tipo=request.args.get("tipo") or None,
-        )
+        try:
+            filas = exportar_marcas(
+                cliente,
+                texto=request.args.get("q") or None,
+                estado=request.args.get("estado") or None,
+                tipo=request.args.get("tipo") or None,
+            )
+        except Exception as exc:
+            return _error_seguro("No se pudo generar el archivo.", exc)
         buffer = io.StringIO()
         escritor = csv.writer(buffer)
         escritor.writerow(["codigo", "tipo", "estado", "vence_en", "propietario", "documento", "numero_guia", "fecha"])
@@ -294,7 +320,7 @@ def crear_app() -> Flask:
         cliente = cliente_actual()
         ficha = ficha_marca(cliente, codigo)
         if not ficha:
-            return "Marca no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa marca.")
         ficha["marca"]["imagen_url"] = url_imagen(cliente, ficha["marca"].get("archivo_png"))
         for acompanante in ficha["acompanantes"]:
             acompanante["imagen_url"] = url_imagen(cliente, acompanante.get("archivo_png"))
@@ -321,7 +347,7 @@ def crear_app() -> Flask:
         actual = cliente.table("marcas").select("*").eq("id", marca_id).maybe_single().execute()
         marca_actual = actual.data if actual else None
         if not marca_actual:
-            return "Marca no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa marca.")
 
         cambios: dict = {}
         for campo in CAMPOS_MARCA_EDITABLES:
@@ -391,13 +417,16 @@ def crear_app() -> Flask:
     @requiere_sesion
     def exportar_guias_csv():
         cliente = cliente_actual()
-        filas = exportar_operaciones(
-            cliente,
-            texto=request.args.get("q") or None,
-            estado=request.args.get("estado") or None,
-            creada_desde=request.args.get("desde") or None,
-            creada_hasta=request.args.get("hasta") or None,
-        )
+        try:
+            filas = exportar_operaciones(
+                cliente,
+                texto=request.args.get("q") or None,
+                estado=request.args.get("estado") or None,
+                creada_desde=request.args.get("desde") or None,
+                creada_hasta=request.args.get("hasta") or None,
+            )
+        except Exception as exc:
+            return _error_seguro("No se pudo generar el archivo.", exc)
         buffer = io.StringIO()
         escritor = csv.writer(buffer)
         escritor.writerow([
@@ -452,7 +481,7 @@ def crear_app() -> Flask:
         cliente = cliente_actual()
         operacion = obtener_operacion_por_id(cliente, operacion_id)
         if not operacion:
-            return "Guía no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa guía.")
         marcas = marcas_de_operacion(cliente, operacion_id)
         for m in marcas:
             m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
@@ -476,7 +505,7 @@ def crear_app() -> Flask:
         perfil = perfil_actual()
         operacion_actual = obtener_operacion_por_id(cliente, operacion_id)
         if not operacion_actual:
-            return "Guía no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa guía.")
 
         cambios: dict = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
@@ -510,7 +539,7 @@ def crear_app() -> Flask:
         perfil = perfil_actual()
         operacion = obtener_operacion_por_id(cliente, operacion_id)
         if not operacion:
-            return "Guía no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa guía.")
 
         tipo = request.form.get("tipo") or "complementaria"
         descripcion = request.form.get("descripcion", "").strip() or None
@@ -539,7 +568,7 @@ def crear_app() -> Flask:
         cliente = cliente_actual()
         operacion = obtener_operacion_por_id(cliente, operacion_id)
         if not operacion:
-            return "Guía no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa guía.")
         marcas = marcas_de_operacion(cliente, operacion_id)
         for m in marcas:
             m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
@@ -557,7 +586,7 @@ def crear_app() -> Flask:
         cliente = cliente_actual()
         operacion = obtener_operacion_por_id(cliente, operacion_id)
         if not operacion:
-            return "Guía no encontrada", 404
+            return _registro_no_encontrado("No se encontró esa guía.")
 
         archivo_pdf = request.files.get("pdf_guia")
         if not archivo_pdf or not archivo_pdf.filename:
