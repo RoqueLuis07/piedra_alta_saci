@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block titulo %}Estadísticas{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · ESTADÍSTICAS{% endblock %}
+{% block titulo_pagina %}Estadísticas{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <div style="display: flex; gap: 0; flex-wrap: wrap; margin-top: 22px; border: 1px solid var(--texto);">
+    {% for etiqueta, valor in [('Al día', desglose.activa), ('Revisar', desglose.revisar), ('De baja', desglose.baja), ('Dominantes', desglose.dominante), ('Complementarias', desglose.complementaria)] %}
+    <div style="flex: 1 1 140px; padding: 16px 18px; border-right: 1px solid var(--borde-fina);">
+      <div style="font-family: 'Source Serif 4', serif; font-size: 34px; font-weight: 600; line-height: 1;">{{ valor }}</div>
+      <div class="sub" style="margin-top: 4px;">{{ etiqueta }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2 class="subtitulo" style="margin-top: 32px;">Guías y animales cargados por mes</h2>
+  <p class="sub" style="max-width: 62ch; margin-top: -4px;">
+    Calculado sobre la fecha real de carga en el sistema. El historial migrado en bloque se ve como un único pico;
+    la tendencia útil es la que se va a formar de acá en adelante, guía por guía.
+  </p>
+  {% if mensual %}
+  {% set max_animales = (mensual|max(attribute='animales')).animales or 1 %}
+  <div style="display: flex; align-items: flex-end; gap: 10px; height: 180px; margin-top: 18px; padding: 0 4px; border-bottom: 1px solid var(--texto);">
+    {% for m in mensual %}
+    <div style="flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;" title="{{ m.mes }}: {{ m.guias }} guía(s), {{ m.animales }} animal(es)">
+      <div class="mono sub" style="font-size: 10px; margin-bottom: 4px;">{{ m.animales }}</div>
+      <div style="width: 100%; max-width: 46px; background: var(--verde-oscuro); height: {{ ((m.animales / max_animales) * 150)|round|int }}px; min-height: 2px;"></div>
+    </div>
+    {% endfor %}
+  </div>
+  <div style="display: flex; gap: 10px; padding: 0 4px; margin-top: 6px;">
+    {% for m in mensual %}
+    <div class="mono sub" style="flex: 1 1 auto; text-align: center; font-size: 10px;">{{ m.mes }}</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="sub" style="margin-top: 18px;">Todavía no hay guías cargadas.</p>
+  {% endif %}
+
+  <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-top: 36px;" class="buscar-cols">
+    <section style="flex: 1 1 380px; min-width: 0;">
+      <h2 class="subtitulo">Vendedores con más animales movidos</h2>
+      <table class="registro">
+        <thead><tr><th>VENDEDOR</th><th>GUÍAS</th><th>ANIMALES</th></tr></thead>
+        <tbody>
+          {% for v in top_vendedores %}
+          <tr><td>{{ v.nombre }}</td><td class="mono">{{ v.guias }}</td><td class="mono">{{ v.animales }}</td></tr>
+          {% else %}
+          <tr><td colspan="3" style="padding: 16px 0; color: var(--texto-secundario);">Sin datos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    <section style="flex: 1 1 380px; min-width: 0;">
+      <h2 class="subtitulo">Compradores con más animales movidos</h2>
+      <table class="registro">
+        <thead><tr><th>COMPRADOR</th><th>GUÍAS</th><th>ANIMALES</th></tr></thead>
+        <tbody>
+          {% for c in top_compradores %}
+          <tr><td>{{ c.nombre }}</td><td class="mono">{{ c.guias }}</td><td class="mono">{{ c.animales }}</td></tr>
+          {% else %}
+          <tr><td colspan="3" style="padding: 16px 0; color: var(--texto-secundario);">Sin datos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </div>
+</div>
+{% endblock %}

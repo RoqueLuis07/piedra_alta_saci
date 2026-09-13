@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}Propietarios{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · PROPIETARIOS{% endblock %}
+{% block titulo_pagina %}Propietarios{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Cada persona o establecimiento dueño de al menos una marca. Entrá a un propietario para ver todas sus marcas y las guías donde aparece como vendedor o comprador.
+  </p>
+
+  <form method="get" action="{{ url_for('propietarios') }}" style="margin: 20px 0 8px; max-width: 460px;">
+    <span class="etiqueta" style="display: block; margin-bottom: 6px;">NOMBRE, DOCUMENTO O ESTABLECIMIENTO</span>
+    <div style="display: flex; gap: 0;">
+      <input type="text" name="q" value="{{ texto }}" placeholder="Ej. Villalba" style="flex: 1 1 auto; min-width: 0;">
+      <button type="submit" class="boton boton-primario" style="min-height: auto;">Buscar</button>
+    </div>
+  </form>
+
+  <div class="mono" style="font-size: 11px; color: var(--texto-secundario); padding: 10px 0; border-top: 1px solid var(--borde-suave); margin-top: 12px;">
+    {{ total }} PROPIETARIO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
+  </div>
+
+  <table class="registro">
+    <thead>
+      <tr>
+        <th>NOMBRE</th>
+        <th>DOCUMENTO</th>
+        <th>ESTABLECIMIENTO</th>
+        <th>LOCALIDAD</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in resultados %}
+      <tr onclick="window.location='{{ url_for('ver_propietario', propietario_id=p.id) }}'">
+        <td style="font-weight: 500;">{{ p.nombre }}</td>
+        <td class="mono">{{ p.documento or '—' }}</td>
+        <td>{{ p.establecimiento or '—' }}</td>
+        <td>{{ [p.localidad, p.departamento]|select|join(', ') or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="paginado">
+  <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
+  <div class="enlaces">
+    {% if pagina > 1 %}
+    <a class="boton" href="{{ url_for('propietarios', q=texto, pagina=pagina - 1) }}">&larr; Anteriores</a>
+    {% else %}
+    <span class="boton-inactivo">&larr; Anteriores</span>
+    {% endif %}
+    {% if pagina * por_pagina < total %}
+    <a class="boton" href="{{ url_for('propietarios', q=texto, pagina=pagina + 1) }}">Siguientes &rarr;</a>
+    {% else %}
+    <span class="boton-inactivo">Siguientes &rarr;</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

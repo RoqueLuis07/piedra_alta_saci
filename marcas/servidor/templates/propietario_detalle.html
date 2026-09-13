@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}{{ propietario.nombre }}{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · FICHA DE PROPIETARIO{% endblock %}
+{% block titulo_pagina %}{{ propietario.nombre }}{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('propietarios') }}">&larr; Volver al listado</a>{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-top: 20px;" class="buscar-cols">
+    <div style="flex: 1 1 480px; min-width: 0;">
+      <div class="campo-fila"><div class="campo-etiqueta">CI / RUC</div><div class="campo-valor mono">{{ propietario.documento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Establecimiento</div><div class="campo-valor">{{ propietario.establecimiento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Código de establecimiento</div><div class="campo-valor mono">{{ propietario.establecimiento_codigo or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Localidad</div><div class="campo-valor">{{ propietario.localidad or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Departamento</div><div class="campo-valor">{{ propietario.departamento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Teléfono</div><div class="campo-valor mono">{{ propietario.telefono or '—' }}</div></div>
+
+      <h2 class="subtitulo" style="margin-top: 28px;">Sus marcas ({{ marcas|length }})</h2>
+      <div style="display: flex; flex-wrap: wrap; border: 1px solid var(--borde-fina); border-bottom: 0;">
+        {% for m in marcas %}
+        <a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="flex: 0 0 auto; width: 112px; border-right: 1px solid var(--borde-fina); border-bottom: 1px solid var(--borde-fina); padding: 14px 8px 12px; text-align: center; overflow: hidden; text-decoration: none; color: inherit;">
+          {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="48" height="48" style="object-fit: contain;">{% endif %}
+          <div class="mono sub" style="margin-top: 8px; word-break: break-all; line-height: 1.3;">{{ m.codigo }}</div>
+          <span class="estado estado-{{ m.estado }}" style="margin-top: 4px;">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
+        </a>
+        {% else %}
+        <p class="sub" style="padding: 14px;">Todavía no tiene marcas asociadas.</p>
+        {% endfor %}
+      </div>
+
+      <h2 class="subtitulo" style="margin-top: 28px;">Guías donde aparece ({{ operaciones|length }})</h2>
+      {% if not propietario.documento %}
+      <p class="sub">Este propietario no tiene CI/RUC cargado, así que no se puede cruzar con las guías automáticamente.</p>
+      {% endif %}
+      {% for o in operaciones %}
+      <a href="{{ url_for('ver_guia', operacion_id=o.id) }}" style="display: flex; gap: 16px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--borde-fina); text-decoration: none; color: inherit;">
+        <span class="mono sub" style="flex: 0 0 100px;">{{ o.numero_guia or '—' }}</span>
+        <span style="flex: 1 1 auto; min-width: 0;">
+          {% if o.vendedor_nombre == propietario.nombre %}Vendió a {{ o.comprador_nombre or 'comprador sin identificar' }}
+          {% else %}Compró de {{ o.vendedor_nombre or 'vendedor sin identificar' }}{% endif %}
+        </span>
+        <span class="mono sub">{{ o.cantidad_animales if o.cantidad_animales is not none else '—' }} cab.</span>
+      </a>
+      {% else %}
+      <p class="sub">Ninguna guía cruzada por documento.</p>
+      {% endfor %}
+    </div>
+
+    {% if perfil.rol in ('operador', 'administrador') %}
+    <aside style="flex: 1 1 320px; min-width: 0; max-width: 380px;">
+      <h2 class="subtitulo">Editar datos de contacto</h2>
+      <form method="post" action="{{ url_for('editar_propietario', propietario_id=propietario.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="campo-edicion"><label>Establecimiento</label><input type="text" name="establecimiento" value="{{ propietario.establecimiento or '' }}"></div>
+        <div class="campo-edicion"><label>Código de establecimiento</label><input type="text" name="establecimiento_codigo" value="{{ propietario.establecimiento_codigo or '' }}"></div>
+        <div class="campo-edicion"><label>Localidad</label><input type="text" name="localidad" value="{{ propietario.localidad or '' }}"></div>
+        <div class="campo-edicion"><label>Departamento</label><input type="text" name="departamento" value="{{ propietario.departamento or '' }}"></div>
+        <div class="campo-edicion"><label>Teléfono</label><input type="text" name="telefono" value="{{ propietario.telefono or '' }}"></div>
+        <button type="submit" class="boton boton-primario">Guardar cambios</button>
+        <p class="sub" style="margin-top: 10px;">Estos datos de contacto se guardan directo, sin pasar por aprobación.</p>
+      </form>
+    </aside>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

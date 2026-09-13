@@ -8,13 +8,14 @@ barrera, es la primera.
 
 from __future__ import annotations
 
+import csv
 import io
 import os
 import re
 import tempfile
 from pathlib import Path
 
-from flask import Flask, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, redirect, render_template, request, send_file, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf import CSRFProtect
@@ -32,21 +33,35 @@ from marcas.servidor.auth import (
 from marcas.servidor.consultas import (
     CAMPOS_MARCA_EDITABLES,
     CAMPOS_OPERACION_EDITABLES,
+    CAMPOS_PROPIETARIO_EDITABLES,
     POR_PAGINA_MARCAS,
+    POR_PAGINA_PROPIETARIOS,
+    actualizar_propietario,
     buscar_marcas,
     cambio_pendiente_de,
     cambios_pendientes_detalle,
     crear_marca,
     crear_operacion,
+    desglose_marcas,
     descargar_imagen_marca,
     estadisticas,
+    exportar_marcas,
+    exportar_operaciones,
     ficha_marca,
+    historial_cambios_resueltos,
     listar_operaciones_paginado,
+    listar_propietarios,
     marcas_a_revisar,
     marcas_de_operacion,
+    marcas_de_propietario,
+    marcas_por_vencer,
     nombres_usuarios,
     obtener_operacion_por_id,
+    obtener_propietario,
+    operaciones_de_propietario,
     proponer_cambio,
+    ranking_participantes,
+    resumen_mensual,
     subir_imagen_marca,
     ultimos_asientos,
     url_imagen,
@@ -218,6 +233,7 @@ def crear_app() -> Flask:
             stats=estadisticas(cliente),
             asientos=ultimos_asientos(cliente),
             a_revisar=marcas_a_revisar(cliente),
+            a_vencer=marcas_por_vencer(cliente),
         )
 
     @app.get("/buscar")
@@ -225,8 +241,10 @@ def crear_app() -> Flask:
     def buscar():
         cliente = cliente_actual()
         texto = request.args.get("q") or None
+        estado = request.args.get("estado") or None
+        tipo = request.args.get("tipo") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
-        resultados, total = buscar_marcas(cliente, texto, pagina=pagina)
+        resultados, total = buscar_marcas(cliente, texto, pagina=pagina, estado=estado, tipo=tipo)
         for fila in resultados:
             fila["imagen_url"] = url_imagen(cliente, fila.get("archivo_png"))
         return render_template(
@@ -237,7 +255,36 @@ def crear_app() -> Flask:
             pagina=pagina,
             por_pagina=POR_PAGINA_MARCAS,
             texto=texto or "",
+            estado=estado or "",
+            tipo=tipo or "",
             perfil=perfil_actual(),
+        )
+
+    @app.get("/marcas/exportar.csv")
+    @requiere_sesion
+    def exportar_marcas_csv():
+        cliente = cliente_actual()
+        filas = exportar_marcas(
+            cliente,
+            texto=request.args.get("q") or None,
+            estado=request.args.get("estado") or None,
+            tipo=request.args.get("tipo") or None,
+        )
+        buffer = io.StringIO()
+        escritor = csv.writer(buffer)
+        escritor.writerow(["codigo", "tipo", "estado", "vence_en", "propietario", "documento", "numero_guia", "fecha"])
+        for m in filas:
+            propietario = m.get("propietarios") or {}
+            operacion = m.get("operaciones") or {}
+            escritor.writerow([
+                m.get("codigo"), m.get("tipo"), m.get("estado"), m.get("vence_en") or "",
+                propietario.get("nombre") or "", propietario.get("documento") or "",
+                operacion.get("numero_guia") or "", operacion.get("fecha") or "",
+            ])
+        return Response(
+            buffer.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=marcas.csv"},
         )
 
     @app.get("/marcas/<codigo>")
@@ -318,14 +365,57 @@ def crear_app() -> Flask:
     def guias():
         cliente = cliente_actual()
         pagina = max(1, request.args.get("pagina", 1, type=int))
-        operaciones, total = listar_operaciones_paginado(cliente, pagina=pagina)
+        texto = request.args.get("q") or None
+        estado = request.args.get("estado") or None
+        creada_desde = request.args.get("desde") or None
+        creada_hasta = request.args.get("hasta") or None
+        operaciones, total = listar_operaciones_paginado(
+            cliente, pagina=pagina, texto=texto, estado=estado,
+            creada_desde=creada_desde, creada_hasta=creada_hasta,
+        )
         return render_template(
             "guias.html",
             activo="guias",
             operaciones=operaciones,
             pagina=pagina,
             total=total,
+            texto=texto or "",
+            estado=estado or "",
+            desde=creada_desde or "",
+            hasta=creada_hasta or "",
             perfil=perfil_actual(),
+        )
+
+    @app.get("/guias/exportar.csv")
+    @requiere_sesion
+    def exportar_guias_csv():
+        cliente = cliente_actual()
+        filas = exportar_operaciones(
+            cliente,
+            texto=request.args.get("q") or None,
+            estado=request.args.get("estado") or None,
+            creada_desde=request.args.get("desde") or None,
+            creada_hasta=request.args.get("hasta") or None,
+        )
+        buffer = io.StringIO()
+        escritor = csv.writer(buffer)
+        escritor.writerow([
+            "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento", "comprador_nombre",
+            "comprador_documento", "cantidad_animales", "categoria_animales", "revisar",
+            "guia_colisionada", "creado_en",
+        ])
+        for o in filas:
+            escritor.writerow([
+                o.get("numero_guia") or "", o.get("fecha") or "", o.get("vendedor_nombre") or "",
+                o.get("vendedor_documento") or "", o.get("comprador_nombre") or "",
+                o.get("comprador_documento") or "", o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
+                o.get("categoria_animales") or "", o.get("revisar") or "",
+                "si" if o.get("guia_colisionada") else "no", o.get("creado_en") or "",
+            ])
+        return Response(
+            buffer.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=guias.csv"},
         )
 
     @app.get("/guias/nueva")
@@ -507,15 +597,93 @@ def crear_app() -> Flask:
             mimetype="application/pdf",
         )
 
+    @app.get("/propietarios")
+    @requiere_sesion
+    def propietarios():
+        cliente = cliente_actual()
+        texto = request.args.get("q") or None
+        pagina = max(1, request.args.get("pagina", 1, type=int))
+        resultados, total = listar_propietarios(cliente, texto, pagina=pagina)
+        return render_template(
+            "propietarios.html",
+            activo="propietarios",
+            resultados=resultados,
+            total=total,
+            pagina=pagina,
+            por_pagina=POR_PAGINA_PROPIETARIOS,
+            texto=texto or "",
+            perfil=perfil_actual(),
+        )
+
+    @app.get("/propietarios/<int:propietario_id>")
+    @requiere_sesion
+    def ver_propietario(propietario_id: int):
+        cliente = cliente_actual()
+        propietario = obtener_propietario(cliente, propietario_id)
+        if not propietario:
+            return "Propietario no encontrado", 404
+        marcas = marcas_de_propietario(cliente, propietario_id)
+        for m in marcas:
+            m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
+        operaciones = operaciones_de_propietario(cliente, propietario.get("documento"))
+        return render_template(
+            "propietario_detalle.html",
+            activo="propietarios",
+            propietario=propietario,
+            marcas=marcas,
+            operaciones=operaciones,
+            perfil=perfil_actual(),
+        )
+
+    @app.post("/propietarios/<int:propietario_id>")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def editar_propietario(propietario_id: int):
+        cliente = cliente_actual()
+        propietario_actual = obtener_propietario(cliente, propietario_id)
+        if not propietario_actual:
+            return "Propietario no encontrado", 404
+        campos = {}
+        for campo in CAMPOS_PROPIETARIO_EDITABLES:
+            if campo not in request.form:
+                continue
+            valor = request.form.get(campo, "").strip() or None
+            if valor != propietario_actual.get(campo):
+                campos[campo] = valor
+        if campos:
+            try:
+                actualizar_propietario(cliente, propietario_id, campos)
+            except Exception as exc:
+                return _error_seguro("No se pudo guardar el cambio.", exc)
+        return redirect(url_for("ver_propietario", propietario_id=propietario_id))
+
+    @app.get("/estadisticas")
+    @requiere_sesion
+    def estadisticas_vista():
+        cliente = cliente_actual()
+        top_vendedores, top_compradores = ranking_participantes(cliente)
+        return render_template(
+            "estadisticas.html",
+            activo="estadisticas",
+            desglose=desglose_marcas(cliente),
+            mensual=resumen_mensual(cliente),
+            top_vendedores=top_vendedores,
+            top_compradores=top_compradores,
+            perfil=perfil_actual(),
+        )
+
     @app.get("/aprobaciones")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def aprobaciones():
         cliente = cliente_actual()
+        vista = request.args.get("vista") or "pendientes"
         return render_template(
             "aprobaciones.html",
             activo="aprobaciones",
-            cambios=cambios_pendientes_detalle(cliente),
+            vista=vista,
+            cambios=cambios_pendientes_detalle(cliente) if vista == "pendientes" else [],
+            historial=historial_cambios_resueltos(cliente) if vista == "historial" else [],
             perfil=perfil_actual(),
         )
 

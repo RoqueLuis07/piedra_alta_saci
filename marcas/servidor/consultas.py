@@ -9,19 +9,28 @@ from __future__ import annotations
 
 import re
 import time
+from collections import defaultdict
+from datetime import date, timedelta
 
 from supabase import Client
 
 BUCKET_IMAGENES = "marcas-imagenes"
 POR_PAGINA_GUIAS = 40
 POR_PAGINA_MARCAS = 40
+POR_PAGINA_PROPIETARIOS = 40
+TAMANO_LOTE_EXPORTACION = 1000
 
 # Deben coincidir exactamente con los arrays permitidos dentro de
 # resolver_cambio_pendiente() en la base -- esa función es quien de verdad
 # hace cumplir el límite (defensa en profundidad), esto es sólo para
 # construir los formularios y no ofrecer editar un campo que después la
 # aprobación va a rechazar.
-CAMPOS_MARCA_EDITABLES = ["codigo", "tipo", "descripcion", "estado", "observaciones", "archivo_png", "archivo_svg"]
+CAMPOS_MARCA_EDITABLES = [
+    "codigo", "tipo", "descripcion", "estado", "observaciones", "archivo_png", "archivo_svg", "vence_en",
+]
+CAMPOS_PROPIETARIO_EDITABLES = [
+    "telefono", "localidad", "departamento", "establecimiento", "establecimiento_codigo",
+]
 CAMPOS_OPERACION_EDITABLES = [
     "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento",
     "vendedor_establecimiento", "vendedor_establecimiento_codigo",
@@ -42,15 +51,24 @@ def _escapar_filtro(texto: str) -> str:
 
 
 def buscar_marcas(
-    cliente: Client, texto: str | None, pagina: int = 1, por_pagina: int = POR_PAGINA_MARCAS
+    cliente: Client,
+    texto: str | None,
+    pagina: int = 1,
+    por_pagina: int = POR_PAGINA_MARCAS,
+    estado: str | None = None,
+    tipo: str | None = None,
 ) -> tuple[list[dict], int]:
     """Los resultados de la página pedida y el total real de coincidencias."""
     texto = (texto or "").strip()
     consulta = cliente.table("marcas").select(
-        "id, codigo, tipo, estado, posicion, propietario_id, operacion_id, archivo_png, "
+        "id, codigo, tipo, estado, posicion, propietario_id, operacion_id, archivo_png, vence_en, "
         "propietarios(nombre, documento), operaciones(numero_guia, fecha)",
         count="exact",
     )
+    if estado in ("activa", "revisar", "baja"):
+        consulta = consulta.eq("estado", estado)
+    if tipo in ("dominante", "complementaria"):
+        consulta = consulta.eq("tipo", tipo)
     if texto:
         texto_seguro = _escapar_filtro(texto)
         coincidencias = (
@@ -71,19 +89,46 @@ def buscar_marcas(
 
 
 def listar_operaciones_paginado(
-    cliente: Client, pagina: int = 1, por_pagina: int = POR_PAGINA_GUIAS
+    cliente: Client,
+    pagina: int = 1,
+    por_pagina: int = POR_PAGINA_GUIAS,
+    texto: str | None = None,
+    estado: str | None = None,
+    creada_desde: str | None = None,
+    creada_hasta: str | None = None,
 ) -> tuple[list[dict], int]:
+    """``estado`` filtra por lo que ya se muestra como estado en el listado:
+    'revisar' (tiene notas de revisión), 'colisiona' (guía colisionada) o
+    'al_dia' (ninguna de las dos). ``creada_desde``/``creada_hasta`` son
+    fechas ISO (AAAA-MM-DD) sobre ``creado_en`` -- la fecha real y confiable
+    de carga en el sistema, no el campo de texto libre ``fecha`` del formulario
+    de origen, que en más de las tres cuartas partes de las guías migradas
+    llegó vacío o en formatos dispares."""
+    consulta = cliente.table("operaciones").select(
+        "id, numero_guia, fecha, vendedor_nombre, comprador_nombre, "
+        "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en",
+        count="exact",
+    )
+    if estado == "revisar":
+        consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
+    elif estado == "colisiona":
+        consulta = consulta.eq("guia_colisionada", True)
+    elif estado == "al_dia":
+        consulta = consulta.eq("guia_colisionada", False).or_("revisar.is.null,revisar.eq.")
+    if creada_desde:
+        consulta = consulta.gte("creado_en", creada_desde)
+    if creada_hasta:
+        consulta = consulta.lte("creado_en", f"{creada_hasta}T23:59:59")
+    texto = (texto or "").strip()
+    if texto:
+        texto_seguro = _escapar_filtro(texto)
+        consulta = consulta.or_(
+            f"numero_guia.ilike.%{texto_seguro}%,vendedor_nombre.ilike.%{texto_seguro}%,"
+            f"comprador_nombre.ilike.%{texto_seguro}%"
+        )
     desde = max(0, pagina - 1) * por_pagina
     respuesta = (
-        cliente.table("operaciones")
-        .select(
-            "id, numero_guia, fecha, vendedor_nombre, comprador_nombre, "
-            "cantidad_animales, categoria_animales, revisar, guia_colisionada",
-            count="exact",
-        )
-        .order("creado_en", desc=True)
-        .range(desde, desde + por_pagina - 1)
-        .execute()
+        consulta.order("creado_en", desc=True).range(desde, desde + por_pagina - 1).execute()
     )
     return respuesta.data, (respuesta.count or 0)
 
@@ -246,6 +291,217 @@ def estadisticas(cliente: Client) -> dict:
     return {"total": total, "a_revisar": a_revisar, "pendientes": pendientes}
 
 
+def desglose_marcas(cliente: Client) -> dict:
+    """Cuántas marcas hay por estado y por tipo -- para el panel de estadísticas."""
+    resultado = {}
+    for estado in ("activa", "revisar", "baja"):
+        resultado[estado] = (
+            cliente.table("marcas").select("id", count="exact").eq("estado", estado).execute().count or 0
+        )
+    for tipo in ("dominante", "complementaria"):
+        resultado[tipo] = (
+            cliente.table("marcas").select("id", count="exact").eq("tipo", tipo).execute().count or 0
+        )
+    return resultado
+
+
+def resumen_mensual(cliente: Client, meses: int = 12) -> list[dict]:
+    """Guías cargadas y animales declarados por mes, según ``creado_en``.
+
+    Se calcula sobre cuándo se cargó cada guía al sistema (dato real y
+    siempre presente), no sobre el campo de texto libre ``fecha`` del
+    formulario de origen -- ese llegó vacío o en formatos dispares en la
+    mayoría de las guías migradas, así que no sirve para armar una serie de
+    tiempo confiable. El historial migrado en bloque va a verse como un solo
+    pico; la tendencia real se arma con las guías que se carguen de acá en
+    adelante."""
+    filas = cliente.table("operaciones").select("creado_en, cantidad_animales").execute().data
+    baldes: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
+    for f in filas:
+        marca_tiempo = f.get("creado_en")
+        if not marca_tiempo:
+            continue
+        clave = marca_tiempo[:7]  # 'AAAA-MM'
+        baldes[clave]["guias"] += 1
+        baldes[clave]["animales"] += f.get("cantidad_animales") or 0
+    claves = sorted(baldes)[-meses:]
+    return [{"mes": clave, **baldes[clave]} for clave in claves]
+
+
+def ranking_participantes(cliente: Client, limite: int = 8) -> tuple[list[dict], list[dict]]:
+    """Los vendedores y compradores con más animales movidos, según las guías cargadas."""
+    filas = cliente.table("operaciones").select("vendedor_nombre, comprador_nombre, cantidad_animales").execute().data
+    vendedores: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
+    compradores: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
+    for f in filas:
+        cantidad = f.get("cantidad_animales") or 0
+        if f.get("vendedor_nombre"):
+            v = vendedores[f["vendedor_nombre"]]
+            v["guias"] += 1
+            v["animales"] += cantidad
+        if f.get("comprador_nombre"):
+            c = compradores[f["comprador_nombre"]]
+            c["guias"] += 1
+            c["animales"] += cantidad
+    top_vendedores = sorted(vendedores.items(), key=lambda kv: kv[1]["animales"], reverse=True)[:limite]
+    top_compradores = sorted(compradores.items(), key=lambda kv: kv[1]["animales"], reverse=True)[:limite]
+    return (
+        [{"nombre": n, **d} for n, d in top_vendedores],
+        [{"nombre": n, **d} for n, d in top_compradores],
+    )
+
+
+def marcas_por_vencer(cliente: Client, dias: int = 90, limite: int = 10) -> list[dict]:
+    """Marcas activas con vencimiento cargado dentro de los próximos ``dias`` días
+    (incluye las ya vencidas), para alertar la renovación a tiempo."""
+    limite_fecha = (date.today() + timedelta(days=dias)).isoformat()
+    return (
+        cliente.table("marcas")
+        .select("codigo, vence_en, propietarios(nombre)")
+        .not_.is_("vence_en", "null")
+        .lte("vence_en", limite_fecha)
+        .neq("estado", "baja")
+        .order("vence_en")
+        .limit(limite)
+        .execute()
+        .data
+    )
+
+
+def listar_propietarios(
+    cliente: Client, texto: str | None = None, pagina: int = 1, por_pagina: int = POR_PAGINA_PROPIETARIOS
+) -> tuple[list[dict], int]:
+    consulta = cliente.table("propietarios").select(
+        "id, nombre, documento, establecimiento, localidad, departamento", count="exact"
+    )
+    texto = (texto or "").strip()
+    if texto:
+        texto_seguro = _escapar_filtro(texto)
+        consulta = consulta.or_(
+            f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%,"
+            f"establecimiento.ilike.%{texto_seguro}%"
+        )
+    desde = max(0, pagina - 1) * por_pagina
+    respuesta = consulta.order("nombre").range(desde, desde + por_pagina - 1).execute()
+    return respuesta.data, (respuesta.count or 0)
+
+
+def obtener_propietario(cliente: Client, propietario_id: int) -> dict | None:
+    respuesta = (
+        cliente.table("propietarios").select("*").eq("id", propietario_id).maybe_single().execute()
+    )
+    return respuesta.data if respuesta else None
+
+
+def marcas_de_propietario(cliente: Client, propietario_id: int) -> list[dict]:
+    return (
+        cliente.table("marcas")
+        .select("codigo, tipo, estado, archivo_png, vence_en")
+        .eq("propietario_id", propietario_id)
+        .order("codigo")
+        .execute()
+        .data
+    )
+
+
+def operaciones_de_propietario(cliente: Client, documento: str | None) -> list[dict]:
+    """Guías donde este propietario aparece como vendedor o comprador.
+
+    Se cruza por documento (CI/RUC) porque las guías guardan vendedor y
+    comprador como texto libre, no como referencia a ``propietarios`` -- no
+    hay otra columna confiable para vincular ambas tablas."""
+    documento = (documento or "").strip()
+    if not documento:
+        return []
+    documento_seguro = _escapar_filtro(documento)
+    return (
+        cliente.table("operaciones")
+        .select("id, numero_guia, fecha, vendedor_nombre, comprador_nombre, cantidad_animales, creado_en")
+        .or_(f"vendedor_documento.eq.{documento_seguro},comprador_documento.eq.{documento_seguro}")
+        .order("creado_en", desc=True)
+        .execute()
+        .data
+    )
+
+
+def actualizar_propietario(cliente: Client, propietario_id: int, campos: dict) -> None:
+    """Los datos de contacto de un propietario se actualizan directo -- no pasan
+    por modificación supervisada, esa cola es sólo para marcas y operaciones."""
+    cliente.table("propietarios").update(campos).eq("id", propietario_id).execute()
+
+
+def _traer_todas_las_filas(consulta) -> list[dict]:
+    """PostgREST devuelve como máximo 1000 filas por pedido -- para exportar
+    todo lo que cumple un filtro (no sólo una página) hay que pedir en lotes."""
+    filas: list[dict] = []
+    inicio = 0
+    while True:
+        lote = consulta.range(inicio, inicio + TAMANO_LOTE_EXPORTACION - 1).execute().data
+        filas.extend(lote)
+        if len(lote) < TAMANO_LOTE_EXPORTACION:
+            return filas
+        inicio += TAMANO_LOTE_EXPORTACION
+
+
+def exportar_operaciones(
+    cliente: Client,
+    texto: str | None = None,
+    estado: str | None = None,
+    creada_desde: str | None = None,
+    creada_hasta: str | None = None,
+) -> list[dict]:
+    """Todas las guías que cumplen el filtro activo (sin paginar), para el CSV."""
+    consulta = cliente.table("operaciones").select(
+        "numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento, "
+        "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en"
+    )
+    if estado == "revisar":
+        consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
+    elif estado == "colisiona":
+        consulta = consulta.eq("guia_colisionada", True)
+    elif estado == "al_dia":
+        consulta = consulta.eq("guia_colisionada", False).or_("revisar.is.null,revisar.eq.")
+    if creada_desde:
+        consulta = consulta.gte("creado_en", creada_desde)
+    if creada_hasta:
+        consulta = consulta.lte("creado_en", f"{creada_hasta}T23:59:59")
+    texto = (texto or "").strip()
+    if texto:
+        texto_seguro = _escapar_filtro(texto)
+        consulta = consulta.or_(
+            f"numero_guia.ilike.%{texto_seguro}%,vendedor_nombre.ilike.%{texto_seguro}%,"
+            f"comprador_nombre.ilike.%{texto_seguro}%"
+        )
+    return _traer_todas_las_filas(consulta.order("creado_en", desc=True))
+
+
+def exportar_marcas(cliente: Client, texto: str | None = None, estado: str | None = None, tipo: str | None = None) -> list[dict]:
+    """Todas las marcas que cumplen el filtro activo (sin paginar), para el CSV."""
+    consulta = cliente.table("marcas").select(
+        "codigo, tipo, estado, vence_en, propietarios(nombre, documento), operaciones(numero_guia, fecha)"
+    )
+    if estado in ("activa", "revisar", "baja"):
+        consulta = consulta.eq("estado", estado)
+    if tipo in ("dominante", "complementaria"):
+        consulta = consulta.eq("tipo", tipo)
+    texto = (texto or "").strip()
+    if texto:
+        texto_seguro = _escapar_filtro(texto)
+        coincidencias = (
+            cliente.table("propietarios")
+            .select("id")
+            .or_(f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%")
+            .execute()
+            .data
+        )
+        filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
+        if coincidencias:
+            lista = ",".join(str(p["id"]) for p in coincidencias)
+            filtro += f",propietario_id.in.({lista})"
+        consulta = consulta.or_(filtro)
+    return _traer_todas_las_filas(consulta.order("codigo"))
+
+
 def ultimos_asientos(cliente: Client, limite: int = 6) -> list[dict]:
     return (
         cliente.table("operaciones")
@@ -269,16 +525,7 @@ def marcas_a_revisar(cliente: Client, limite: int = 6) -> list[dict]:
     )
 
 
-def cambios_pendientes_detalle(cliente: Client) -> list[dict]:
-    """Los cambios en cola de aprobación, con el código de la marca/operación."""
-    cambios = (
-        cliente.table("cambios_pendientes")
-        .select("*")
-        .eq("estado", "pendiente")
-        .order("propuesto_en")
-        .execute()
-        .data
-    )
+def _completar_referencias_cambios(cliente: Client, cambios: list[dict]) -> list[dict]:
     for c in cambios:
         c["referencia"] = c["fila_id"]
         if c["tabla"] == "marcas":
@@ -303,6 +550,46 @@ def cambios_pendientes_detalle(cliente: Client) -> list[dict]:
             )
             if fila and fila.data:
                 c["referencia"] = fila.data["numero_guia"] or c["fila_id"]
+    return cambios
+
+
+def cambios_pendientes_detalle(cliente: Client) -> list[dict]:
+    """Los cambios en cola de aprobación, con el código de la marca/operación."""
+    cambios = (
+        cliente.table("cambios_pendientes")
+        .select("*")
+        .eq("estado", "pendiente")
+        .order("propuesto_en")
+        .execute()
+        .data
+    )
+    return _completar_referencias_cambios(cliente, cambios)
+
+
+def historial_cambios_resueltos(cliente: Client, limite: int = 200) -> list[dict]:
+    """La bitácora completa: cambios ya aprobados o rechazados, más recientes primero.
+
+    Complementa a ``cambios_pendientes_detalle`` (que sólo muestra la cola en
+    espera) con lo que ya se resolvió, para que quede visible quién propuso y
+    quién aprobó/rechazó cada modificación pasada, no sólo la vigente."""
+    nombres_ids: set[str] = set()
+    cambios = (
+        cliente.table("cambios_pendientes")
+        .select("*")
+        .neq("estado", "pendiente")
+        .order("revisado_en", desc=True)
+        .limit(limite)
+        .execute()
+        .data
+    )
+    cambios = _completar_referencias_cambios(cliente, cambios)
+    for c in cambios:
+        nombres_ids.add(c.get("propuesto_por"))
+        nombres_ids.add(c.get("revisado_por"))
+    nombres = nombres_usuarios(cliente, nombres_ids)
+    for c in cambios:
+        c["propuesto_por_nombre"] = nombres.get(c.get("propuesto_por"))
+        c["revisado_por_nombre"] = nombres.get(c.get("revisado_por"))
     return cambios
 
 

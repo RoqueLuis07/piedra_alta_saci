@@ -152,6 +152,14 @@
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13 13 20a2 2 0 0 1-2.8 0L3 12.8V4h8.8L20 12.2a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" stroke="none"/></svg></span>
         <span class="nav-texto">Marcas</span>
       </a>
+      <a class="nav-item {{ 'activo' if activo == 'propietarios' }}" href="{{ url_for('propietarios') }}" title="Propietarios">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg></span>
+        <span class="nav-texto">Propietarios</span>
+      </a>
+      <a class="nav-item {{ 'activo' if activo == 'estadisticas' }}" href="{{ url_for('estadisticas_vista') }}" title="Estadísticas">
+        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M11 20V4M18 20v-7"/></svg></span>
+        <span class="nav-texto">Estadísticas</span>
+      </a>
       <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" title="Aprobaciones">
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg></span>
         <span class="nav-texto" style="flex: 1;">Aprobaciones</span>

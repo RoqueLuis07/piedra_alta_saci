@@ -5,7 +5,13 @@
 
 {% block contenido %}
 <div class="contenido">
-  <p class="sub" style="max-width: 62ch; margin-top: 22px;">
+  <div style="display: flex; gap: 0; margin-top: 22px; border-bottom: 1px solid var(--texto);">
+    <a href="{{ url_for('aprobaciones', vista='pendientes') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if vista == 'pendientes' %}background: var(--verde-oscuro); color: var(--fondo);{% else %}color: var(--texto-secundario);{% endif %}">PENDIENTES</a>
+    <a href="{{ url_for('aprobaciones', vista='historial') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if vista == 'historial' %}background: var(--verde-oscuro); color: var(--fondo);{% else %}color: var(--texto-secundario);{% endif %}">HISTORIAL</a>
+  </div>
+
+  {% if vista == 'pendientes' %}
+  <p class="sub" style="max-width: 62ch; margin-top: 18px;">
     Modificaciones propuestas por un Administrador sobre un registro ya cargado. Quedan acá hasta que otra persona
     (nunca quien las propuso) las apruebe o las rechace.
   </p>
@@ -59,5 +65,44 @@
   {% else %}
   <p class="sub" style="margin-top: 30px;">No hay cambios pendientes de aprobación.</p>
   {% endfor %}
+
+  {% else %}
+  <p class="sub" style="max-width: 62ch; margin-top: 18px;">
+    Los últimos {{ historial|length }} cambios ya resueltos, con quién los propuso y quién los aprobó o rechazó.
+  </p>
+  {% for c in historial %}
+  <div style="margin-top: 22px; border: 1px solid var(--borde-suave); background: var(--superficie); padding: 18px;">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+      <div>
+        <div class="etiqueta">{{ c.tabla|upper }}</div>
+        <div class="mono" style="font-size: 17px; font-weight: 500; margin-top: 4px;">{{ c.referencia }}</div>
+      </div>
+      <span class="estado {{ 'estado-activa' if c.estado == 'aprobado' else 'estado-baja' }}">{{ 'APROBADO' if c.estado == 'aprobado' else 'RECHAZADO' }}</span>
+    </div>
+    <div class="sub mono" style="margin-top: 10px;">
+      PROPUESTO POR {{ (c.propuesto_por_nombre or '—')|upper }} EL {{ c.propuesto_en }}
+      · {{ 'APROBADO' if c.estado == 'aprobado' else 'RECHAZADO' }} POR {{ (c.revisado_por_nombre or '—')|upper }} EL {{ c.revisado_en }}
+    </div>
+    {% if c.motivo_rechazo %}
+    <div class="sub" style="margin-top: 6px;">Motivo: {{ c.motivo_rechazo }}</div>
+    {% endif %}
+    <div style="margin-top: 14px; border-top: 1px solid var(--borde-fina); padding-top: 12px;">
+      {% for campo, valor in c.cambios.items() %}
+      {% if campo not in ('archivo_png', 'archivo_svg') %}
+      <div class="campo-fila">
+        <div class="campo-etiqueta">{{ campo }}</div>
+        <div class="campo-valor">
+          <span class="sub" style="text-decoration: line-through;">{{ c.valores_anteriores.get(campo, '—') }}</span>
+          &rarr; <strong>{{ valor }}</strong>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="sub" style="margin-top: 30px;">Todavía no se resolvió ningún cambio.</p>
+  {% endfor %}
+  {% endif %}
 </div>
 {% endblock %}

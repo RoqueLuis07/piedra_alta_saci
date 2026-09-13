@@ -35,6 +35,9 @@
           {% if ficha.marca.propietarios %}
           <div class="sub" style="margin-top: 8px;">{{ ficha.marca.propietarios.nombre }} · {{ ficha.marca.propietarios.documento or '' }}</div>
           {% endif %}
+          {% if ficha.marca.vence_en %}
+          <div class="sub mono" style="margin-top: 4px;">VENCE {{ ficha.marca.vence_en }}</div>
+          {% endif %}
         </div>
       </div>
 
@@ -90,6 +93,7 @@
           </select>
         </div>
         <div class="campo-edicion"><label>Observaciones</label><textarea name="observaciones" rows="3">{{ ficha.marca.observaciones or '' }}</textarea></div>
+        <div class="campo-edicion"><label>Vencimiento ante SENACSA</label><input type="date" name="vence_en" value="{{ ficha.marca.vence_en or '' }}"></div>
         <div class="campo-edicion"><label>Reemplazar imagen PNG</label><input type="file" name="nuevo_png" accept="image/png"></div>
         <div class="campo-edicion"><label>Reemplazar imagen SVG</label><input type="file" name="nuevo_svg" accept="image/svg+xml"></div>
         <button type="submit" class="boton boton-primario">Guardar cambios</button>
