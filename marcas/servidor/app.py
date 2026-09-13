@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -20,7 +21,6 @@ from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
 
 from marcas.pdf.guia import completar_guia
-
 from marcas.servidor.auth import (
     cerrar_sesion,
     cliente_actual,
@@ -53,6 +53,15 @@ from marcas.servidor.consultas import (
 )
 from marcas.servidor.supa import cliente_anonimo
 
+_CODIGO_VALIDO = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _error_seguro(mensaje: str, exc: Exception):
+    """El detalle real queda en los logs del servidor, nunca en la respuesta:
+    puede traer nombres de columnas o de tablas que no hace falta mostrar."""
+    print(f"{mensaje}: {exc}")
+    return mensaje, 400
+
 
 def crear_app() -> Flask:
     app = Flask(__name__)
@@ -62,6 +71,10 @@ def crear_app() -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = True
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # Sin este límite, cualquier sesión logueada podría mandar un archivo
+    # enorme (imagen de marca o PDF de guía) y agotar memoria/disco del
+    # servidor. 20 MB alcanza de sobra para una imagen o un PDF de guía.
+    app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
     # Token oculto obligatorio en todo formulario POST -- protege contra
     # peticiones falsificadas desde otro sitio (CSRF). Queda disponible en
@@ -156,6 +169,14 @@ def crear_app() -> Flask:
             titulo="Demasiados intentos",
             mensaje="Probaste demasiadas veces en poco tiempo. Esperá unos minutos y volvé a intentar.",
         ), 429
+
+    @app.errorhandler(413)
+    def archivo_demasiado_grande(_exc):
+        return render_template(
+            "error_simple.html",
+            titulo="El archivo es demasiado grande",
+            mensaje="El límite es 20 MB por archivo. Probá con una imagen o un PDF más liviano.",
+        ), 413
 
     @app.errorhandler(CSRFError)
     def token_invalido(_exc):
@@ -260,8 +281,16 @@ def crear_app() -> Flask:
                 continue
             if campo in request.form:
                 valor = request.form.get(campo, "").strip() or None
-                if campo == "codigo" and not valor:
-                    continue  # el código no puede quedar vacío
+                if campo == "codigo":
+                    if not valor:
+                        continue  # el código no puede quedar vacío
+                    if not _CODIGO_VALIDO.match(valor):
+                        return (
+                            "El código sólo puede tener letras, números, puntos, "
+                            "guiones y guiones bajos (se usa también como parte de la "
+                            "dirección web y del nombre de archivo).",
+                            400,
+                        )
                 if valor != marca_actual.get(campo):
                     cambios[campo] = valor
 
@@ -281,7 +310,7 @@ def crear_app() -> Flask:
                     valores_anteriores = {k: marca_actual.get(k) for k in cambios}
                     proponer_cambio(cliente, "marcas", marca_id, cambios, valores_anteriores, perfil["id"])
             except Exception as exc:
-                return f"No se pudo guardar el cambio: {exc}", 400
+                return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_marca", codigo=codigo_para_volver))
 
     @app.get("/guias")
@@ -323,7 +352,7 @@ def crear_app() -> Flask:
         try:
             operacion_id = crear_operacion(cliente, campos, perfil["id"])
         except Exception as exc:
-            return f"No se pudo crear la guía: {exc}", 400
+            return _error_seguro("No se pudo crear la guía.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.get("/guias/<int:operacion_id>")
@@ -379,7 +408,7 @@ def crear_app() -> Flask:
                     valores_anteriores = {k: operacion_actual.get(k) for k in cambios}
                     proponer_cambio(cliente, "operaciones", operacion_id, cambios, valores_anteriores, perfil["id"])
             except Exception as exc:
-                return f"No se pudo guardar el cambio: {exc}", 400
+                return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.post("/guias/<int:operacion_id>/marcas")
@@ -400,7 +429,7 @@ def crear_app() -> Flask:
         try:
             nueva = crear_marca(cliente, campos, perfil["id"])
         except Exception as exc:
-            return f"No se pudo agregar la marca: {exc}", 400
+            return _error_seguro("No se pudo agregar la marca.", exc)
 
         archivo = request.files.get("imagen")
         if archivo and archivo.filename:
@@ -467,7 +496,7 @@ def crear_app() -> Flask:
             try:
                 completar_guia(pdf_entrada, rutas_imagenes, salida)
             except Exception as exc:
-                return f"No se pudo generar el PDF: {exc}", 400
+                return _error_seguro("No se pudo generar el PDF.", exc)
             contenido_pdf = salida.read_bytes()
 
         nombre_descarga = f"guia_{operacion.get('numero_guia') or operacion_id}.pdf"
@@ -503,7 +532,7 @@ def crear_app() -> Flask:
                 {"p_cambio_id": cambio_id, "p_decision": decision, "p_motivo": motivo},
             ).execute()
         except Exception as exc:
-            return f"No se pudo resolver el cambio: {exc}", 400
+            return _error_seguro("No se pudo resolver el cambio.", exc)
         return redirect(url_for("aprobaciones"))
 
     @app.get("/panel")

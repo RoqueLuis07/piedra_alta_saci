@@ -7,6 +7,7 @@ formulario de origen + marcas que la acompañan).
 
 from __future__ import annotations
 
+import re
 import time
 
 from supabase import Client
@@ -29,6 +30,17 @@ CAMPOS_OPERACION_EDITABLES = [
 ]
 
 
+_CARACTERES_RESERVADOS_FILTRO = re.compile(r'([,.()\\*"])')
+
+
+def _escapar_filtro(texto: str) -> str:
+    """Neutraliza los caracteres que PostgREST usa como separadores dentro de
+    ``or_()`` (coma, punto, paréntesis) -- si no se escapan, un texto de
+    búsqueda armado a propósito podría agregar condiciones que no eran la
+    intención (ej. sumar otra comparación al filtro)."""
+    return _CARACTERES_RESERVADOS_FILTRO.sub(r"\\\1", texto)
+
+
 def buscar_marcas(
     cliente: Client, texto: str | None, pagina: int = 1, por_pagina: int = POR_PAGINA_MARCAS
 ) -> tuple[list[dict], int]:
@@ -40,14 +52,15 @@ def buscar_marcas(
         count="exact",
     )
     if texto:
+        texto_seguro = _escapar_filtro(texto)
         coincidencias = (
             cliente.table("propietarios")
             .select("id")
-            .or_(f"nombre.ilike.%{texto}%,documento.ilike.%{texto}%")
+            .or_(f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%")
             .execute()
             .data
         )
-        filtro = f"codigo.ilike.%{texto}%,numero_guia.ilike.%{texto}%"
+        filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
         if coincidencias:
             lista = ",".join(str(p["id"]) for p in coincidencias)
             filtro += f",propietario_id.in.({lista})"
@@ -135,17 +148,26 @@ def nombres_usuarios(cliente: Client, ids) -> dict[str, str]:
 
 
 def cambio_pendiente_de(cliente: Client, tabla: str, fila_id: int) -> dict | None:
-    """Si esta fila ya tiene una modificación esperando aprobación, la trae."""
-    respuesta = (
+    """Si esta fila ya tiene una modificación esperando aprobación, la trae.
+
+    No hay ninguna restricción en la base que impida dos propuestas pendientes
+    sobre la misma fila (dos Administradores podrían proponer cada uno la
+    suya) -- ``.maybe_single()`` rompería en ese caso al encontrar más de una
+    fila, así que se trae la más reciente con ``limit(1)`` en vez de asumir
+    que siempre hay como mucho una.
+    """
+    filas = (
         cliente.table("cambios_pendientes")
         .select("*")
         .eq("tabla", tabla)
         .eq("fila_id", fila_id)
         .eq("estado", "pendiente")
-        .maybe_single()
+        .order("propuesto_en", desc=True)
+        .limit(1)
         .execute()
+        .data
     )
-    return respuesta.data if respuesta else None
+    return filas[0] if filas else None
 
 
 def descargar_imagen_marca(cliente: Client, ruta: str | None) -> bytes | None:
