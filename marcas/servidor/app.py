@@ -20,6 +20,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
+from postgrest.exceptions import APIError
 
 from marcas.pdf.guia import completar_guia
 from marcas.servidor.auth import (
@@ -75,7 +76,7 @@ def _error_seguro(mensaje: str, exc: Exception):
     """El detalle real queda en los logs del servidor, nunca en la respuesta:
     puede traer nombres de columnas o de tablas que no hace falta mostrar."""
     print(f"{mensaje}: {exc}")
-    return mensaje, 400
+    return render_template("error_simple.html", titulo="No se pudo completar", mensaje=mensaje), 400
 
 
 def crear_app() -> Flask:
@@ -702,6 +703,16 @@ def crear_app() -> Flask:
                 "resolver_cambio_pendiente",
                 {"p_cambio_id": cambio_id, "p_decision": decision, "p_motivo": motivo},
             ).execute()
+        except APIError as exc:
+            # resolver_cambio_pendiente() sólo levanta textos pensados para
+            # mostrarse tal cual (nunca nombres de columna sin filtrar) --
+            # por ejemplo "quien propone el cambio no puede aprobarlo". Esconder
+            # ese motivo detrás de un mensaje genérico no protege nada y sólo
+            # confunde a quien está tratando de aprobar o rechazar el cambio.
+            print(f"No se pudo resolver el cambio {cambio_id}: {exc}")
+            return render_template(
+                "error_simple.html", titulo="No se pudo resolver el cambio", mensaje=exc.message
+            ), 400
         except Exception as exc:
             return _error_seguro("No se pudo resolver el cambio.", exc)
         return redirect(url_for("aprobaciones"))
