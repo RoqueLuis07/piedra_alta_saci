@@ -511,21 +511,24 @@ def crear_app() -> Flask:
         if not operacion:
             return "Guía no encontrada", 404
 
-        campos = {
-            "tipo": request.form.get("tipo") or "complementaria",
-            "descripcion": request.form.get("descripcion", "").strip() or None,
-            "operacion_id": operacion_id,
-        }
+        tipo = request.form.get("tipo") or "complementaria"
+        descripcion = request.form.get("descripcion", "").strip() or None
+        # Con "multiple" en el campo de archivo se puede cargar de una vez
+        # todo un grupo de marcas complementarias (una por imagen); sin
+        # ninguna imagen se agrega una sola marca en blanco, como antes.
+        archivos = [a for a in request.files.getlist("imagen") if a and a.filename]
+
         try:
-            nueva = crear_marca(cliente, campos, perfil["id"])
+            for archivo in archivos or [None]:
+                nueva = crear_marca(
+                    cliente, {"tipo": tipo, "descripcion": descripcion, "operacion_id": operacion_id}, perfil["id"]
+                )
+                if archivo:
+                    extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
+                    nombre = subir_imagen_marca(cliente, nueva["codigo"], archivo.read(), extension)
+                    cliente.table("marcas").update({f"archivo_{extension}": nombre}).eq("id", nueva["id"]).execute()
         except Exception as exc:
             return _error_seguro("No se pudo agregar la marca.", exc)
-
-        archivo = request.files.get("imagen")
-        if archivo and archivo.filename:
-            extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
-            nombre = subir_imagen_marca(cliente, nueva["codigo"], archivo.read(), extension)
-            cliente.table("marcas").update({f"archivo_{extension}": nombre}).eq("id", nueva["id"]).execute()
 
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 

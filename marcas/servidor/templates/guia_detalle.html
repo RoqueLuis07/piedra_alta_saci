@@ -96,16 +96,40 @@
         <div style="font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 600; margin-bottom: 10px;">Agregar marca a esta guía</div>
         <form method="post" action="{{ url_for('agregar_marca_a_guia', operacion_id=operacion.id) }}" enctype="multipart/form-data">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <p class="sub" style="margin: 0 0 12px;">El código (M-00001, M-00002...) se asigna solo.</p>
+          <p class="sub" style="margin: 0 0 12px;">El código (M-00001, M-00002...) se asigna solo. Si es complementaria podés elegir o dibujar varias de una vez: se crea una marca por cada imagen.</p>
           <div class="campo-edicion">
             <label>Tipo</label>
-            <select name="tipo">
+            <select name="tipo" id="campo-tipo-nueva-marca">
               <option value="dominante">Dominante</option>
               <option value="complementaria" selected>Complementaria</option>
             </select>
           </div>
           <div class="campo-edicion"><label>Descripción</label><input type="text" name="descripcion"></div>
-          <div class="campo-edicion"><label>Imagen (PNG o SVG)</label><input type="file" name="imagen" accept="image/png,image/svg+xml"></div>
+          <div class="campo-edicion">
+            <label>Imagen (PNG o SVG) -- una para dominante, varias para complementarias</label>
+            <input type="file" name="imagen" id="campo-imagenes-nueva-marca" accept="image/png,image/svg+xml" multiple>
+          </div>
+          <div id="previa-imagenes-nueva-marca" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;"></div>
+
+          <details id="panel-dibujo-nueva-marca" style="margin-bottom: 14px;">
+            <summary class="sub" style="cursor: pointer;">Dibujar a mano en vez de subir un archivo</summary>
+            <div style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
+              <canvas width="260" height="260" style="width: 100%; max-width: 260px; border: 1px solid var(--texto); touch-action: none; cursor: crosshair;"></canvas>
+              <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+                <label class="sub" style="margin: 0;">Grosor
+                  <select class="grosor-dibujo" style="margin-left: 4px;">
+                    <option value="2">Fino</option>
+                    <option value="4" selected>Medio</option>
+                    <option value="8">Grueso</option>
+                  </select>
+                </label>
+                <button type="button" class="boton dibujo-deshacer" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Deshacer</button>
+                <button type="button" class="boton dibujo-borrar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Borrar</button>
+                <button type="button" class="boton boton-primario dibujo-usar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Agregar este dibujo</button>
+              </div>
+            </div>
+          </details>
+
           <button type="submit" class="boton" style="min-height: auto; padding: 9px 16px;">Agregar</button>
         </form>
       </div>
@@ -113,4 +137,20 @@
     </aside>
   </div>
 </div>
+<script src="{{ url_for('static', filename='js/marca_dibujo.js') }}"></script>
+<script>
+  (function () {
+    var campoTipo = document.getElementById('campo-tipo-nueva-marca');
+    var campoImagenes = document.getElementById('campo-imagenes-nueva-marca');
+    if (campoTipo && campoImagenes) {
+      var ajustarMultiple = function () {
+        campoImagenes.multiple = campoTipo.value === 'complementaria';
+      };
+      campoTipo.addEventListener('change', ajustarMultiple);
+      ajustarMultiple();
+    }
+    inicializarVistaPreviaImagenes('campo-imagenes-nueva-marca', 'previa-imagenes-nueva-marca');
+    inicializarDibujoMarca('campo-imagenes-nueva-marca', 'panel-dibujo-nueva-marca');
+  })();
+</script>
 {% endblock %}

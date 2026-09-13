@@ -94,7 +94,29 @@
         </div>
         <div class="campo-edicion"><label>Observaciones</label><textarea name="observaciones" rows="3">{{ ficha.marca.observaciones or '' }}</textarea></div>
         <div class="campo-edicion"><label>Vencimiento ante SENACSA</label><input type="date" name="vence_en" value="{{ ficha.marca.vence_en or '' }}"></div>
-        <div class="campo-edicion"><label>Reemplazar imagen PNG</label><input type="file" name="nuevo_png" accept="image/png"></div>
+        <div class="campo-edicion">
+          <label>Reemplazar imagen PNG</label>
+          <input type="file" name="nuevo_png" id="campo-nuevo-png" accept="image/png">
+        </div>
+        <div id="previa-nuevo-png" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;"></div>
+        <details id="panel-dibujo-nuevo-png" style="margin-bottom: 14px;">
+          <summary class="sub" style="cursor: pointer;">Dibujar la imagen a mano en vez de subir un archivo</summary>
+          <div style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
+            <canvas width="260" height="260" style="width: 100%; max-width: 260px; border: 1px solid var(--texto); touch-action: none; cursor: crosshair;"></canvas>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+              <label class="sub" style="margin: 0;">Grosor
+                <select class="grosor-dibujo" style="margin-left: 4px;">
+                  <option value="2">Fino</option>
+                  <option value="4" selected>Medio</option>
+                  <option value="8">Grueso</option>
+                </select>
+              </label>
+              <button type="button" class="boton dibujo-deshacer" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Deshacer</button>
+              <button type="button" class="boton dibujo-borrar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Borrar</button>
+              <button type="button" class="boton boton-primario dibujo-usar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Usar este dibujo</button>
+            </div>
+          </div>
+        </details>
         <div class="campo-edicion"><label>Reemplazar imagen SVG</label><input type="file" name="nuevo_svg" accept="image/svg+xml"></div>
         <button type="submit" class="boton boton-primario">Guardar cambios</button>
         {% if perfil.rol == 'administrador' %}
@@ -105,4 +127,11 @@
     {% endif %}
   </div>
 </div>
+<script src="{{ url_for('static', filename='js/marca_dibujo.js') }}"></script>
+<script>
+  (function () {
+    inicializarVistaPreviaImagenes('campo-nuevo-png', 'previa-nuevo-png');
+    inicializarDibujoMarca('campo-nuevo-png', 'panel-dibujo-nuevo-png');
+  })();
+</script>
 {% endblock %}
