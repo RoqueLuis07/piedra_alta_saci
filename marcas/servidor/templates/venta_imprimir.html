@@ -13,13 +13,26 @@
     Se aplica igual en las cuatro copias.
   </p>
 
+  {% if borrador %}
+  <div style="margin-top: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--borde-suave); padding: 12px 16px; background: var(--fondo-resaltado, #f7f5f0);">
+    <p class="sub" style="margin: 0;">
+      Tenés un borrador guardado{% if borrador.guardado_en %} el {{ borrador.guardado_en[:16].replace('T', ' ') }}{% endif %} -- se restableció abajo.
+    </p>
+    <form method="post" action="{{ url_for('descartar_borrador_venta_ruta', operacion_id=operacion.id) }}" style="margin-left: auto;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="boton" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Descartar borrador</button>
+    </form>
+  </div>
+  {% endif %}
+
   <form method="post" action="{{ url_for('generar_venta_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data" style="margin-top: 24px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <h2 class="subtitulo">1. Subí el PDF de SENACSA</h2>
     <div class="campo-edicion" style="max-width: 420px;">
-      <input type="file" name="pdf_guia" accept="application/pdf">
+      <input type="file" name="pdf_guia" id="campo-pdf-venta" accept="application/pdf">
     </div>
+    <p class="sub" id="nota-pdf-restaurado" style="display: none; margin: 4px 0 0;"></p>
 
     <h2 class="subtitulo" style="margin-top: 28px;">2. Marca Dominante (opcional)</h2>
     <p class="sub" style="margin: 0 0 12px;">Si el PDF ya trae la Dominante dibujada, dejá esto vacío -- no se pisa lo que ya viene.</p>
@@ -57,23 +70,49 @@
       <p class="sub" style="padding: 14px;" id="seleccionadas-vacio">Todavía no elegiste ninguna marca complementaria.</p>
     </div>
 
-    <button type="submit" class="boton boton-primario" style="margin-top: 20px;">Generar PDF de la venta</button>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px;">
+      <button type="submit" class="boton boton-primario">Generar PDF de la venta</button>
+      <button type="submit" formaction="{{ url_for('guardar_borrador_venta_ruta', operacion_id=operacion.id) }}" formnovalidate class="boton">Guardar borrador</button>
+      <p class="sub" style="margin: 0;">Guardá el avance para continuar más tarde, desde cualquier computadora.</p>
+    </div>
   </form>
 </div>
 
 <script src="{{ url_for('static', filename='js/marca_dibujo.js') }}"></script>
 <script>
+  var __borrador = {{ (borrador or {}) | tojson }};
+  var __marcasBorrador = {{ marcas_borrador | tojson }};
+</script>
+<script>
   (function () {
     inicializarVistaPreviaImagenes('campo-dominante-venta', 'previa-dominante-venta');
     inicializarDibujoMarca('campo-dominante-venta', 'panel-dibujo-dominante-venta');
 
-    // Si falla la generación del PDF (por ejemplo, falta el archivo) el
-    // usuario vuelve a esta misma pantalla desde la página de error y, sin
-    // esto, perdía las marcas ya elegidas y la Dominante ya subida/dibujada.
-    // Se guarda en sessionStorage (por venta) y se restaura al cargar.
+    // Dos mecanismos de "no perder lo cargado", que se complementan:
+    // 1) sessionStorage: red de contención automática dentro de esta misma
+    //    pestaña (por ejemplo, si falla la generación del PDF y volvés con
+    //    "Volver" desde la página de error).
+    // 2) El borrador guardado en el servidor (botón "Guardar borrador"):
+    //    sobrevive a cerrar el navegador y se puede continuar desde
+    //    cualquier computadora. Si hay algo más reciente en sessionStorage
+    //    (esta pestaña), gana eso; si no, se usa lo que vino del servidor.
     var claveElegidas = 'venta_imprimir_{{ operacion.id }}_elegidas';
     var claveDominante = 'venta_imprimir_{{ operacion.id }}_dominante';
     var campoDominante = document.getElementById('campo-dominante-venta');
+    var campoPdf = document.getElementById('campo-pdf-venta');
+    var notaPdf = document.getElementById('nota-pdf-restaurado');
+
+    function asignarArchivoDesdeUrl(input, url, nombre, tipo) {
+      return fetch(url)
+        .then(function (r) { if (!r.ok) throw new Error('no disponible'); return r.blob(); })
+        .then(function (blob) {
+          var archivo = new File([blob], nombre, { type: tipo });
+          var datos = new DataTransfer();
+          datos.items.add(archivo);
+          input.files = datos.files;
+          input.dispatchEvent(new Event('change'));
+        });
+    }
 
     campoDominante.addEventListener('change', function () {
       var archivo = campoDominante.files[0];
@@ -90,17 +129,35 @@
     (function restaurarDominante() {
       var guardado;
       try { guardado = JSON.parse(sessionStorage.getItem(claveDominante) || 'null'); } catch (err) { guardado = null; }
-      if (!guardado) return;
-      fetch(guardado.datosUrl)
-        .then(function (r) { return r.blob(); })
-        .then(function (blob) {
-          var archivo = new File([blob], guardado.nombre, { type: guardado.tipo });
-          var datos = new DataTransfer();
-          datos.items.add(archivo);
-          campoDominante.files = datos.files;
-          campoDominante.dispatchEvent(new Event('change'));
-        })
-        .catch(function () { sessionStorage.removeItem(claveDominante); });
+      if (guardado) {
+        fetch(guardado.datosUrl)
+          .then(function (r) { return r.blob(); })
+          .then(function (blob) {
+            var archivo = new File([blob], guardado.nombre, { type: guardado.tipo });
+            var datos = new DataTransfer();
+            datos.items.add(archivo);
+            campoDominante.files = datos.files;
+            campoDominante.dispatchEvent(new Event('change'));
+          })
+          .catch(function () { sessionStorage.removeItem(claveDominante); });
+        return;
+      }
+      if (__borrador && __borrador.dominante_ruta) {
+        asignarArchivoDesdeUrl(campoDominante, '{{ url_for("borrador_venta_dominante", operacion_id=operacion.id) }}', 'dominante.png', 'image/png')
+          .catch(function () { /* el borrador puede haber quedado sin ese archivo; no es crítico */ });
+      }
+    })();
+
+    (function restaurarPdf() {
+      if (__borrador && __borrador.pdf_ruta) {
+        var nombre = __borrador.pdf_nombre_original || 'borrador.pdf';
+        asignarArchivoDesdeUrl(campoPdf, '{{ url_for("borrador_venta_pdf", operacion_id=operacion.id) }}', nombre, 'application/pdf')
+          .then(function () {
+            notaPdf.textContent = 'Restaurado de tu borrador: ' + nombre;
+            notaPdf.style.display = 'block';
+          })
+          .catch(function () { /* no es crítico */ });
+      }
     })();
 
     var buscador = document.getElementById('buscador-marcas-venta');
@@ -109,7 +166,13 @@
     var vacio = document.getElementById('seleccionadas-vacio');
     var elegidas = {};  // codigo -> datos
     (function restaurarElegidas() {
-      try { elegidas = JSON.parse(sessionStorage.getItem(claveElegidas) || '{}'); } catch (err) { elegidas = {}; }
+      var local = {};
+      try { local = JSON.parse(sessionStorage.getItem(claveElegidas) || '{}'); } catch (err) { local = {}; }
+      if (Object.keys(local).length) {
+        elegidas = local;
+        return;
+      }
+      __marcasBorrador.forEach(function (m) { elegidas[m.codigo] = m; });
     })();
 
     function guardarElegidas() {

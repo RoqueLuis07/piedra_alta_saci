@@ -179,7 +179,7 @@ def marcas_por_codigos(cliente: Client, codigos: list[str]) -> dict[str, dict]:
         return {}
     filas = (
         cliente.table("marcas")
-        .select("id, codigo, tipo, estado, archivo_png")
+        .select("id, codigo, tipo, estado, archivo_png, propietarios(nombre)")
         .in_("codigo", list(dict.fromkeys(codigos)))
         .execute()
         .data
@@ -271,6 +271,55 @@ def subir_imagen_marca(cliente: Client, codigo: str, contenido: bytes, extension
         nombre, contenido, {"content-type": tipo_contenido, "upsert": "true"}
     )
     return nombre
+
+
+def _ruta_borrador(operacion_id: int, parte: str, extension: str) -> str:
+    """Nombre estable (no con timestamp) -- cada "Guardar borrador" pisa el
+    archivo anterior en vez de acumular versiones viejas en el bucket."""
+    return f"borradores/venta_{operacion_id}_{parte}.{extension}"
+
+
+def guardar_archivo_borrador(cliente: Client, operacion_id: int, parte: str, contenido: bytes, extension: str) -> str:
+    tipo_contenido = "application/pdf" if extension == "pdf" else f"image/{extension}"
+    ruta = _ruta_borrador(operacion_id, parte, extension)
+    cliente.storage.from_(BUCKET_IMAGENES).upload(
+        ruta, contenido, {"content-type": tipo_contenido, "upsert": "true"}
+    )
+    return ruta
+
+
+def descargar_archivo_bucket(cliente: Client, ruta: str | None) -> bytes | None:
+    """Igual que ``descargar_imagen_marca`` pero para cualquier archivo del bucket (p. ej. un PDF de borrador)."""
+    if not ruta:
+        return None
+    try:
+        return cliente.storage.from_(BUCKET_IMAGENES).download(ruta)
+    except Exception as exc:
+        print(f"descargar_archivo_bucket: no se pudo bajar {ruta!r}: {exc}")
+        return None
+
+
+def eliminar_archivos_bucket(cliente: Client, rutas: list[str]) -> None:
+    rutas_validas = [r for r in rutas if r]
+    if not rutas_validas:
+        return
+    try:
+        cliente.storage.from_(BUCKET_IMAGENES).remove(rutas_validas)
+    except Exception as exc:
+        print(f"eliminar_archivos_bucket: no se pudo borrar {rutas_validas!r}: {exc}")
+
+
+def guardar_borrador_venta(cliente: Client, operacion_id: int, borrador: dict) -> None:
+    cliente.table("operaciones").update({"borrador_venta": borrador}).eq("id", operacion_id).execute()
+
+
+def eliminar_borrador_venta(cliente: Client, operacion_id: int, borrador_anterior: dict | None) -> None:
+    """Limpia la columna y borra del bucket lo que ese borrador tenía guardado."""
+    if borrador_anterior:
+        eliminar_archivos_bucket(
+            cliente, [borrador_anterior.get("pdf_ruta"), borrador_anterior.get("dominante_ruta")]
+        )
+    cliente.table("operaciones").update({"borrador_venta": None}).eq("id", operacion_id).execute()
 
 
 def ficha_marca(cliente: Client, codigo: str) -> dict | None:

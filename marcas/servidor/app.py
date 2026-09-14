@@ -13,6 +13,7 @@ import io
 import os
 import re
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -44,11 +45,15 @@ from marcas.servidor.consultas import (
     crear_marca,
     crear_operacion,
     desglose_marcas,
+    descargar_archivo_bucket,
     descargar_imagen_marca,
+    eliminar_borrador_venta,
     estadisticas,
     exportar_marcas,
     exportar_operaciones,
     ficha_marca,
+    guardar_archivo_borrador,
+    guardar_borrador_venta,
     historial_cambios_resueltos,
     listar_operaciones_paginado,
     listar_propietarios,
@@ -754,9 +759,103 @@ def crear_app() -> Flask:
         operacion = obtener_operacion_por_id(cliente, operacion_id)
         if not operacion or operacion.get("tipo_operacion") != "venta":
             return _registro_no_encontrado("No se encontró esa venta.")
+
+        borrador = operacion.get("borrador_venta")
+        marcas_borrador = []
+        if borrador and borrador.get("marcas"):
+            por_codigo = marcas_por_codigos(cliente, borrador["marcas"])
+            marcas_borrador = [
+                {
+                    "codigo": codigo,
+                    "tipo": por_codigo[codigo].get("tipo"),
+                    "propietario": (por_codigo[codigo].get("propietarios") or {}).get("nombre"),
+                    "imagen_url": url_imagen(cliente, por_codigo[codigo].get("archivo_png")),
+                }
+                for codigo in borrador["marcas"]
+                if codigo in por_codigo
+            ]
         return render_template(
-            "venta_imprimir.html", activo="ventas", operacion=operacion, perfil=perfil_actual(),
+            "venta_imprimir.html",
+            activo="ventas",
+            operacion=operacion,
+            perfil=perfil_actual(),
+            borrador=borrador,
+            marcas_borrador=marcas_borrador,
         )
+
+    @app.post("/ventas/<int:operacion_id>/borrador")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def guardar_borrador_venta_ruta(operacion_id: int):
+        """Guarda el avance de la carga (marcas elegidas, PDF y Dominante ya
+        puestos) para que la persona pueda cerrar esto y continuar más tarde
+        -- desde cualquier computadora, no sólo desde este navegador."""
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion or operacion.get("tipo_operacion") != "venta":
+            return _registro_no_encontrado("No se encontró esa venta.")
+
+        anterior = operacion.get("borrador_venta") or {}
+        borrador = {
+            "marcas": [c.strip() for c in request.form.getlist("marca_codigo") if c.strip()],
+            "pdf_ruta": anterior.get("pdf_ruta"),
+            "pdf_nombre_original": anterior.get("pdf_nombre_original"),
+            "dominante_ruta": anterior.get("dominante_ruta"),
+        }
+
+        archivo_pdf = request.files.get("pdf_guia")
+        if archivo_pdf and archivo_pdf.filename:
+            ruta = guardar_archivo_borrador(cliente, operacion_id, "pdf", archivo_pdf.read(), "pdf")
+            borrador["pdf_ruta"] = ruta
+            borrador["pdf_nombre_original"] = archivo_pdf.filename
+
+        archivo_dominante = request.files.get("imagen_dominante")
+        if archivo_dominante and archivo_dominante.filename:
+            ruta = guardar_archivo_borrador(cliente, operacion_id, "dominante", archivo_dominante.read(), "png")
+            borrador["dominante_ruta"] = ruta
+
+        borrador["guardado_en"] = datetime.now(timezone.utc).isoformat()
+        guardar_borrador_venta(cliente, operacion_id, borrador)
+        return redirect(url_for("imprimir_venta", operacion_id=operacion_id))
+
+    @app.post("/ventas/<int:operacion_id>/borrador/descartar")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def descartar_borrador_venta_ruta(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion or operacion.get("tipo_operacion") != "venta":
+            return _registro_no_encontrado("No se encontró esa venta.")
+        eliminar_borrador_venta(cliente, operacion_id, operacion.get("borrador_venta"))
+        return redirect(url_for("imprimir_venta", operacion_id=operacion_id))
+
+    @app.get("/ventas/<int:operacion_id>/borrador/pdf")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def borrador_venta_pdf(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        borrador = operacion.get("borrador_venta") if operacion else None
+        contenido = descargar_archivo_bucket(cliente, borrador.get("pdf_ruta")) if borrador else None
+        if not contenido:
+            return _registro_no_encontrado("Ese borrador no tiene un PDF guardado.")
+        return send_file(
+            io.BytesIO(contenido),
+            download_name=borrador.get("pdf_nombre_original") or "borrador.pdf",
+            mimetype="application/pdf",
+        )
+
+    @app.get("/ventas/<int:operacion_id>/borrador/dominante.png")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def borrador_venta_dominante(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        borrador = operacion.get("borrador_venta") if operacion else None
+        contenido = descargar_archivo_bucket(cliente, borrador.get("dominante_ruta")) if borrador else None
+        if not contenido:
+            return _registro_no_encontrado("Ese borrador no tiene una Dominante guardada.")
+        return send_file(io.BytesIO(contenido), download_name="dominante.png", mimetype="image/png")
 
     @app.post("/ventas/<int:operacion_id>/imprimir")
     @requiere_sesion
@@ -810,6 +909,12 @@ def crear_app() -> Flask:
             except Exception as exc:
                 return _error_seguro("No se pudo generar el PDF de la venta.", exc)
             contenido_pdf = salida.read_bytes()
+
+        if operacion.get("borrador_venta"):
+            try:
+                eliminar_borrador_venta(cliente, operacion_id, operacion.get("borrador_venta"))
+            except Exception as exc:
+                print(f"generar_venta_pdf: no se pudo limpiar el borrador de {operacion_id}: {exc}")
 
         nombre_descarga = f"venta_{operacion.get('numero_guia') or operacion_id}.pdf"
         return send_file(
