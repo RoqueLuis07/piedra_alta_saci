@@ -18,7 +18,7 @@
 
     <h2 class="subtitulo">1. Subí el PDF de SENACSA</h2>
     <div class="campo-edicion" style="max-width: 420px;">
-      <input type="file" name="pdf_guia" accept="application/pdf" required>
+      <input type="file" name="pdf_guia" accept="application/pdf">
     </div>
 
     <h2 class="subtitulo" style="margin-top: 28px;">2. Marca Dominante (opcional)</h2>
@@ -67,11 +67,54 @@
     inicializarVistaPreviaImagenes('campo-dominante-venta', 'previa-dominante-venta');
     inicializarDibujoMarca('campo-dominante-venta', 'panel-dibujo-dominante-venta');
 
+    // Si falla la generación del PDF (por ejemplo, falta el archivo) el
+    // usuario vuelve a esta misma pantalla desde la página de error y, sin
+    // esto, perdía las marcas ya elegidas y la Dominante ya subida/dibujada.
+    // Se guarda en sessionStorage (por venta) y se restaura al cargar.
+    var claveElegidas = 'venta_imprimir_{{ operacion.id }}_elegidas';
+    var claveDominante = 'venta_imprimir_{{ operacion.id }}_dominante';
+    var campoDominante = document.getElementById('campo-dominante-venta');
+
+    campoDominante.addEventListener('change', function () {
+      var archivo = campoDominante.files[0];
+      if (!archivo) { sessionStorage.removeItem(claveDominante); return; }
+      var lector = new FileReader();
+      lector.onload = function (e) {
+        try {
+          sessionStorage.setItem(claveDominante, JSON.stringify({ nombre: archivo.name, tipo: archivo.type, datosUrl: e.target.result }));
+        } catch (err) { /* almacenamiento lleno o no disponible: no es crítico */ }
+      };
+      lector.readAsDataURL(archivo);
+    });
+
+    (function restaurarDominante() {
+      var guardado;
+      try { guardado = JSON.parse(sessionStorage.getItem(claveDominante) || 'null'); } catch (err) { guardado = null; }
+      if (!guardado) return;
+      fetch(guardado.datosUrl)
+        .then(function (r) { return r.blob(); })
+        .then(function (blob) {
+          var archivo = new File([blob], guardado.nombre, { type: guardado.tipo });
+          var datos = new DataTransfer();
+          datos.items.add(archivo);
+          campoDominante.files = datos.files;
+          campoDominante.dispatchEvent(new Event('change'));
+        })
+        .catch(function () { sessionStorage.removeItem(claveDominante); });
+    })();
+
     var buscador = document.getElementById('buscador-marcas-venta');
     var resultados = document.getElementById('resultados-buscador-venta');
     var seleccionadas = document.getElementById('seleccionadas-venta');
     var vacio = document.getElementById('seleccionadas-vacio');
     var elegidas = {};  // codigo -> datos
+    (function restaurarElegidas() {
+      try { elegidas = JSON.parse(sessionStorage.getItem(claveElegidas) || '{}'); } catch (err) { elegidas = {}; }
+    })();
+
+    function guardarElegidas() {
+      try { sessionStorage.setItem(claveElegidas, JSON.stringify(elegidas)); } catch (err) { /* no es crítico */ }
+    }
 
     function renderSeleccionadas() {
       seleccionadas.innerHTML = '';
@@ -95,10 +138,12 @@
       seleccionadas.querySelectorAll('[data-quitar]').forEach(function (boton) {
         boton.addEventListener('click', function () {
           delete elegidas[boton.getAttribute('data-quitar')];
+          guardarElegidas();
           renderSeleccionadas();
         });
       });
     }
+    renderSeleccionadas();
 
     var temporizador = null;
     buscador.addEventListener('input', function () {
@@ -122,6 +167,7 @@
                 '<div class="sub">' + (m.propietario || 'Sin propietario') + (m.numero_guia ? ' · ' + m.numero_guia : '') + '</div></div>';
               fila.addEventListener('click', function () {
                 elegidas[m.codigo] = m;
+                guardarElegidas();
                 renderSeleccionadas();
                 resultados.style.display = 'none';
                 buscador.value = '';

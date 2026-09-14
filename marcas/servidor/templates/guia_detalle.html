@@ -28,9 +28,9 @@
       {% if perfil.rol in ('operador', 'administrador') %}
       <form method="post" action="{{ url_for('editar_guia', operacion_id=operacion.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <h2 class="subtitulo">Datos de la guía</h2>
+        <h2 class="subtitulo">{{ 'Datos de la venta' if es_venta else 'Datos de la guía' }}</h2>
         <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-          <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía</label><input type="text" name="numero_guia" value="{{ operacion.numero_guia or '' }}"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>{{ 'N.º de venta' if es_venta else 'N.º de guía' }}</label><input type="text" name="numero_guia" value="{{ operacion.numero_guia or '' }}"></div>
           <div class="campo-edicion" style="flex: 1 1 160px;"><label>Fecha</label><input type="text" name="fecha" value="{{ operacion.fecha or '' }}"></div>
           <div class="campo-edicion" style="flex: 1 1 160px;"><label>Tipo de formulario</label><input type="text" name="tipo_formulario" value="{{ operacion.tipo_formulario or '' }}"></div>
         </div>
@@ -65,8 +65,8 @@
         {% endif %}
       </form>
       {% else %}
-      <h2 class="subtitulo">Datos de la guía</h2>
-      <div class="campo-fila"><div class="campo-etiqueta">N.º de guía</div><div class="campo-valor mono">{{ operacion.numero_guia or '—' }}</div></div>
+      <h2 class="subtitulo">{{ 'Datos de la venta' if es_venta else 'Datos de la guía' }}</h2>
+      <div class="campo-fila"><div class="campo-etiqueta">{{ 'N.º de venta' if es_venta else 'N.º de guía' }}</div><div class="campo-valor mono">{{ operacion.numero_guia or '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">Fecha</div><div class="campo-valor mono">{{ operacion.fecha or '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">Vendedor</div><div class="campo-valor">{{ operacion.vendedor_nombre or '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">CI / RUC vendedor</div><div class="campo-valor mono">{{ operacion.vendedor_documento or '—' }}</div></div>
