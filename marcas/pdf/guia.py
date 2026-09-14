@@ -174,6 +174,100 @@ def detectar_casillas(pdf: Path | str, pagina: int) -> list[Casilla]:
     return casillas
 
 
+def detectar_rubro2(pdf: Path | str, pagina: int) -> tuple[Casilla | None, list[Casilla]]:
+    """Lee la casilla Dominante y las de Complementarias del Rubro 2, en la
+    página principal (no el Anexo).
+
+    A diferencia del Anexo, acá las casillas de Complementarias no siempre
+    quedan como cuatro rectángulos propios en el PDF -- en el formulario real
+    de SENACSA es un único recuadro grande sin subdivisiones dibujadas. Por
+    eso, una vez ubicado ese recuadro (a la derecha de la Dominante, a la
+    misma altura), se lo reparte en una grilla de 2x2, que es la proporción
+    que usa el formulario oficial."""
+    doc = pdfium.PdfDocument(str(pdf))
+    try:
+        objetos = _objetos(doc[pagina])
+    finally:
+        doc.close()
+
+    cajas = sorted(
+        {b for t, b in objetos if t == 2 and (b[2] - b[0]) > 30 and (b[3] - b[1]) > 30},
+        key=lambda b: (b[2] - b[0]) * (b[3] - b[1]),
+    )
+    dominante_caja = next(
+        (
+            (x0, y0, x1, y1) for x0, y0, x1, y1 in cajas
+            if ANCHO_MIN * 0.5 <= x1 - x0 <= ANCHO_MAX and ALTO_MIN * 0.5 <= y1 - y0 <= ALTO_MAX
+            and 0.5 <= (x1 - x0) / (y1 - y0) <= 2.0
+        ),
+        None,
+    )
+    if dominante_caja is None:
+        return None, []
+    dominante = Casilla(
+        pagina, dominante_caja[0], dominante_caja[1],
+        dominante_caja[2] - dominante_caja[0], dominante_caja[3] - dominante_caja[1],
+        fila=1, columna=1,
+    )
+
+    complementaria_caja = next(
+        (
+            (x0, y0, x1, y1) for x0, y0, x1, y1 in cajas
+            if (x0, y0, x1, y1) != dominante_caja
+            and x0 >= dominante_caja[2] - 5
+            and abs(y1 - dominante_caja[3]) < 40
+        ),
+        None,
+    )
+    complementarias: list[Casilla] = []
+    if complementaria_caja is not None:
+        x0, y0, x1, y1 = complementaria_caja
+        columnas, filas = 2, 2
+        ancho_celda, alto_celda = (x1 - x0) / columnas, (y1 - y0) / filas
+        for fi in range(filas):
+            for ci in range(columnas):
+                complementarias.append(
+                    Casilla(
+                        pagina, x0 + ci * ancho_celda, y1 - (fi + 1) * alto_celda,
+                        ancho_celda, alto_celda, fila=fi + 1, columna=ci + 1,
+                    )
+                )
+
+    for casilla in [dominante, *complementarias]:
+        area_casilla = casilla.ancho * casilla.alto
+        for tipo, (x0, y0, x1, y1) in objetos:
+            ancho, alto = x1 - x0, y1 - y0
+            if ancho * alto >= area_casilla * 0.9:
+                continue
+            dentro = (
+                x0 >= casilla.x - 2 and y0 >= casilla.y - 2
+                and x1 <= casilla.x + casilla.ancho + 2
+                and y1 <= casilla.y + casilla.alto + 2
+            )
+            if dentro and ancho * alto >= area_casilla * COBERTURA_OCUPADA:
+                casilla.ocupada = True
+                break
+    return dominante, complementarias
+
+
+def paginas_principales(pdf: Path | str) -> list[tuple[int, str]]:
+    """(índice, copia) de las páginas con el Rubro 2 -- la declaración jurada
+    principal, no el Anexo ni la Boleta de pago."""
+    lector = pypdf.PdfReader(str(pdf))
+    paginas = []
+    for i, pagina in enumerate(lector.pages):
+        texto = (pagina.extract_text() or "").upper()
+        # El título exacto sólo aparece en la declaración jurada principal --
+        # a diferencia de "RUBRO 2" o "BOLETA", que también aparecen sueltos
+        # en el Rubro 4 de esa misma página o en la Boleta de pago.
+        if "GUIA DE TRASLADO Y TRANSFERENCIA DE GANADO" not in texto:
+            continue
+        encontrada = _RE_COPIA.search(texto)
+        copia = encontrada.group(0).capitalize() if encontrada else "Original"
+        paginas.append((i, copia))
+    return paginas
+
+
 def hojas_de_anexo(pdf: Path | str) -> list[HojaAnexo]:
     """Encuentra las hojas de anexo, con su copia y su orden dentro de la copia."""
     lector = pypdf.PdfReader(str(pdf))
@@ -281,6 +375,113 @@ def planificar(hojas: Sequence[HojaAnexo], imagenes: Sequence[Path]) -> dict[int
             "Descargar la guía con más hojas de anexo o repartir en dos guías."
         )
     return plan
+
+
+def analizar_venta(pdf: Path | str) -> dict:
+    """Cuánto espacio libre hay para completar esta guía como Venta, sin
+    tocar el PDF -- para mostrarlo antes de pedir las marcas a cargar."""
+    principales = paginas_principales(pdf)
+    if not principales:
+        raise ValueError(
+            "No se encontró el Rubro 2 en el PDF. ¿Es una Guía de Traslado oficial descargada de SENACSA?"
+        )
+    dominante, complementarias = detectar_rubro2(pdf, principales[0][0])
+    hojas = hojas_de_anexo(pdf)
+    return {
+        "copias": sorted({c for _, c in principales}) or sorted({h.copia for h in hojas}),
+        "dominante_libre": bool(dominante and not dominante.ocupada),
+        "complementarias_libres_rubro2": sum(1 for c in complementarias if not c.ocupada),
+        "complementarias_libres_anexo": sum(len(h.libres) for h in hojas),
+        "hojas_anexo": len(hojas),
+    }
+
+
+def completar_venta(
+    pdf_entrada: Path | str,
+    imagen_dominante: Path | str | None,
+    imagenes_complementarias: Iterable[Path | str],
+    salida: Path | str,
+    *,
+    dpi: int = DPI_SALIDA,
+    transparencia: bool = True,
+) -> dict:
+    """Como :func:`completar_guia`, pero para una Venta: además del Anexo,
+    completa el Rubro 2 de la página principal -- la Dominante sólo si no
+    vino puesta ya, y las Complementarias que entren ahí antes de pasar al
+    Anexo. Se aplica igual en las cuatro copias."""
+    imagenes_complementarias = [Path(i) for i in imagenes_complementarias]
+    imagen_dominante = Path(imagen_dominante) if imagen_dominante else None
+    faltantes = [i for i in [imagen_dominante, *imagenes_complementarias] if i and not i.exists()]
+    if faltantes:
+        raise FileNotFoundError(f"No se encontraron las imágenes: {faltantes[:3]}")
+
+    principales = paginas_principales(pdf_entrada)
+    if not principales:
+        raise ValueError(
+            "No se encontró el Rubro 2 en el PDF. ¿Es una Guía de Traslado oficial descargada de SENACSA?"
+        )
+
+    rubro2_por_pagina = {i: detectar_rubro2(pdf_entrada, i) for i, _ in principales}
+    cupo_rubro2 = min(
+        sum(1 for c in complementarias if not c.ocupada)
+        for _, complementarias in rubro2_por_pagina.values()
+    )
+
+    pendientes = list(imagenes_complementarias)
+    tanda_rubro2, pendientes = pendientes[:cupo_rubro2], pendientes[cupo_rubro2:]
+
+    plan: dict[int, list] = {}
+    for i, _copia in principales:
+        dominante, complementarias = rubro2_por_pagina[i]
+        asignaciones = []
+        if imagen_dominante and dominante is not None and not dominante.ocupada:
+            asignaciones.append((dominante, imagen_dominante))
+        libres = [c for c in complementarias if not c.ocupada]
+        asignaciones += list(zip(libres, tanda_rubro2))
+        if asignaciones:
+            plan[i] = asignaciones
+
+    hojas = hojas_de_anexo(pdf_entrada)
+    if pendientes:
+        for pagina, asignaciones in planificar(hojas, pendientes).items():
+            plan.setdefault(pagina, []).extend(asignaciones)
+    elif imagen_dominante is None and not tanda_rubro2:
+        # No hay absolutamente nada para estampar -- evita clonar el PDF en vano.
+        pass
+
+    escritor = pypdf.PdfWriter(clone_from=str(pdf_entrada))
+    cache: dict = {}
+    for i, pagina in enumerate(escritor.pages):
+        asignaciones = plan.get(i)
+        if not asignaciones:
+            continue
+        caja = pagina.mediabox
+        pagina.merge_page(
+            _capa(float(caja.width), float(caja.height), asignaciones,
+                  dpi=dpi, cache=cache, transparencia=transparencia)
+        )
+    try:
+        escritor.compress_identical_objects(images=True, forms=False)
+    except Exception:
+        pass
+
+    salida = Path(salida)
+    salida.parent.mkdir(parents=True, exist_ok=True)
+    with open(salida, "wb") as fh:
+        escritor.write(fh)
+
+    return {
+        "salida": salida,
+        "peso_kb": round(salida.stat().st_size / 1024),
+        "dominante_completada": bool(imagen_dominante and any(
+            d is not None and not d.ocupada for d, _ in rubro2_por_pagina.values()
+        )),
+        "complementarias_en_rubro2": len(tanda_rubro2),
+        "complementarias_en_anexo": len(imagenes_complementarias) - len(tanda_rubro2),
+        "paginas_modificadas": sorted(plan),
+        "paginas_principales": [i for i, _ in principales],
+        "hojas_anexo": len(hojas),
+    }
 
 
 def completar_guia(

@@ -15,14 +15,14 @@ import re
 import tempfile
 from pathlib import Path
 
-from flask import Flask, Response, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
 from postgrest.exceptions import APIError
 
-from marcas.pdf.guia import completar_guia
+from marcas.pdf.guia import completar_guia, completar_venta
 from marcas.servidor.auth import (
     cerrar_sesion,
     cliente_actual,
@@ -55,6 +55,7 @@ from marcas.servidor.consultas import (
     marcas_a_revisar,
     marcas_de_operacion,
     marcas_de_propietario,
+    marcas_por_codigos,
     marcas_por_vencer,
     nombres_usuarios,
     obtener_operacion_por_id,
@@ -717,6 +718,100 @@ def crear_app() -> Flask:
             contenido_pdf = salida.read_bytes()
 
         nombre_descarga = f"guia_{operacion.get('numero_guia') or operacion_id}.pdf"
+        return send_file(
+            io.BytesIO(contenido_pdf),
+            as_attachment=True,
+            download_name=nombre_descarga,
+            mimetype="application/pdf",
+        )
+
+    @app.get("/marcas/buscar.json")
+    @requiere_sesion
+    def buscar_marcas_json():
+        """Para el buscador de marcas complementarias al armar una Venta --
+        busca en TODO el catálogo existente (no en una guía puntual), porque
+        lo que se vende ya está cargado de antes."""
+        cliente = cliente_actual()
+        texto = request.args.get("q") or None
+        resultados, total = buscar_marcas(cliente, texto, pagina=1, por_pagina=15)
+        return jsonify([
+            {
+                "codigo": m["codigo"],
+                "tipo": m.get("tipo"),
+                "estado": m.get("estado"),
+                "propietario": (m.get("propietarios") or {}).get("nombre"),
+                "numero_guia": (m.get("operaciones") or {}).get("numero_guia"),
+                "imagen_url": url_imagen(cliente, m.get("archivo_png")),
+            }
+            for m in resultados
+        ])
+
+    @app.get("/ventas/<int:operacion_id>/imprimir")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def imprimir_venta(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion or operacion.get("tipo_operacion") != "venta":
+            return _registro_no_encontrado("No se encontró esa venta.")
+        return render_template(
+            "venta_imprimir.html", activo="ventas", operacion=operacion, perfil=perfil_actual(),
+        )
+
+    @app.post("/ventas/<int:operacion_id>/imprimir")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def generar_venta_pdf(operacion_id: int):
+        cliente = cliente_actual()
+        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        if not operacion or operacion.get("tipo_operacion") != "venta":
+            return _registro_no_encontrado("No se encontró esa venta.")
+
+        archivo_pdf = request.files.get("pdf_guia")
+        if not archivo_pdf or not archivo_pdf.filename:
+            return _error_seguro("Subí el PDF de la guía descargado de SENACSA.", "sin archivo")
+
+        codigos_elegidos = [c.strip() for c in request.form.getlist("marca_codigo") if c.strip()]
+        if not codigos_elegidos:
+            return _error_seguro("Elegí al menos una marca complementaria para la venta.", "sin marcas")
+
+        por_codigo = marcas_por_codigos(cliente, codigos_elegidos)
+        faltantes = [c for c in codigos_elegidos if c not in por_codigo]
+        if faltantes:
+            return _error_seguro(f"No se encontró la marca {faltantes[0]} en el catálogo.", "código inexistente")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pdf_entrada = tmp_path / "entrada.pdf"
+            archivo_pdf.save(pdf_entrada)
+
+            imagen_dominante = None
+            archivo_dominante = request.files.get("imagen_dominante")
+            if archivo_dominante and archivo_dominante.filename:
+                imagen_dominante = tmp_path / "dominante.png"
+                archivo_dominante.save(imagen_dominante)
+
+            rutas_complementarias = []
+            for codigo in codigos_elegidos:
+                marca = por_codigo[codigo]
+                contenido = descargar_imagen_marca(cliente, marca.get("archivo_png"))
+                if not contenido:
+                    continue
+                destino = tmp_path / f"{codigo}.png"
+                destino.write_bytes(contenido)
+                rutas_complementarias.append(destino)
+
+            if not rutas_complementarias:
+                return _error_seguro("Ninguna de las marcas elegidas tiene una imagen PNG disponible.", "sin imágenes")
+
+            salida = tmp_path / "salida.pdf"
+            try:
+                completar_venta(pdf_entrada, imagen_dominante, rutas_complementarias, salida)
+            except Exception as exc:
+                return _error_seguro("No se pudo generar el PDF de la venta.", exc)
+            contenido_pdf = salida.read_bytes()
+
+        nombre_descarga = f"venta_{operacion.get('numero_guia') or operacion_id}.pdf"
         return send_file(
             io.BytesIO(contenido_pdf),
             as_attachment=True,

@@ -6,7 +6,7 @@
 {% block meta_encabezado %}
 <a href="{{ url_for('ventas' if es_venta else 'guias') }}">&larr; Volver al listado</a>
 &nbsp;·&nbsp;
-<a href="{{ url_for('imprimir_guia', operacion_id=operacion.id) }}">Imprimir guía &rarr;</a>
+<a href="{{ url_for('imprimir_venta' if es_venta else 'imprimir_guia', operacion_id=operacion.id) }}">{{ 'Imprimir venta' if es_venta else 'Imprimir guía' }} &rarr;</a>
 {% endblock %}
 
 {% block contenido %}
@@ -93,7 +93,11 @@
       <p class="sub">Esta guía no tiene marcas asociadas.</p>
       {% endfor %}
 
-      {% if perfil.rol in ('operador', 'administrador') %}
+      {% if es_venta %}
+      <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
+        <p class="sub">En una venta no se cargan marcas nuevas acá: se eligen las que ya tenés en el catálogo al <a href="{{ url_for('imprimir_venta', operacion_id=operacion.id) }}">generar el PDF de la venta</a>.</p>
+      </div>
+      {% elif perfil.rol in ('operador', 'administrador') %}
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
         <div style="font-family: 'Source Serif 4', serif; font-size: 14px; font-weight: 600; margin-bottom: 10px;">Agregar marca a esta guía</div>
         <form method="post" action="{{ url_for('agregar_marca_a_guia', operacion_id=operacion.id) }}" enctype="multipart/form-data">

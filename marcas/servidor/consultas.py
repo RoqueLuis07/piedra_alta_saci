@@ -169,6 +169,24 @@ def marcas_de_operacion(cliente: Client, operacion_id: int) -> list[dict]:
     )
 
 
+def marcas_por_codigos(cliente: Client, codigos: list[str]) -> dict[str, dict]:
+    """Para una Venta: las marcas elegidas no pertenecen a esta operación
+    (son del catálogo existente, se transfieren), así que se buscan por
+    código en vez de por operacion_id. Devuelve un dict código -> marca
+    para que el llamador pueda armar la lista en el orden que el usuario
+    eligió (Supabase no garantiza el orden del ``in_``)."""
+    if not codigos:
+        return {}
+    filas = (
+        cliente.table("marcas")
+        .select("id, codigo, tipo, estado, archivo_png")
+        .in_("codigo", list(dict.fromkeys(codigos)))
+        .execute()
+        .data
+    )
+    return {f["codigo"]: f for f in filas}
+
+
 def crear_operacion(cliente: Client, campos: dict, creado_por: str) -> int:
     """Alta de una guía nueva -- no es una edición, así que se aplica directo."""
     datos = {**campos, "origen": "manual", "creado_por": creado_por}
