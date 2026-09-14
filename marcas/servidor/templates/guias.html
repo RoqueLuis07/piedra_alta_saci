@@ -1,21 +1,29 @@
 {% extends "base.html" %}
-{% block titulo %}Guías{% endblock %}
-{% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
-{% block titulo_pagina %}Guías{% endblock %}
+{% set modo = modo or 'compra' %}
+{% set ruta_lista = 'ventas' if modo == 'venta' else 'guias' %}
+{% set ruta_nueva = 'nueva_venta' if modo == 'venta' else 'nueva_guia' %}
+{% set ruta_exportar = 'exportar_ventas_csv' if modo == 'venta' else 'exportar_guias_csv' %}
+{% block titulo %}{{ 'Ventas' if modo == 'venta' else 'Guías' }}{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · {{ 'VENTAS' if modo == 'venta' else 'GUÍAS DE TRASLADO' }}{% endblock %}
+{% block titulo_pagina %}{{ 'Ventas' if modo == 'venta' else 'Guías' }}{% endblock %}
 {% block meta_encabezado %}
-{{ total }} GUÍA{{ '' if total == 1 else 'S' }} EN TOTAL
+{{ total }} {{ 'VENTA' if modo == 'venta' else 'GUÍA' }}{{ '' if total == 1 else 'S' }} EN TOTAL
 {% if perfil.rol in ('operador', 'administrador') %}
-&nbsp;·&nbsp;<a href="{{ url_for('nueva_guia') }}">+ Nueva guía</a>
+&nbsp;·&nbsp;<a href="{{ url_for(ruta_nueva) }}">+ {{ 'Nueva venta' if modo == 'venta' else 'Nueva guía' }}</a>
 {% endif %}
 {% endblock %}
 
 {% block contenido %}
 <div class="contenido">
   <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    {% if modo == 'venta' %}
+    Todas las ventas de ganado de Piedra Alta a terceros. Hacé click en una fila para ver el detalle completo.
+    {% else %}
     Todos los formularios de origen cargados. Hacé click en una fila para ver el detalle completo, las marcas de esa guía y editar lo que haga falta.
+    {% endif %}
   </p>
 
-  <form method="get" action="{{ url_for('guias') }}" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 20px;">
+  <form method="get" action="{{ url_for(ruta_lista) }}" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 20px;">
     <div style="flex: 1 1 260px; min-width: 0;">
       <span class="etiqueta" style="display: block; margin-bottom: 6px;">N.º DE GUÍA, VENDEDOR O COMPRADOR</span>
       <input type="text" name="q" value="{{ texto }}" placeholder="Ej. Villalba" style="width: 100%;">
@@ -40,7 +48,7 @@
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
   <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
-    <a href="{{ url_for('exportar_guias_csv', q=texto, estado=estado, desde=desde, hasta=hasta) }}">Exportar a CSV &darr;</a>
+    <a href="{{ url_for(ruta_exportar, q=texto, estado=estado, desde=desde, hasta=hasta) }}">Exportar a CSV &darr;</a>
   </div>
 
   <table class="registro" style="margin-top: 12px;">
@@ -69,7 +77,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" style="padding: 20px 0; color: var(--texto-secundario);">Todavía no hay guías cargadas.</td></tr>
+      <tr><td colspan="6" style="padding: 20px 0; color: var(--texto-secundario);">{{ 'Todavía no hay ventas cargadas.' if modo == 'venta' else 'Todavía no hay guías cargadas.' }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -79,12 +87,12 @@
   <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // 40) + 1 if total else 1 }}</div>
   <div class="enlaces">
     {% if pagina > 1 %}
-    <a class="boton" href="{{ url_for('guias', q=texto, estado=estado, desde=desde, hasta=hasta, pagina=pagina - 1) }}">&larr; Anteriores 40</a>
+    <a class="boton" href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, pagina=pagina - 1) }}">&larr; Anteriores 40</a>
     {% else %}
     <span class="boton-inactivo">&larr; Anteriores 40</span>
     {% endif %}
     {% if pagina * 40 < total %}
-    <a class="boton" href="{{ url_for('guias', q=texto, estado=estado, desde=desde, hasta=hasta, pagina=pagina + 1) }}">Siguientes 40 &rarr;</a>
+    <a class="boton" href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, pagina=pagina + 1) }}">Siguientes 40 &rarr;</a>
     {% else %}
     <span class="boton-inactivo">Siguientes 40 &rarr;</span>
     {% endif %}

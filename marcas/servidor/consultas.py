@@ -36,6 +36,7 @@ CAMPOS_OPERACION_EDITABLES = [
     "vendedor_establecimiento", "vendedor_establecimiento_codigo",
     "comprador_nombre", "comprador_documento", "cantidad_animales",
     "categoria_animales", "categoria_animales_original", "tipo_formulario", "revisar",
+    "tipo_operacion",
 ]
 
 
@@ -110,6 +111,7 @@ def listar_operaciones_paginado(
     estado: str | None = None,
     creada_desde: str | None = None,
     creada_hasta: str | None = None,
+    tipo_operacion: str | None = None,
 ) -> tuple[list[dict], int]:
     """``estado`` filtra por lo que ya se muestra como estado en el listado:
     'revisar' (tiene notas de revisión), 'colisiona' (guía colisionada) o
@@ -117,12 +119,15 @@ def listar_operaciones_paginado(
     fechas ISO (AAAA-MM-DD) sobre ``creado_en`` -- la fecha real y confiable
     de carga en el sistema, no el campo de texto libre ``fecha`` del formulario
     de origen, que en más de las tres cuartas partes de las guías migradas
-    llegó vacío o en formatos dispares."""
+    llegó vacío o en formatos dispares. ``tipo_operacion`` filtra 'compra' o
+    'venta' -- las guías de Piedra Alta comprando o vendiendo, respectivamente."""
     consulta = cliente.table("operaciones").select(
         "id, numero_guia, fecha, vendedor_nombre, comprador_nombre, "
-        "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en",
+        "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion",
         count="exact",
     )
+    if tipo_operacion in ("compra", "venta"):
+        consulta = consulta.eq("tipo_operacion", tipo_operacion)
     if estado == "revisar":
         consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
     elif estado == "colisiona":
@@ -472,6 +477,7 @@ def exportar_operaciones(
     estado: str | None = None,
     creada_desde: str | None = None,
     creada_hasta: str | None = None,
+    tipo_operacion: str | None = None,
 ) -> list[dict]:
     """Todas las guías que cumplen el filtro activo (sin paginar), para el CSV."""
     texto = (texto or "").strip()
@@ -479,8 +485,10 @@ def exportar_operaciones(
     def armar():
         consulta = cliente.table("operaciones").select(
             "numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento, "
-            "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en"
+            "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion"
         )
+        if tipo_operacion in ("compra", "venta"):
+            consulta = consulta.eq("tipo_operacion", tipo_operacion)
         if estado == "revisar":
             consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
         elif estado == "colisiona":

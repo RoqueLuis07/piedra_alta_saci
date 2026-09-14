@@ -1,33 +1,38 @@
 {% extends "base.html" %}
-{% block titulo %}Nueva guía{% endblock %}
-{% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
-{% block titulo_pagina %}Cargar guía nueva{% endblock %}
-{% block meta_encabezado %}<a href="{{ url_for('guias') }}">&larr; Volver al listado</a>{% endblock %}
+{% set modo = modo or 'compra' %}
+{% block titulo %}{{ 'Nueva venta' if modo == 'venta' else 'Nueva guía' }}{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · {{ 'VENTAS' if modo == 'venta' else 'GUÍAS DE TRASLADO' }}{% endblock %}
+{% block titulo_pagina %}{{ 'Cargar venta nueva' if modo == 'venta' else 'Cargar guía nueva' }}{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('ventas' if modo == 'venta' else 'guias') }}">&larr; Volver al listado</a>{% endblock %}
 
 {% block contenido %}
 <div class="contenido" style="max-width: 700px;">
   <p style="font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    {% if modo == 'venta' %}
+    Cargá los datos de la venta según el documento de SENACSA. Después de guardar vas a poder subir ese PDF, asignarle las marcas y generar las cuatro copias desde su propia página.
+    {% else %}
     Cargá los datos del formulario de origen. Después de guardar vas a poder sumarle las marcas y generar el PDF de guía desde su propia página.
+    {% endif %}
   </p>
 
-  <form method="post" action="{{ url_for('crear_guia') }}" style="margin-top: 20px;">
+  <form method="post" action="{{ url_for('crear_venta' if modo == 'venta' else 'crear_guia') }}" style="margin-top: 20px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <h2 class="subtitulo">Datos de la guía</h2>
+    <h2 class="subtitulo">Datos de la {{ 'venta' if modo == 'venta' else 'guía' }}</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-      <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía</label><input type="text" name="numero_guia"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía / orden</label><input type="text" name="numero_guia"></div>
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>Fecha</label><input type="text" name="fecha" placeholder="DD/MM/AAAA"></div>
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>Tipo de formulario</label><input type="text" name="tipo_formulario"></div>
     </div>
 
-    <h2 class="subtitulo" style="margin-top: 24px;">Vendedor</h2>
+    <h2 class="subtitulo" style="margin-top: 24px;">Vendedor{% if modo == 'venta' %} (Piedra Alta){% endif %}</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre"></div>
-      <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento"></div>
-      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento"></div>
-      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo"></div>
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre" value="{{ 'PIEDRA ALTA S.A. INMOBILIARIA' if modo == 'venta' else '' }}"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento" value="{{ '80020081' if modo == 'venta' else '' }}"></div>
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento" value="{{ 'LA PATRICIA' if modo == 'venta' else '' }}"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo" value="{{ '1706020006' if modo == 'venta' else '' }}"></div>
     </div>
 
-    <h2 class="subtitulo" style="margin-top: 24px;">Comprador</h2>
+    <h2 class="subtitulo" style="margin-top: 24px;">Comprador{% if modo == 'venta' %} (tercero){% endif %}</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
       <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="comprador_nombre"></div>
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="comprador_documento"></div>
@@ -39,7 +44,7 @@
       <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría</label><input type="text" name="categoria_animales"></div>
     </div>
 
-    <button type="submit" class="boton boton-primario" style="margin-top: 12px;">Crear guía</button>
+    <button type="submit" class="boton boton-primario" style="margin-top: 12px;">{{ 'Crear venta' if modo == 'venta' else 'Crear guía' }}</button>
   </form>
 </div>
 {% endblock %}

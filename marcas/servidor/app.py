@@ -398,11 +398,39 @@ def crear_app() -> Flask:
         creada_hasta = request.args.get("hasta") or None
         operaciones, total = listar_operaciones_paginado(
             cliente, pagina=pagina, texto=texto, estado=estado,
-            creada_desde=creada_desde, creada_hasta=creada_hasta,
+            creada_desde=creada_desde, creada_hasta=creada_hasta, tipo_operacion="compra",
         )
         return render_template(
             "guias.html",
             activo="guias",
+            modo="compra",
+            operaciones=operaciones,
+            pagina=pagina,
+            total=total,
+            texto=texto or "",
+            estado=estado or "",
+            desde=creada_desde or "",
+            hasta=creada_hasta or "",
+            perfil=perfil_actual(),
+        )
+
+    @app.get("/ventas")
+    @requiere_sesion
+    def ventas():
+        cliente = cliente_actual()
+        pagina = max(1, request.args.get("pagina", 1, type=int))
+        texto = request.args.get("q") or None
+        estado = request.args.get("estado") or None
+        creada_desde = request.args.get("desde") or None
+        creada_hasta = request.args.get("hasta") or None
+        operaciones, total = listar_operaciones_paginado(
+            cliente, pagina=pagina, texto=texto, estado=estado,
+            creada_desde=creada_desde, creada_hasta=creada_hasta, tipo_operacion="venta",
+        )
+        return render_template(
+            "guias.html",
+            activo="ventas",
+            modo="venta",
             operaciones=operaciones,
             pagina=pagina,
             total=total,
@@ -424,6 +452,7 @@ def crear_app() -> Flask:
                 estado=request.args.get("estado") or None,
                 creada_desde=request.args.get("desde") or None,
                 creada_hasta=request.args.get("hasta") or None,
+                tipo_operacion="compra",
             )
         except Exception as exc:
             return _error_seguro("No se pudo generar el archivo.", exc)
@@ -448,11 +477,53 @@ def crear_app() -> Flask:
             headers={"Content-Disposition": "attachment; filename=guias.csv"},
         )
 
+    @app.get("/ventas/exportar.csv")
+    @requiere_sesion
+    def exportar_ventas_csv():
+        cliente = cliente_actual()
+        try:
+            filas = exportar_operaciones(
+                cliente,
+                texto=request.args.get("q") or None,
+                estado=request.args.get("estado") or None,
+                creada_desde=request.args.get("desde") or None,
+                creada_hasta=request.args.get("hasta") or None,
+                tipo_operacion="venta",
+            )
+        except Exception as exc:
+            return _error_seguro("No se pudo generar el archivo.", exc)
+        buffer = io.StringIO()
+        escritor = csv.writer(buffer)
+        escritor.writerow([
+            "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento", "comprador_nombre",
+            "comprador_documento", "cantidad_animales", "categoria_animales", "revisar",
+            "guia_colisionada", "creado_en",
+        ])
+        for o in filas:
+            escritor.writerow([
+                o.get("numero_guia") or "", o.get("fecha") or "", o.get("vendedor_nombre") or "",
+                o.get("vendedor_documento") or "", o.get("comprador_nombre") or "",
+                o.get("comprador_documento") or "", o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
+                o.get("categoria_animales") or "", o.get("revisar") or "",
+                "si" if o.get("guia_colisionada") else "no", o.get("creado_en") or "",
+            ])
+        return Response(
+            buffer.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=ventas.csv"},
+        )
+
     @app.get("/guias/nueva")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def nueva_guia():
-        return render_template("guia_nueva.html", activo="guias", perfil=perfil_actual())
+        return render_template("guia_nueva.html", activo="guias", modo="compra", perfil=perfil_actual())
+
+    @app.get("/ventas/nueva")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def nueva_venta():
+        return render_template("guia_nueva.html", activo="ventas", modo="venta", perfil=perfil_actual())
 
     @app.post("/guias/nueva")
     @requiere_sesion
@@ -469,10 +540,33 @@ def crear_app() -> Flask:
                 except ValueError:
                     valor = None
             campos[campo] = valor
+        campos["tipo_operacion"] = "compra"
         try:
             operacion_id = crear_operacion(cliente, campos, perfil["id"])
         except Exception as exc:
             return _error_seguro("No se pudo crear la guía.", exc)
+        return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
+    @app.post("/ventas/nueva")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def crear_venta():
+        cliente = cliente_actual()
+        perfil = perfil_actual()
+        campos = {}
+        for campo in CAMPOS_OPERACION_EDITABLES:
+            valor = request.form.get(campo, "").strip() or None
+            if campo == "cantidad_animales" and valor is not None:
+                try:
+                    valor = int(valor)
+                except ValueError:
+                    valor = None
+            campos[campo] = valor
+        campos["tipo_operacion"] = "venta"
+        try:
+            operacion_id = crear_operacion(cliente, campos, perfil["id"])
+        except Exception as exc:
+            return _error_seguro("No se pudo crear la venta.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.get("/guias/<int:operacion_id>")
@@ -490,7 +584,7 @@ def crear_app() -> Flask:
         cambio_pendiente = cambio_pendiente_de(cliente, "operaciones", operacion_id)
         return render_template(
             "guia_detalle.html",
-            activo="guias",
+            activo="ventas" if operacion.get("tipo_operacion") == "venta" else "guias",
             operacion=operacion,
             marcas=marcas,
             cambio_pendiente=cambio_pendiente,

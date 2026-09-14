@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block titulo %}Guía {{ operacion.numero_guia or operacion.id }}{% endblock %}
-{% block migaja %}REGISTRO DE MARCAS · GUÍAS DE TRASLADO{% endblock %}
-{% block titulo_pagina %}Guía {{ operacion.numero_guia or ('#' ~ operacion.id) }}{% endblock %}
+{% set es_venta = operacion.tipo_operacion == 'venta' %}
+{% block titulo %}{{ 'Venta' if es_venta else 'Guía' }} {{ operacion.numero_guia or operacion.id }}{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · {{ 'VENTAS' if es_venta else 'GUÍAS DE TRASLADO' }}{% endblock %}
+{% block titulo_pagina %}{{ 'Venta' if es_venta else 'Guía' }} {{ operacion.numero_guia or ('#' ~ operacion.id) }}{% endblock %}
 {% block meta_encabezado %}
-<a href="{{ url_for('guias') }}">&larr; Volver al listado</a>
+<a href="{{ url_for('ventas' if es_venta else 'guias') }}">&larr; Volver al listado</a>
 &nbsp;·&nbsp;
 <a href="{{ url_for('imprimir_guia', operacion_id=operacion.id) }}">Imprimir guía &rarr;</a>
 {% endblock %}
@@ -17,6 +18,7 @@
   </div>
   {% endif %}
 
+  <span class="estado {{ 'estado-revisar' if es_venta else 'estado-activa' }}">{{ 'VENTA' if es_venta else 'COMPRA' }}</span>
   {% if operacion.creado_por_nombre %}
   <div class="sub mono" style="margin-top: 18px;">CARGADA POR {{ operacion.creado_por_nombre|upper }}{% if operacion.creado_en %} · {{ operacion.creado_en }}{% endif %}</div>
   {% endif %}
