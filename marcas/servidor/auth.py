@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import g, redirect, session, url_for
+from flask import g, redirect, render_template, session, url_for
 from postgrest.exceptions import APIError
 
 from marcas.servidor.supa import cliente_anonimo, cliente_sesion
@@ -117,7 +117,11 @@ def requiere_rol(*roles: str):
         def envoltorio(*args, **kwargs):
             perfil = perfil_actual()
             if not perfil or perfil.get("rol") not in roles:
-                return "No autorizado para esta sección.", 403
+                return render_template(
+                    "error_simple.html",
+                    titulo="No autorizado",
+                    mensaje="Tu rol no tiene acceso a esta sección.",
+                ), 403
             return vista(*args, **kwargs)
 
         return envoltorio

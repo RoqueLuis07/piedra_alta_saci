@@ -34,7 +34,7 @@
   .mono { font-family: 'IBM Plex Mono', monospace; }
   .shell { display: flex; align-items: stretch; min-height: 100vh; }
 
-  .nav { flex: 0 0 236px; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; transition: flex-basis .16s ease; overflow: hidden; }
+  .nav { flex: 0 0 236px; align-self: flex-start; position: sticky; top: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; transition: flex-basis .16s ease; }
   .nav-brand { padding: 22px 20px 18px; border-bottom: 1px solid rgba(250,250,247,0.22); }
   .nav-logo { width: 46px; display: block; margin-bottom: 12px; flex-shrink: 0; }
   .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 14.5px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.2; white-space: nowrap; }
@@ -119,7 +119,7 @@
 
   @media (max-width: 760px) {
     .shell { flex-direction: column; }
-    .nav, html.nav-colapsado .nav { width: 100%; flex-basis: auto; flex-direction: row; flex-wrap: wrap; }
+    .nav, html.nav-colapsado .nav { width: 100%; flex-basis: auto; height: auto; position: static; overflow: visible; flex-direction: row; flex-wrap: wrap; }
     .nav-brand, .nav-seccion, .nav-pie, .nav-toggle { display: none; }
     .nav-item { flex: 1 1 auto; flex-direction: column; gap: 4px; text-align: center; border-left: 0; border-top: 3px solid transparent; padding: 8px 6px; }
     .nav-item.activo { border-top-color: var(--dorado); }
@@ -164,11 +164,13 @@
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M11 20V4M18 20v-7"/></svg></span>
         <span class="nav-texto">Estadísticas</span>
       </a>
+      {% if perfil and perfil.rol in ('operador', 'administrador') %}
       <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" title="Aprobaciones">
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg></span>
         <span class="nav-texto" style="flex: 1;">Aprobaciones</span>
         {% if pendientes_nav %}<span class="nav-badge mono">{{ pendientes_nav }}</span>{% endif %}
       </a>
+      {% endif %}
       {% if perfil and perfil.rol == 'administrador' %}
       <a class="nav-item {{ 'activo' if activo == 'panel' }}" href="{{ url_for('panel') }}" title="Usuarios">
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15.8 14.3c2.3.5 4.2 2.6 4.2 5.7"/></svg></span>
