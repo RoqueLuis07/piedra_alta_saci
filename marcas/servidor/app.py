@@ -15,6 +15,8 @@ import io
 import os
 import re
 import tempfile
+
+import click
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -140,14 +142,17 @@ def crear_app() -> Flask:
         print("Esquema aplicado.")
 
     @app.cli.command("crear-admin")
-    def crear_admin_cli():
+    @click.option(
+        "--password", "password_opcion", default=None,
+        help="Si no se pasa, se pide por consola (visible -- la consola web de Railway "
+             "no siempre soporta bien la entrada oculta de contraseñas).",
+    )
+    def crear_admin_cli(password_opcion):
         """Da de alta la primera cuenta administradora (o cualquier otra,
         a mano) -- para cuando todavía no hay nadie que pueda entrar al Panel."""
-        import getpass
-
         email = input("Email: ").strip().lower()
         nombre = input("Nombre: ").strip()
-        contrasena = getpass.getpass("Contraseña: ")
+        contrasena = password_opcion if password_opcion is not None else input("Contraseña (queda visible): ")
         if len(contrasena) < 6:
             print("La contraseña debe tener al menos 6 caracteres.")
             return
