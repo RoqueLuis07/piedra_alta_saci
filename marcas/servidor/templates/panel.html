@@ -10,19 +10,39 @@
     Rol y estado de cada persona con acceso al sistema. Un Administrador que edita una marca u operación ya cargada no aplica el cambio directo: otro Operador o Administrador tiene que confirmarlo desde Aprobaciones.
   </p>
 
-  <div style="margin-top: 28px; border-top: 1px solid var(--texto);">
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+  <h2 class="subtitulo" style="margin-top: 28px;">Nueva cuenta</h2>
+  <form method="post" action="{{ url_for('crear_usuario_ruta') }}" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; max-width: 720px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="campo-edicion" style="flex: 1 1 220px; margin-bottom: 0;"><label>Email</label><input type="email" name="email" required></div>
+    <div class="campo-edicion" style="flex: 1 1 180px; margin-bottom: 0;"><label>Nombre</label><input type="text" name="nombre" required></div>
+    <div class="campo-edicion" style="flex: 0 0 auto; margin-bottom: 0;">
+      <label>Rol</label>
+      <select name="rol" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 150px;">
+        {% for r in ['consulta', 'operador', 'administrador'] %}
+        <option value="{{ r }}">{{ {'consulta': 'Consulta', 'operador': 'Operador', 'administrador': 'Administrador'}.get(r, r) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo-edicion" style="flex: 1 1 160px; margin-bottom: 0;"><label>Contraseña inicial</label><input type="password" name="contrasena" required minlength="6"></div>
+    <button type="submit" class="boton boton-primario" style="min-height: auto; padding: 9px 20px;">Crear cuenta</button>
+  </form>
+
+  <h2 class="subtitulo" style="margin-top: 32px;">Cuentas existentes</h2>
+  <div style="border-top: 1px solid var(--texto);">
     {% for u in usuarios %}
     <form method="post" action="{{ url_for('actualizar_usuario', usuario_id=u.id) }}"
-          style="display: flex; align-items: center; gap: 28px; flex-wrap: wrap; padding: 20px 0; border-bottom: 1px solid var(--borde-suave);">
+          style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 0; border-bottom: 1px solid var(--borde-suave);">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div style="flex: 1 1 200px; min-width: 0;">
+      <div style="flex: 1 1 180px; min-width: 0;">
         <div style="font-size: 15px; font-weight: 600;">{{ u.nombre }}</div>
-        <div class="sub mono">{{ u.id }}</div>
+        <div class="sub mono">{{ u.email }}</div>
       </div>
 
       <label style="margin: 0; flex: 0 0 auto;">
         <span class="etiqueta" style="display: block; margin-bottom: 6px;">ROL</span>
-        <select name="rol" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 160px;">
+        <select name="rol" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 150px;">
           {% for r in ['consulta', 'operador', 'administrador'] %}
           <option value="{{ r }}" {% if u.rol == r %}selected{% endif %}>{{ {'consulta': 'Consulta', 'operador': 'Operador', 'administrador': 'Administrador'}.get(r, r) }}</option>
           {% endfor %}
@@ -31,10 +51,15 @@
 
       <label style="margin: 0; flex: 0 0 auto;">
         <span class="etiqueta" style="display: block; margin-bottom: 6px;">ESTADO</span>
-        <select name="activo" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 130px;">
+        <select name="activo" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 120px;">
           <option value="1" {% if u.activo %}selected{% endif %}>Activo</option>
           <option value="0" {% if not u.activo %}selected{% endif %}>Inactivo</option>
         </select>
+      </label>
+
+      <label style="margin: 0; flex: 0 0 auto;">
+        <span class="etiqueta" style="display: block; margin-bottom: 6px;">RESETEAR CONTRASEÑA</span>
+        <input type="password" name="nueva_contrasena" placeholder="Dejar vacío para no cambiarla" minlength="6" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 200px;">
       </label>
 
       <div style="flex: 0 0 auto; align-self: flex-end;">

@@ -1,85 +1,77 @@
 """Sesión y permisos por rol.
 
-La sesión de Flask guarda el token de Supabase (cookie firmada, nunca la
-contraseña); cada request reconstruye un cliente de Supabase con ese token
-para que las consultas respeten RLS como esa persona -- ver ``supa.py``.
+La sesión de Flask guarda únicamente el id de quien está logueado (cookie
+firmada, nunca la contraseña) -- ya no hay tokens de un tercero que
+renovar: la propia cookie de Flask es la sesión, y expira sola después de
+``PERMANENT_SESSION_LIFETIME`` de inactividad (ver ``crear_app()``).
 """
 
 from __future__ import annotations
 
 from functools import wraps
 
+import bcrypt
 from flask import g, redirect, render_template, session, url_for
-from postgrest.exceptions import APIError
 
-from marcas.servidor.supa import cliente_anonimo, cliente_sesion
+from marcas.servidor.db import devolver_conexion, obtener_conexion
 
 
-def iniciar_sesion(access_token: str, refresh_token: str, usuario_id: str, email: str) -> None:
-    session["access_token"] = access_token
-    session["refresh_token"] = refresh_token
+def iniciar_sesion(usuario_id: str) -> None:
+    session.permanent = True
     session["usuario_id"] = usuario_id
-    session["email"] = email
 
 
 def cerrar_sesion() -> None:
     session.clear()
 
 
-def _renovar_sesion():
-    """El token de acceso dura poco (~1 hora). Si venció, se intenta renovar
-    con el refresh_token antes de mandar a la persona de nuevo al login --
-    si no, cualquiera que deje la página abierta un rato se encuentra con un
-    error en vez de simplemente seguir trabajando."""
-    refresh_token = session.get("refresh_token")
-    if not refresh_token:
-        return None
+def conexion_actual():
+    """Una conexión de Postgres para esta request -- la misma en todas las
+    consultas de la vista, devuelta al pool sola al terminar (ver
+    ``cerrar_conexion_actual``, registrada como ``teardown_appcontext``)."""
+    if "conexion" not in g:
+        g.conexion = obtener_conexion()
+    return g.conexion
+
+
+def cerrar_conexion_actual(excepcion=None) -> None:
+    conexion = g.pop("conexion", None)
+    if conexion is None:
+        return
     try:
-        resultado = cliente_anonimo().auth.refresh_session(refresh_token)
-    except Exception:
-        return None
-    session["access_token"] = resultado.session.access_token
-    session["refresh_token"] = resultado.session.refresh_token
-    return cliente_sesion(resultado.session.access_token)
+        if excepcion:
+            conexion.rollback()
+        else:
+            conexion.commit()
+    finally:
+        devolver_conexion(conexion)
+
+
+def verificar_contrasena(contrasena: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(contrasena.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+def encriptar_contrasena(contrasena: str) -> str:
+    return bcrypt.hashpw(contrasena.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def _cargar_perfil():
     """Trae el perfil (rol, activo, nombre) de la persona logueada, una vez por request."""
     if "perfil" in g:
         return g.perfil
-    token = session.get("access_token")
-    if not token:
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
         g.perfil = None
         return None
-    cliente = cliente_sesion(token)
-    try:
-        fila = (
-            cliente.table("perfiles")
-            .select("id, nombre, rol, activo")
-            .eq("id", session["usuario_id"])
-            .maybe_single()
-            .execute()
+    conexion = conexion_actual()
+    with conexion.cursor() as cur:
+        cur.execute(
+            "select id, email, nombre, rol, activo from usuarios where id = %s", (usuario_id,)
         )
-    except APIError:
-        cliente = _renovar_sesion()
-        if cliente is None:
-            session.clear()
-            g.perfil = None
-            return None
-        try:
-            fila = (
-                cliente.table("perfiles")
-                .select("id, nombre, rol, activo")
-                .eq("id", session["usuario_id"])
-                .maybe_single()
-                .execute()
-            )
-        except APIError:
-            session.clear()
-            g.perfil = None
-            return None
-    g.cliente_supabase = cliente
-    g.perfil = fila.data if fila else None
+        g.perfil = cur.fetchone()
+    if g.perfil is None:
+        # La cuenta fue borrada -- no tiene sentido mantener la sesión.
+        session.clear()
     return g.perfil
 
 
@@ -87,23 +79,12 @@ def perfil_actual():
     return _cargar_perfil()
 
 
-def cliente_actual():
-    """El cliente de Supabase de la sesión actual, para usar en las vistas."""
-    if "cliente_supabase" not in g:
-        _cargar_perfil()
-    return g.get("cliente_supabase")
-
-
 def requiere_sesion(vista):
     @wraps(vista)
     def envoltorio(*args, **kwargs):
-        if not session.get("access_token"):
+        if not session.get("usuario_id"):
             return redirect(url_for("login"))
         perfil = _cargar_perfil()
-        if not session.get("access_token"):
-            # _cargar_perfil() vació la sesión: el token venció y no se
-            # pudo renovar. Es un caso distinto de "cuenta sin activar".
-            return redirect(url_for("login"))
         if not perfil or not perfil.get("activo"):
             return redirect(url_for("cuenta_pendiente"))
         return vista(*args, **kwargs)

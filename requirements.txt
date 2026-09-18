@@ -16,8 +16,10 @@ openpyxl>=3.1
 flask>=3.0
 # servidor de producción (Railway, no el de desarrollo de Flask)
 gunicorn>=22.0
-# cliente de Supabase (login, base de datos, storage) para `marcas.servidor`
-supabase>=2.9
+# conexión a Postgres (login, base de datos, imágenes) para `marcas.servidor`
+psycopg2-binary>=2.9
+# encriptar contraseñas (login propio, sin Supabase Auth)
+bcrypt>=4.1
 # protección CSRF en los formularios de `marcas.servidor`
 flask-wtf>=1.2
 # límite de intentos en login/recuperar contraseña, para frenar fuerza bruta

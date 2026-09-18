@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block titulo %}Mi cuenta{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · MI CUENTA{% endblock %}
+{% block titulo_pagina %}Mi cuenta{% endblock %}
+
+{% block contenido %}
+<div class="contenido" style="max-width: 460px;">
+  <p style="font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    {{ perfil.nombre }} · {{ perfil.email }} ·
+    {{ {'consulta': 'Consulta', 'operador': 'Operador', 'administrador': 'Administrador'}.get(perfil.rol, perfil.rol) }}
+  </p>
+
+  <h2 class="subtitulo" style="margin-top: 28px;">Cambiar mi contraseña</h2>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('mi_cuenta_post') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="campo-edicion"><label>Contraseña actual</label><input type="password" name="actual" required></div>
+    <div class="campo-edicion"><label>Contraseña nueva</label><input type="password" name="nueva" required minlength="6"></div>
+    <div class="campo-edicion"><label>Repetir contraseña nueva</label><input type="password" name="repetir" required minlength="6"></div>
+    <button type="submit" class="boton boton-primario">Guardar</button>
+  </form>
+</div>
+{% endblock %}

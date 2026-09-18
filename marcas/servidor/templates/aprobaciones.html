@@ -31,17 +31,7 @@
       {% if campo in ('archivo_png', 'archivo_svg') %}
       <div class="campo-fila">
         <div class="campo-etiqueta">{{ 'IMAGEN PNG' if campo == 'archivo_png' else 'IMAGEN SVG' }}</div>
-        <div class="campo-valor" style="display: flex; align-items: center; gap: 16px;">
-          <div style="text-align: center;">
-            {% if c[campo ~ '_anterior_url'] %}<img src="{{ c[campo ~ '_anterior_url'] }}" width="56" height="56" style="object-fit: contain; opacity: 0.5;">{% else %}<span class="sub">Sin imagen</span>{% endif %}
-            <div class="sub">antes</div>
-          </div>
-          <span>&rarr;</span>
-          <div style="text-align: center;">
-            {% if c[campo ~ '_nueva_url'] %}<img src="{{ c[campo ~ '_nueva_url'] }}" width="56" height="56" style="object-fit: contain;">{% else %}<span class="sub">—</span>{% endif %}
-            <div class="sub">propuesta</div>
-          </div>
-        </div>
+        <div class="campo-valor sub">{{ 'IMAGEN PNG' if campo == 'archivo_png' else 'IMAGEN SVG' }} modificada -- se puede ver el resultado en la ficha de la marca una vez aprobado.</div>
       </div>
       {% else %}
       <div class="campo-fila">

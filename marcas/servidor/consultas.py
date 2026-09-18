@@ -1,30 +1,31 @@
-"""Consultas sobre Supabase para las vistas del servidor.
+"""Consultas SQL sobre la base propia (Postgres en Railway) para las vistas
+del servidor.
 
-Espejo, en Postgres/PostgREST, de lo que ``marcas.db`` hace contra SQLite
-para el selector visual local: buscar, y armar la ficha completa (marca +
-formulario de origen + marcas que la acompañan).
+Reemplaza el esquema anterior basado en supabase-py (``.table().select()...``)
+por SQL parametrizado directo. Cada función toma una **conexión de
+psycopg2** (ver ``db.py``/``auth.conexion_actual``) en vez de un cliente de
+Supabase; el cursor usa ``RealDictCursor``, así que cada fila sigue
+saliendo como ``dict``, igual que antes.
 """
 
 from __future__ import annotations
 
-import re
-import time
+import base64
 from collections import defaultdict
 from datetime import date, timedelta
 
-from supabase import Client
+import psycopg2
+from flask import url_for
+from psycopg2.extras import Json
 
-BUCKET_IMAGENES = "marcas-imagenes"
 POR_PAGINA_GUIAS = 40
 POR_PAGINA_MARCAS = 40
 POR_PAGINA_PROPIETARIOS = 40
-TAMANO_LOTE_EXPORTACION = 1000
 
-# Deben coincidir exactamente con los arrays permitidos dentro de
-# resolver_cambio_pendiente() en la base -- esa función es quien de verdad
-# hace cumplir el límite (defensa en profundidad), esto es sólo para
-# construir los formularios y no ofrecer editar un campo que después la
-# aprobación va a rechazar.
+# Deben coincidir exactamente con lo que ``resolver_cambio_pendiente()``
+# vuelve a chequear al aplicar un cambio aprobado (defensa en profundidad) --
+# esto es sólo para construir los formularios y no ofrecer editar un campo
+# que después la aprobación va a rechazar.
 CAMPOS_MARCA_EDITABLES = [
     "codigo", "tipo", "descripcion", "estado", "observaciones", "archivo_png", "archivo_svg", "vence_en",
 ]
@@ -39,20 +40,35 @@ CAMPOS_OPERACION_EDITABLES = [
     "tipo_operacion",
 ]
 
+_CAMPOS_IMAGEN = ("archivo_png", "archivo_svg")
 
-_CARACTERES_RESERVADOS_FILTRO = re.compile(r'([,.()\\*"])')
+
+class ErrorResolverCambio(Exception):
+    """Mensaje pensado para mostrarse tal cual a quien aprueba/rechaza -- nunca
+    nombres de columna ni detalle interno sin filtrar."""
 
 
-def _escapar_filtro(texto: str) -> str:
-    """Neutraliza los caracteres que PostgREST usa como separadores dentro de
-    ``or_()`` (coma, punto, paréntesis) -- si no se escapan, un texto de
-    búsqueda armado a propósito podría agregar condiciones que no eran la
-    intención (ej. sumar otra comparación al filtro)."""
-    return _CARACTERES_RESERVADOS_FILTRO.sub(r"\\\1", texto)
+def _anidar_relacion(fila: dict, id_campo: str, prefijo: str, alias: str, campos: list[str]) -> None:
+    """Empaqueta columnas ``{prefijo}_{campo}`` en ``fila[alias]`` como un
+    dict anidado (o ``None`` si no hay relación) -- imita el formato que
+    devolvía el ``select("propietarios(nombre, documento)")`` de
+    supabase-py, para no tener que tocar los templates que ya esperan
+    ``m.propietarios.nombre`` / ``m.operaciones.numero_guia``."""
+    tiene_relacion = bool(fila.get(id_campo))
+    valores = {c: fila.pop(f"{prefijo}_{c}", None) for c in campos}
+    fila[alias] = valores if tiene_relacion else None
+
+
+def url_imagen(marca_id: int | None, tiene_imagen: bool, extension: str = "png") -> str | None:
+    """URL (dentro de la propia app) que sirve la imagen -- ya no hay que
+    firmar nada, es una ruta común servida desde la base."""
+    if not marca_id or not tiene_imagen:
+        return None
+    return url_for("imagen_marca", marca_id=marca_id, extension=extension)
 
 
 def buscar_marcas(
-    cliente: Client,
+    conexion,
     texto: str | None,
     pagina: int = 1,
     por_pagina: int = POR_PAGINA_MARCAS,
@@ -61,50 +77,52 @@ def buscar_marcas(
 ) -> tuple[list[dict], int]:
     """Los resultados de la página pedida y el total real de coincidencias."""
     texto = (texto or "").strip()
-    consulta = cliente.table("marcas").select(
-        "id, codigo, tipo, estado, posicion, propietario_id, operacion_id, archivo_png, vence_en, "
-        "propietarios(nombre, documento), operaciones(numero_guia, fecha)",
-        count="exact",
-    )
+    condiciones = []
+    parametros: dict = {}
     if estado in ("activa", "revisar", "baja"):
-        consulta = consulta.eq("estado", estado)
+        condiciones.append("m.estado = %(estado)s")
+        parametros["estado"] = estado
     if tipo in ("dominante", "complementaria"):
-        consulta = consulta.eq("tipo", tipo)
+        condiciones.append("m.tipo = %(tipo)s")
+        parametros["tipo"] = tipo
     if texto:
-        texto_seguro = _escapar_filtro(texto)
-        propietarios_coincidentes = (
-            cliente.table("propietarios")
-            .select("id")
-            .or_(f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%")
-            .execute()
-            .data
+        parametros["patron"] = f"%{texto}%"
+        condiciones.append(
+            "(m.codigo ILIKE %(patron)s OR o.numero_guia ILIKE %(patron)s "
+            "OR p.nombre ILIKE %(patron)s OR p.documento ILIKE %(patron)s)"
         )
-        # "numero_guia" en marcas es una columna heredada de la migración inicial
-        # que no se completa para las marcas nuevas (se vinculan a su guía sólo
-        # por operacion_id) -- buscar el N.º de guía tiene que cruzar contra la
-        # guía real, del mismo modo que ya se hace para propietario.
-        operaciones_coincidentes = (
-            cliente.table("operaciones")
-            .select("id")
-            .ilike("numero_guia", f"%{texto_seguro}%")
-            .execute()
-            .data
-        )
-        filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
-        if propietarios_coincidentes:
-            lista = ",".join(str(p["id"]) for p in propietarios_coincidentes)
-            filtro += f",propietario_id.in.({lista})"
-        if operaciones_coincidentes:
-            lista = ",".join(str(o["id"]) for o in operaciones_coincidentes)
-            filtro += f",operacion_id.in.({lista})"
-        consulta = consulta.or_(filtro)
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
     desde = max(0, pagina - 1) * por_pagina
-    respuesta = consulta.order("codigo").range(desde, desde + por_pagina - 1).execute()
-    return respuesta.data, (respuesta.count or 0)
+    origen = f"""
+        FROM marcas m
+        LEFT JOIN propietarios p ON p.id = m.propietario_id
+        LEFT JOIN operaciones o ON o.id = m.operacion_id
+        {where}
+    """
+    with conexion.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS total {origen}", parametros)
+        total = cur.fetchone()["total"]
+        cur.execute(
+            f"""
+            SELECT m.id, m.codigo, m.tipo, m.estado, m.posicion, m.propietario_id, m.operacion_id,
+                   (m.archivo_png IS NOT NULL) AS archivo_png, m.vence_en,
+                   p.nombre AS propietario_nombre, p.documento AS propietario_documento,
+                   o.numero_guia AS operacion_numero_guia, o.fecha AS operacion_fecha
+            {origen}
+            ORDER BY m.codigo
+            LIMIT %(por_pagina)s OFFSET %(desde)s
+            """,
+            {**parametros, "por_pagina": por_pagina, "desde": desde},
+        )
+        filas = cur.fetchall()
+    for f in filas:
+        _anidar_relacion(f, "propietario_id", "propietario", "propietarios", ["nombre", "documento"])
+        _anidar_relacion(f, "operacion_id", "operacion", "operaciones", ["numero_guia", "fecha"])
+    return filas, total
 
 
 def listar_operaciones_paginado(
-    cliente: Client,
+    conexion,
     pagina: int = 1,
     por_pagina: int = POR_PAGINA_GUIAS,
     texto: str | None = None,
@@ -117,306 +135,451 @@ def listar_operaciones_paginado(
     'revisar' (tiene notas de revisión), 'colisiona' (guía colisionada) o
     'al_dia' (ninguna de las dos). ``creada_desde``/``creada_hasta`` son
     fechas ISO (AAAA-MM-DD) sobre ``creado_en`` -- la fecha real y confiable
-    de carga en el sistema, no el campo de texto libre ``fecha`` del formulario
-    de origen, que en más de las tres cuartas partes de las guías migradas
-    llegó vacío o en formatos dispares. ``tipo_operacion`` filtra 'compra' o
-    'venta' -- las guías de Piedra Alta comprando o vendiendo, respectivamente."""
-    consulta = cliente.table("operaciones").select(
-        "id, numero_guia, fecha, vendedor_nombre, comprador_nombre, "
-        "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion",
-        count="exact",
-    )
+    de carga en el sistema, no el campo de texto libre ``fecha`` del
+    formulario de origen, que en más de las tres cuartas partes de las guías
+    migradas llegó vacío o en formatos dispares. ``tipo_operacion`` filtra
+    'compra' o 'venta'."""
+    condiciones = []
+    parametros: dict = {}
     if tipo_operacion in ("compra", "venta"):
-        consulta = consulta.eq("tipo_operacion", tipo_operacion)
+        condiciones.append("tipo_operacion = %(tipo_operacion)s")
+        parametros["tipo_operacion"] = tipo_operacion
     if estado == "revisar":
-        consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
+        condiciones.append("(revisar IS NOT NULL AND revisar != '')")
     elif estado == "colisiona":
-        consulta = consulta.eq("guia_colisionada", True)
+        condiciones.append("guia_colisionada = true")
     elif estado == "al_dia":
-        consulta = consulta.eq("guia_colisionada", False).or_("revisar.is.null,revisar.eq.")
+        condiciones.append("guia_colisionada = false AND (revisar IS NULL OR revisar = '')")
     if creada_desde:
-        consulta = consulta.gte("creado_en", creada_desde)
+        condiciones.append("creado_en >= %(creada_desde)s")
+        parametros["creada_desde"] = creada_desde
     if creada_hasta:
-        consulta = consulta.lte("creado_en", f"{creada_hasta}T23:59:59")
+        condiciones.append("creado_en <= %(creada_hasta)s")
+        parametros["creada_hasta"] = f"{creada_hasta}T23:59:59"
     texto = (texto or "").strip()
     if texto:
-        texto_seguro = _escapar_filtro(texto)
-        consulta = consulta.or_(
-            f"numero_guia.ilike.%{texto_seguro}%,vendedor_nombre.ilike.%{texto_seguro}%,"
-            f"comprador_nombre.ilike.%{texto_seguro}%"
+        parametros["patron"] = f"%{texto}%"
+        condiciones.append(
+            "(numero_guia ILIKE %(patron)s OR vendedor_nombre ILIKE %(patron)s "
+            "OR comprador_nombre ILIKE %(patron)s)"
         )
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
     desde = max(0, pagina - 1) * por_pagina
-    respuesta = (
-        consulta.order("creado_en", desc=True).range(desde, desde + por_pagina - 1).execute()
-    )
-    return respuesta.data, (respuesta.count or 0)
+    with conexion.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS total FROM operaciones {where}", parametros)
+        total = cur.fetchone()["total"]
+        cur.execute(
+            f"""
+            SELECT id, numero_guia, fecha, vendedor_nombre, comprador_nombre,
+                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion
+            FROM operaciones
+            {where}
+            ORDER BY creado_en DESC
+            LIMIT %(por_pagina)s OFFSET %(desde)s
+            """,
+            {**parametros, "por_pagina": por_pagina, "desde": desde},
+        )
+        filas = cur.fetchall()
+    return filas, total
 
 
-def obtener_operacion_por_id(cliente: Client, operacion_id: int) -> dict | None:
-    respuesta = cliente.table("operaciones").select("*").eq("id", operacion_id).maybe_single().execute()
-    return respuesta.data if respuesta else None
+def obtener_operacion_por_id(conexion, operacion_id: int) -> dict | None:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT * FROM operaciones WHERE id = %s", (operacion_id,))
+        return cur.fetchone()
 
 
-def marcas_de_operacion(cliente: Client, operacion_id: int) -> list[dict]:
-    return (
-        cliente.table("marcas")
-        .select("id, codigo, tipo, posicion, archivo_png, estado")
-        .eq("operacion_id", operacion_id)
-        .order("tipo")
-        .order("posicion")
-        .execute()
-        .data
-    )
+def marcas_de_operacion(conexion, operacion_id: int) -> list[dict]:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png, estado
+            FROM marcas
+            WHERE operacion_id = %s
+            ORDER BY tipo, posicion
+            """,
+            (operacion_id,),
+        )
+        return cur.fetchall()
 
 
-def marcas_por_codigos(cliente: Client, codigos: list[str]) -> dict[str, dict]:
+def obtener_marca_por_id(conexion, marca_id: int) -> dict | None:
+    """Como ``ficha_marca`` pero sin el join a propietario/operación -- para
+    cuando sólo hace falta la fila para comparar ediciones (no arrastra el
+    contenido de las imágenes: son bytea, pesan)."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, codigo, descripcion, propietario_id, operacion_id, tipo, posicion, numero_guia,
+                   origen_archivo, (archivo_png IS NOT NULL) AS archivo_png,
+                   (archivo_svg IS NOT NULL) AS archivo_svg, borde_limpiado, sospechosa_calidad,
+                   motivo_calidad, estado, observaciones, creado_por, actualizado_por, creado_en,
+                   actualizado_en, vence_en
+            FROM marcas
+            WHERE id = %s
+            """,
+            (marca_id,),
+        )
+        return cur.fetchone()
+
+
+def marcas_por_codigos(conexion, codigos: list[str]) -> dict[str, dict]:
     """Para una Venta: las marcas elegidas no pertenecen a esta operación
     (son del catálogo existente, se transfieren), así que se buscan por
     código en vez de por operacion_id. Devuelve un dict código -> marca
     para que el llamador pueda armar la lista en el orden que el usuario
-    eligió (Supabase no garantiza el orden del ``in_``)."""
+    eligió."""
     if not codigos:
         return {}
-    filas = (
-        cliente.table("marcas")
-        .select("id, codigo, tipo, estado, archivo_png, propietarios(nombre)")
-        .in_("codigo", list(dict.fromkeys(codigos)))
-        .execute()
-        .data
-    )
+    codigos_unicos = list(dict.fromkeys(codigos))
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.id, m.codigo, m.tipo, m.estado, m.propietario_id,
+                   (m.archivo_png IS NOT NULL) AS archivo_png,
+                   p.nombre AS propietario_nombre
+            FROM marcas m
+            LEFT JOIN propietarios p ON p.id = m.propietario_id
+            WHERE m.codigo = ANY(%s)
+            """,
+            (codigos_unicos,),
+        )
+        filas = cur.fetchall()
+    for f in filas:
+        _anidar_relacion(f, "propietario_id", "propietario", "propietarios", ["nombre"])
     return {f["codigo"]: f for f in filas}
 
 
-def crear_operacion(cliente: Client, campos: dict, creado_por: str) -> int:
+def crear_operacion(conexion, campos: dict, creado_por: str) -> int:
     """Alta de una guía nueva -- no es una edición, así que se aplica directo."""
     datos = {**campos, "origen": "manual", "creado_por": creado_por}
-    respuesta = cliente.table("operaciones").insert(datos).execute()
-    return respuesta.data[0]["id"]
+    columnas = list(datos.keys())
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"INSERT INTO operaciones ({', '.join(columnas)}) "
+            f"VALUES ({', '.join('%(' + c + ')s' for c in columnas)}) RETURNING id",
+            datos,
+        )
+        return cur.fetchone()["id"]
 
 
-def crear_marca(cliente: Client, campos: dict, creado_por: str) -> dict:
+def crear_marca(conexion, campos: dict, creado_por: str) -> dict:
     """Alta de una marca nueva -- no es una edición, así que se aplica directo.
 
     No se manda ``codigo``: lo asigna la base (secuencial, M-00001, M-00002...)
     para que nadie tenga que inventarlo ni se puedan pisar dos altas a la vez.
     """
     datos = {**campos, "creado_por": creado_por}
-    respuesta = cliente.table("marcas").insert(datos).execute()
-    return respuesta.data[0]
+    columnas = list(datos.keys())
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"INSERT INTO marcas ({', '.join(columnas)}) "
+            f"VALUES ({', '.join('%(' + c + ')s' for c in columnas)}) RETURNING id, codigo",
+            datos,
+        )
+        return cur.fetchone()
+
+
+def subir_imagen_marca(conexion, marca_id: int, contenido: bytes, extension: str) -> None:
+    """Aplica una imagen directo sobre la marca (edición de un Operador, o
+    alta de una nueva marca complementaria) -- no pasa por aprobación."""
+    if extension not in ("png", "svg"):
+        raise ValueError(f"extensión de imagen inválida: {extension!r}")
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"UPDATE marcas SET archivo_{extension} = %s WHERE id = %s",
+            (psycopg2.Binary(contenido), marca_id),
+        )
+
+
+def imagen_marca(conexion, marca_id: int, extension: str) -> bytes | None:
+    """El contenido binario de la imagen -- para servirla por HTTP o
+    incrustarla en un PDF."""
+    if extension not in ("png", "svg"):
+        raise ValueError(f"extensión de imagen inválida: {extension!r}")
+    with conexion.cursor() as cur:
+        cur.execute(f"SELECT archivo_{extension} AS contenido FROM marcas WHERE id = %s", (marca_id,))
+        fila = cur.fetchone()
+    contenido = fila["contenido"] if fila else None
+    return bytes(contenido) if contenido is not None else None
+
+
+def actualizar_marca_campos(conexion, marca_id: int, campos: dict) -> None:
+    """Aplica una edición directo (Operador) -- las claves de ``campos``
+    siempre vienen filtradas contra ``CAMPOS_MARCA_EDITABLES`` antes de
+    llegar acá."""
+    if not campos:
+        return
+    columnas = ", ".join(f"{c} = %({c})s" for c in campos)
+    with conexion.cursor() as cur:
+        cur.execute(f"UPDATE marcas SET {columnas} WHERE id = %(_id)s", {**campos, "_id": marca_id})
+
+
+def actualizar_operacion_campos(conexion, operacion_id: int, campos: dict) -> None:
+    if not campos:
+        return
+    columnas = ", ".join(f"{c} = %({c})s" for c in campos)
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"UPDATE operaciones SET {columnas} WHERE id = %(_id)s", {**campos, "_id": operacion_id}
+        )
 
 
 def proponer_cambio(
-    cliente: Client, tabla: str, fila_id: int, cambios: dict, valores_anteriores: dict, propuesto_por: str
+    conexion, tabla: str, fila_id: int, cambios: dict, valores_anteriores: dict, propuesto_por: str
 ) -> None:
-    cliente.table("cambios_pendientes").insert(
-        {
-            "tabla": tabla,
-            "fila_id": fila_id,
-            "cambios": cambios,
-            "valores_anteriores": valores_anteriores,
-            "propuesto_por": propuesto_por,
-            "estado": "pendiente",
-        }
-    ).execute()
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO cambios_pendientes (tabla, fila_id, cambios, valores_anteriores, propuesto_por, estado)
+            VALUES (%s, %s, %s, %s, %s, 'pendiente')
+            """,
+            (tabla, fila_id, Json(cambios), Json(valores_anteriores), propuesto_por),
+        )
 
 
-def nombres_usuarios(cliente: Client, ids) -> dict[str, str]:
+def resolver_cambio_pendiente(
+    conexion, cambio_id: int, decision: str, revisado_por: str, motivo: str | None = None
+) -> None:
+    """Aprueba o rechaza un cambio en cola -- la regla de fondo (quien
+    propone no puede aprobar) vive acá, en código versionado, en vez de en
+    una función guardada sólo dentro de la base."""
+    if decision not in ("aprobado", "rechazado"):
+        raise ErrorResolverCambio("Decisión inválida.")
+    with conexion.cursor() as cur:
+        cur.execute("SELECT * FROM cambios_pendientes WHERE id = %s FOR UPDATE", (cambio_id,))
+        cambio = cur.fetchone()
+        if not cambio:
+            raise ErrorResolverCambio("Ese cambio ya no existe.")
+        if cambio["estado"] != "pendiente":
+            raise ErrorResolverCambio("Ese cambio ya fue resuelto.")
+        if str(cambio["propuesto_por"]) == str(revisado_por):
+            raise ErrorResolverCambio("Quien propone el cambio no puede aprobarlo.")
+        if cambio["tabla"] not in ("marcas", "operaciones"):
+            raise ErrorResolverCambio("No se pudo resolver el cambio.")
+
+        if decision == "aprobado":
+            permitidos = CAMPOS_MARCA_EDITABLES if cambio["tabla"] == "marcas" else CAMPOS_OPERACION_EDITABLES
+            cambios_aplicar = {}
+            for campo, valor in cambio["cambios"].items():
+                if campo not in permitidos:
+                    continue  # defensa en profundidad: nunca aplicar una columna fuera de la lista blanca
+                if campo in _CAMPOS_IMAGEN and valor is not None:
+                    valor = psycopg2.Binary(base64.b64decode(valor))
+                cambios_aplicar[campo] = valor
+            if cambios_aplicar:
+                columnas = ", ".join(f"{c} = %({c})s" for c in cambios_aplicar)
+                cur.execute(
+                    f"UPDATE {cambio['tabla']} SET {columnas} WHERE id = %(_id)s",
+                    {**cambios_aplicar, "_id": cambio["fila_id"]},
+                )
+
+        cur.execute(
+            """
+            UPDATE cambios_pendientes
+            SET estado = %s, revisado_por = %s, revisado_en = now(), motivo_rechazo = %s
+            WHERE id = %s
+            """,
+            (decision, revisado_por, motivo, cambio_id),
+        )
+
+
+def nombres_usuarios(conexion, ids) -> dict[str, str]:
     """Resuelve id de usuario -> nombre, para mostrar quién cargó o tocó un registro."""
-    ids_validos = {i for i in ids if i}
+    ids_validos = list({i for i in ids if i})
     if not ids_validos:
         return {}
-    filas = cliente.table("perfiles").select("id, nombre").in_("id", list(ids_validos)).execute().data
-    return {f["id"]: f["nombre"] for f in filas}
+    with conexion.cursor() as cur:
+        # el cast explícito hace falta porque el array llega como texto --
+        # sin él, Postgres no sabe compararlo contra la columna uuid.
+        cur.execute("SELECT id, nombre FROM usuarios WHERE id = ANY(%s::uuid[])", (ids_validos,))
+        return {str(f["id"]): f["nombre"] for f in cur.fetchall()}
 
 
-def cambio_pendiente_de(cliente: Client, tabla: str, fila_id: int) -> dict | None:
+def cambio_pendiente_de(conexion, tabla: str, fila_id: int) -> dict | None:
     """Si esta fila ya tiene una modificación esperando aprobación, la trae.
 
-    No hay ninguna restricción en la base que impida dos propuestas pendientes
-    sobre la misma fila (dos Administradores podrían proponer cada uno la
-    suya) -- ``.maybe_single()`` rompería en ese caso al encontrar más de una
-    fila, así que se trae la más reciente con ``limit(1)`` en vez de asumir
-    que siempre hay como mucho una.
+    No hay ninguna restricción que impida dos propuestas pendientes sobre la
+    misma fila (dos Administradores podrían proponer cada uno la suya) --
+    se trae la más reciente con ``LIMIT 1`` en vez de asumir que siempre hay
+    como mucho una.
     """
-    filas = (
-        cliente.table("cambios_pendientes")
-        .select("*")
-        .eq("tabla", tabla)
-        .eq("fila_id", fila_id)
-        .eq("estado", "pendiente")
-        .order("propuesto_en", desc=True)
-        .limit(1)
-        .execute()
-        .data
-    )
-    return filas[0] if filas else None
-
-
-def descargar_imagen_marca(cliente: Client, ruta: str | None) -> bytes | None:
-    """El contenido binario de una imagen del bucket -- para incrustarla en un PDF."""
-    if not ruta:
-        return None
-    try:
-        return cliente.storage.from_(BUCKET_IMAGENES).download(ruta)
-    except Exception as exc:
-        print(f"descargar_imagen_marca: no se pudo bajar {ruta!r}: {exc}")
-        return None
-
-
-def subir_imagen_marca(cliente: Client, codigo: str, contenido: bytes, extension: str) -> str:
-    """Sube una imagen con nombre nuevo (no pisa la anterior) y devuelve el nombre de archivo."""
-    tipo_contenido = "image/svg+xml" if extension == "svg" else f"image/{extension}"
-    nombre = f"{codigo}_{int(time.time())}.{extension}"
-    cliente.storage.from_(BUCKET_IMAGENES).upload(
-        nombre, contenido, {"content-type": tipo_contenido, "upsert": "true"}
-    )
-    return nombre
-
-
-def _ruta_borrador(operacion_id: int, parte: str, extension: str) -> str:
-    """Nombre estable (no con timestamp) -- cada "Guardar borrador" pisa el
-    archivo anterior en vez de acumular versiones viejas en el bucket."""
-    return f"borradores/venta_{operacion_id}_{parte}.{extension}"
-
-
-def guardar_archivo_borrador(cliente: Client, operacion_id: int, parte: str, contenido: bytes, extension: str) -> str:
-    tipo_contenido = "application/pdf" if extension == "pdf" else f"image/{extension}"
-    ruta = _ruta_borrador(operacion_id, parte, extension)
-    cliente.storage.from_(BUCKET_IMAGENES).upload(
-        ruta, contenido, {"content-type": tipo_contenido, "upsert": "true"}
-    )
-    return ruta
-
-
-def descargar_archivo_bucket(cliente: Client, ruta: str | None) -> bytes | None:
-    """Igual que ``descargar_imagen_marca`` pero para cualquier archivo del bucket (p. ej. un PDF de borrador)."""
-    if not ruta:
-        return None
-    try:
-        return cliente.storage.from_(BUCKET_IMAGENES).download(ruta)
-    except Exception as exc:
-        print(f"descargar_archivo_bucket: no se pudo bajar {ruta!r}: {exc}")
-        return None
-
-
-def eliminar_archivos_bucket(cliente: Client, rutas: list[str]) -> None:
-    rutas_validas = [r for r in rutas if r]
-    if not rutas_validas:
-        return
-    try:
-        cliente.storage.from_(BUCKET_IMAGENES).remove(rutas_validas)
-    except Exception as exc:
-        print(f"eliminar_archivos_bucket: no se pudo borrar {rutas_validas!r}: {exc}")
-
-
-def guardar_borrador_venta(cliente: Client, operacion_id: int, borrador: dict) -> None:
-    cliente.table("operaciones").update({"borrador_venta": borrador}).eq("id", operacion_id).execute()
-
-
-def eliminar_borrador_venta(cliente: Client, operacion_id: int, borrador_anterior: dict | None) -> None:
-    """Limpia la columna y borra del bucket lo que ese borrador tenía guardado."""
-    if borrador_anterior:
-        eliminar_archivos_bucket(
-            cliente, [borrador_anterior.get("pdf_ruta"), borrador_anterior.get("dominante_ruta")]
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT * FROM cambios_pendientes
+            WHERE tabla = %s AND fila_id = %s AND estado = 'pendiente'
+            ORDER BY propuesto_en DESC
+            LIMIT 1
+            """,
+            (tabla, fila_id),
         )
-    cliente.table("operaciones").update({"borrador_venta": None}).eq("id", operacion_id).execute()
+        return cur.fetchone()
 
 
-def ficha_marca(cliente: Client, codigo: str) -> dict | None:
+def guardar_borrador_venta(
+    conexion,
+    operacion_id: int,
+    marcas: list[str],
+    guardado_en: str,
+    pdf_bytes: bytes | None = None,
+    pdf_nombre: str | None = None,
+    dominante_bytes: bytes | None = None,
+) -> None:
+    """Guarda el avance de la carga de una Venta. Un archivo que no se
+    reenvía en este llamado se deja como estaba (``COALESCE``) -- así
+    guardar de nuevo sólo las marcas elegidas no borra un PDF ya subido
+    antes."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE operaciones SET
+                borrador_venta = %(borrador)s,
+                borrador_pdf = COALESCE(%(pdf_bytes)s, borrador_pdf),
+                borrador_pdf_nombre = COALESCE(%(pdf_nombre)s, borrador_pdf_nombre),
+                borrador_dominante_png = COALESCE(%(dominante_bytes)s, borrador_dominante_png)
+            WHERE id = %(operacion_id)s
+            """,
+            {
+                "borrador": Json({"marcas": marcas, "guardado_en": guardado_en}),
+                "pdf_bytes": psycopg2.Binary(pdf_bytes) if pdf_bytes else None,
+                "pdf_nombre": pdf_nombre,
+                "dominante_bytes": psycopg2.Binary(dominante_bytes) if dominante_bytes else None,
+                "operacion_id": operacion_id,
+            },
+        )
+
+
+def eliminar_borrador_venta(conexion, operacion_id: int) -> None:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE operaciones
+            SET borrador_venta = NULL, borrador_pdf = NULL, borrador_pdf_nombre = NULL,
+                borrador_dominante_png = NULL
+            WHERE id = %s
+            """,
+            (operacion_id,),
+        )
+
+
+def borrador_venta_pdf(conexion, operacion_id: int) -> tuple[bytes, str] | None:
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT borrador_pdf, borrador_pdf_nombre FROM operaciones WHERE id = %s", (operacion_id,)
+        )
+        fila = cur.fetchone()
+    if not fila or fila["borrador_pdf"] is None:
+        return None
+    return bytes(fila["borrador_pdf"]), (fila["borrador_pdf_nombre"] or "borrador.pdf")
+
+
+def borrador_venta_dominante(conexion, operacion_id: int) -> bytes | None:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT borrador_dominante_png FROM operaciones WHERE id = %s", (operacion_id,))
+        fila = cur.fetchone()
+    if not fila or fila["borrador_dominante_png"] is None:
+        return None
+    return bytes(fila["borrador_dominante_png"])
+
+
+def ficha_marca(conexion, codigo: str) -> dict | None:
     """La marca, su formulario de origen y las marcas que la acompañan."""
-    respuesta = (
-        cliente.table("marcas")
-        .select("*, propietarios(nombre, documento, establecimiento)")
-        .eq("codigo", codigo)
-        .maybe_single()
-        .execute()
-    )
-    marca = respuesta.data if respuesta else None
-    if not marca:
-        return None
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.id, m.codigo, m.descripcion, m.propietario_id, m.operacion_id, m.tipo, m.posicion,
+                   m.numero_guia, m.origen_archivo, (m.archivo_png IS NOT NULL) AS archivo_png,
+                   (m.archivo_svg IS NOT NULL) AS archivo_svg, m.borde_limpiado, m.sospechosa_calidad,
+                   m.motivo_calidad, m.estado, m.observaciones, m.creado_por, m.actualizado_por,
+                   m.creado_en, m.actualizado_en, m.vence_en,
+                   p.nombre AS propietario_nombre, p.documento AS propietario_documento,
+                   p.establecimiento AS propietario_establecimiento
+            FROM marcas m
+            LEFT JOIN propietarios p ON p.id = m.propietario_id
+            WHERE m.codigo = %s
+            """,
+            (codigo,),
+        )
+        marca = cur.fetchone()
+        if not marca:
+            return None
+        _anidar_relacion(
+            marca, "propietario_id", "propietario", "propietarios", ["nombre", "documento", "establecimiento"]
+        )
 
-    operacion = None
-    acompanantes: list[dict] = []
-    if marca.get("operacion_id"):
-        operacion = (
-            cliente.table("operaciones")
-            .select("*")
-            .eq("id", marca["operacion_id"])
-            .maybe_single()
-            .execute()
-            .data
-        )
-        hermanas = (
-            cliente.table("marcas")
-            .select("codigo, tipo, posicion, archivo_png, archivo_svg, estado")
-            .eq("operacion_id", marca["operacion_id"])
-            .order("tipo")
-            .order("posicion")
-            .execute()
-            .data
-        )
-        acompanantes = [h for h in hermanas if h["codigo"] != codigo]
+        operacion = None
+        acompanantes: list[dict] = []
+        if marca.get("operacion_id"):
+            cur.execute("SELECT * FROM operaciones WHERE id = %s", (marca["operacion_id"],))
+            operacion = cur.fetchone()
+            cur.execute(
+                """
+                SELECT codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png,
+                       (archivo_svg IS NOT NULL) AS archivo_svg, estado
+                FROM marcas
+                WHERE operacion_id = %s
+                ORDER BY tipo, posicion
+                """,
+                (marca["operacion_id"],),
+            )
+            acompanantes = [h for h in cur.fetchall() if h["codigo"] != codigo]
 
     return {"marca": marca, "operacion": operacion, "acompanantes": acompanantes}
 
 
-def estadisticas(cliente: Client) -> dict:
-    total = cliente.table("marcas").select("id", count="exact").execute().count or 0
-    a_revisar = (
-        cliente.table("marcas").select("id", count="exact").eq("estado", "revisar").execute().count
-        or 0
-    )
-    pendientes = (
-        cliente.table("cambios_pendientes")
-        .select("id", count="exact")
-        .eq("estado", "pendiente")
-        .execute()
-        .count
-        or 0
-    )
+def estadisticas(conexion) -> dict:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT count(*) AS total FROM marcas")
+        total = cur.fetchone()["total"]
+        cur.execute("SELECT count(*) AS total FROM marcas WHERE estado = 'revisar'")
+        a_revisar = cur.fetchone()["total"]
+        cur.execute("SELECT count(*) AS total FROM cambios_pendientes WHERE estado = 'pendiente'")
+        pendientes = cur.fetchone()["total"]
     return {"total": total, "a_revisar": a_revisar, "pendientes": pendientes}
 
 
-def desglose_marcas(cliente: Client) -> dict:
+def desglose_marcas(conexion) -> dict:
     """Cuántas marcas hay por estado y por tipo -- para el panel de estadísticas."""
     resultado = {}
-    for estado in ("activa", "revisar", "baja"):
-        resultado[estado] = (
-            cliente.table("marcas").select("id", count="exact").eq("estado", estado).execute().count or 0
-        )
-    for tipo in ("dominante", "complementaria"):
-        resultado[tipo] = (
-            cliente.table("marcas").select("id", count="exact").eq("tipo", tipo).execute().count or 0
-        )
+    with conexion.cursor() as cur:
+        for estado in ("activa", "revisar", "baja"):
+            cur.execute("SELECT count(*) AS total FROM marcas WHERE estado = %s", (estado,))
+            resultado[estado] = cur.fetchone()["total"]
+        for tipo in ("dominante", "complementaria"):
+            cur.execute("SELECT count(*) AS total FROM marcas WHERE tipo = %s", (tipo,))
+            resultado[tipo] = cur.fetchone()["total"]
     return resultado
 
 
-def resumen_mensual(cliente: Client, meses: int = 12) -> list[dict]:
+def resumen_mensual(conexion, meses: int = 12) -> list[dict]:
     """Guías cargadas y animales declarados por mes, según ``creado_en``.
 
     Se calcula sobre cuándo se cargó cada guía al sistema (dato real y
     siempre presente), no sobre el campo de texto libre ``fecha`` del
     formulario de origen -- ese llegó vacío o en formatos dispares en la
     mayoría de las guías migradas, así que no sirve para armar una serie de
-    tiempo confiable. El historial migrado en bloque va a verse como un solo
-    pico; la tendencia real se arma con las guías que se carguen de acá en
-    adelante."""
-    filas = cliente.table("operaciones").select("creado_en, cantidad_animales").execute().data
+    tiempo confiable."""
+    with conexion.cursor() as cur:
+        cur.execute("SELECT creado_en, cantidad_animales FROM operaciones")
+        filas = cur.fetchall()
     baldes: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
     for f in filas:
         marca_tiempo = f.get("creado_en")
         if not marca_tiempo:
             continue
-        clave = marca_tiempo[:7]  # 'AAAA-MM'
+        clave = marca_tiempo.isoformat()[:7]  # 'AAAA-MM'
         baldes[clave]["guias"] += 1
         baldes[clave]["animales"] += f.get("cantidad_animales") or 0
     claves = sorted(baldes)[-meses:]
     return [{"mes": clave, **baldes[clave]} for clave in claves]
 
 
-def ranking_participantes(cliente: Client, limite: int = 8) -> tuple[list[dict], list[dict]]:
+def ranking_participantes(conexion, limite: int = 8) -> tuple[list[dict], list[dict]]:
     """Los vendedores y compradores con más animales movidos, según las guías cargadas."""
-    filas = cliente.table("operaciones").select("vendedor_nombre, comprador_nombre, cantidad_animales").execute().data
+    with conexion.cursor() as cur:
+        cur.execute("SELECT vendedor_nombre, comprador_nombre, cantidad_animales FROM operaciones")
+        filas = cur.fetchall()
     vendedores: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
     compradores: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
     for f in filas:
@@ -437,60 +600,79 @@ def ranking_participantes(cliente: Client, limite: int = 8) -> tuple[list[dict],
     )
 
 
-def marcas_por_vencer(cliente: Client, dias: int = 90, limite: int = 10) -> list[dict]:
+def marcas_por_vencer(conexion, dias: int = 90, limite: int = 10) -> list[dict]:
     """Marcas activas con vencimiento cargado dentro de los próximos ``dias`` días
     (incluye las ya vencidas), para alertar la renovación a tiempo."""
-    limite_fecha = (date.today() + timedelta(days=dias)).isoformat()
-    return (
-        cliente.table("marcas")
-        .select("codigo, vence_en, propietarios(nombre)")
-        .not_.is_("vence_en", "null")
-        .lte("vence_en", limite_fecha)
-        .neq("estado", "baja")
-        .order("vence_en")
-        .limit(limite)
-        .execute()
-        .data
-    )
+    limite_fecha = date.today() + timedelta(days=dias)
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT m.codigo, m.vence_en, m.propietario_id, p.nombre AS propietario_nombre
+            FROM marcas m
+            LEFT JOIN propietarios p ON p.id = m.propietario_id
+            WHERE m.vence_en IS NOT NULL AND m.vence_en <= %s AND m.estado != 'baja'
+            ORDER BY m.vence_en
+            LIMIT %s
+            """,
+            (limite_fecha, limite),
+        )
+        filas = cur.fetchall()
+    for f in filas:
+        _anidar_relacion(f, "propietario_id", "propietario", "propietarios", ["nombre"])
+    return filas
 
 
 def listar_propietarios(
-    cliente: Client, texto: str | None = None, pagina: int = 1, por_pagina: int = POR_PAGINA_PROPIETARIOS
+    conexion, texto: str | None = None, pagina: int = 1, por_pagina: int = POR_PAGINA_PROPIETARIOS
 ) -> tuple[list[dict], int]:
-    consulta = cliente.table("propietarios").select(
-        "id, nombre, documento, establecimiento, localidad, departamento", count="exact"
-    )
+    condiciones = []
+    parametros: dict = {}
     texto = (texto or "").strip()
     if texto:
-        texto_seguro = _escapar_filtro(texto)
-        consulta = consulta.or_(
-            f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%,"
-            f"establecimiento.ilike.%{texto_seguro}%"
+        parametros["patron"] = f"%{texto}%"
+        condiciones.append(
+            "(nombre ILIKE %(patron)s OR documento ILIKE %(patron)s OR establecimiento ILIKE %(patron)s)"
         )
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
     desde = max(0, pagina - 1) * por_pagina
-    respuesta = consulta.order("nombre").range(desde, desde + por_pagina - 1).execute()
-    return respuesta.data, (respuesta.count or 0)
+    with conexion.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS total FROM propietarios {where}", parametros)
+        total = cur.fetchone()["total"]
+        cur.execute(
+            f"""
+            SELECT id, nombre, documento, establecimiento, localidad, departamento
+            FROM propietarios
+            {where}
+            ORDER BY nombre
+            LIMIT %(por_pagina)s OFFSET %(desde)s
+            """,
+            {**parametros, "por_pagina": por_pagina, "desde": desde},
+        )
+        filas = cur.fetchall()
+    return filas, total
 
 
-def obtener_propietario(cliente: Client, propietario_id: int) -> dict | None:
-    respuesta = (
-        cliente.table("propietarios").select("*").eq("id", propietario_id).maybe_single().execute()
-    )
-    return respuesta.data if respuesta else None
+def obtener_propietario(conexion, propietario_id: int) -> dict | None:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT * FROM propietarios WHERE id = %s", (propietario_id,))
+        return cur.fetchone()
 
 
-def marcas_de_propietario(cliente: Client, propietario_id: int) -> list[dict]:
-    return (
-        cliente.table("marcas")
-        .select("codigo, tipo, estado, archivo_png, vence_en")
-        .eq("propietario_id", propietario_id)
-        .order("codigo")
-        .execute()
-        .data
-    )
+def marcas_de_propietario(conexion, propietario_id: int) -> list[dict]:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT codigo, tipo, estado, (archivo_png IS NOT NULL) AS archivo_png, vence_en
+            FROM marcas
+            WHERE propietario_id = %s
+            ORDER BY codigo
+            """,
+            (propietario_id,),
+        )
+        return cur.fetchall()
 
 
-def operaciones_de_propietario(cliente: Client, documento: str | None) -> list[dict]:
+def operaciones_de_propietario(conexion, documento: str | None) -> list[dict]:
     """Guías donde este propietario aparece como vendedor o comprador.
 
     Se cruza por documento (CI/RUC) porque las guías guardan vendedor y
@@ -499,47 +681,33 @@ def operaciones_de_propietario(cliente: Client, documento: str | None) -> list[d
     documento = (documento or "").strip()
     if not documento:
         return []
-    documento_seguro = _escapar_filtro(documento)
-    return (
-        cliente.table("operaciones")
-        .select("id, numero_guia, fecha, vendedor_nombre, comprador_nombre, cantidad_animales, creado_en")
-        .or_(f"vendedor_documento.eq.{documento_seguro},comprador_documento.eq.{documento_seguro}")
-        .order("creado_en", desc=True)
-        .execute()
-        .data
-    )
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, numero_guia, fecha, vendedor_nombre, comprador_nombre, cantidad_animales, creado_en
+            FROM operaciones
+            WHERE vendedor_documento = %(doc)s OR comprador_documento = %(doc)s
+            ORDER BY creado_en DESC
+            """,
+            {"doc": documento},
+        )
+        return cur.fetchall()
 
 
-def actualizar_propietario(cliente: Client, propietario_id: int, campos: dict) -> None:
+def actualizar_propietario(conexion, propietario_id: int, campos: dict) -> None:
     """Los datos de contacto de un propietario se actualizan directo -- no pasan
     por modificación supervisada, esa cola es sólo para marcas y operaciones."""
-    cliente.table("propietarios").update(campos).eq("id", propietario_id).execute()
-
-
-def _traer_todas_las_filas(armar_consulta) -> list[dict]:
-    """PostgREST devuelve como máximo 1000 filas por pedido -- para exportar
-    todo lo que cumple un filtro (no sólo una página) hay que pedir en lotes.
-
-    ``armar_consulta`` es una función que arma la consulta DE CERO en cada
-    llamada (con los mismos filtros, sin ``.range()`` todavía) -- hace falta
-    un builder nuevo por página porque ``.range()`` en postgrest-py no
-    reemplaza el offset/límite anterior, los acumula (agrega otro par
-    offset/limit al pedido en vez de pisar el que ya estaba). Reusar el mismo
-    builder en el bucle hacía que la segunda página pidiera offset 0 de
-    nuevo -- un bucle que nunca terminaba de traer una página más chica que
-    el lote, y por lo tanto nunca cortaba."""
-    filas: list[dict] = []
-    inicio = 0
-    while True:
-        lote = armar_consulta().range(inicio, inicio + TAMANO_LOTE_EXPORTACION - 1).execute().data
-        filas.extend(lote)
-        if len(lote) < TAMANO_LOTE_EXPORTACION:
-            return filas
-        inicio += TAMANO_LOTE_EXPORTACION
+    if not campos:
+        return
+    columnas = ", ".join(f"{c} = %({c})s" for c in campos)
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"UPDATE propietarios SET {columnas} WHERE id = %(_id)s", {**campos, "_id": propietario_id}
+        )
 
 
 def exportar_operaciones(
-    cliente: Client,
+    conexion,
     texto: str | None = None,
     estado: str | None = None,
     creada_desde: str | None = None,
@@ -547,179 +715,202 @@ def exportar_operaciones(
     tipo_operacion: str | None = None,
 ) -> list[dict]:
     """Todas las guías que cumplen el filtro activo (sin paginar), para el CSV."""
+    condiciones = []
+    parametros: dict = {}
+    if tipo_operacion in ("compra", "venta"):
+        condiciones.append("tipo_operacion = %(tipo_operacion)s")
+        parametros["tipo_operacion"] = tipo_operacion
+    if estado == "revisar":
+        condiciones.append("(revisar IS NOT NULL AND revisar != '')")
+    elif estado == "colisiona":
+        condiciones.append("guia_colisionada = true")
+    elif estado == "al_dia":
+        condiciones.append("guia_colisionada = false AND (revisar IS NULL OR revisar = '')")
+    if creada_desde:
+        condiciones.append("creado_en >= %(creada_desde)s")
+        parametros["creada_desde"] = creada_desde
+    if creada_hasta:
+        condiciones.append("creado_en <= %(creada_hasta)s")
+        parametros["creada_hasta"] = f"{creada_hasta}T23:59:59"
     texto = (texto or "").strip()
-
-    def armar():
-        consulta = cliente.table("operaciones").select(
-            "numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento, "
-            "cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion"
-        )
-        if tipo_operacion in ("compra", "venta"):
-            consulta = consulta.eq("tipo_operacion", tipo_operacion)
-        if estado == "revisar":
-            consulta = consulta.not_.is_("revisar", "null").neq("revisar", "")
-        elif estado == "colisiona":
-            consulta = consulta.eq("guia_colisionada", True)
-        elif estado == "al_dia":
-            consulta = consulta.eq("guia_colisionada", False).or_("revisar.is.null,revisar.eq.")
-        if creada_desde:
-            consulta = consulta.gte("creado_en", creada_desde)
-        if creada_hasta:
-            consulta = consulta.lte("creado_en", f"{creada_hasta}T23:59:59")
-        if texto:
-            texto_seguro = _escapar_filtro(texto)
-            consulta = consulta.or_(
-                f"numero_guia.ilike.%{texto_seguro}%,vendedor_nombre.ilike.%{texto_seguro}%,"
-                f"comprador_nombre.ilike.%{texto_seguro}%"
-            )
-        return consulta.order("creado_en", desc=True)
-
-    return _traer_todas_las_filas(armar)
-
-
-def exportar_marcas(cliente: Client, texto: str | None = None, estado: str | None = None, tipo: str | None = None) -> list[dict]:
-    """Todas las marcas que cumplen el filtro activo (sin paginar), para el CSV."""
-    texto = (texto or "").strip()
-    propietarios_coincidentes = None
-    operaciones_coincidentes = None
     if texto:
-        texto_seguro = _escapar_filtro(texto)
-        propietarios_coincidentes = (
-            cliente.table("propietarios")
-            .select("id")
-            .or_(f"nombre.ilike.%{texto_seguro}%,documento.ilike.%{texto_seguro}%")
-            .execute()
-            .data
+        parametros["patron"] = f"%{texto}%"
+        condiciones.append(
+            "(numero_guia ILIKE %(patron)s OR vendedor_nombre ILIKE %(patron)s "
+            "OR comprador_nombre ILIKE %(patron)s)"
         )
-        operaciones_coincidentes = (
-            cliente.table("operaciones")
-            .select("id")
-            .ilike("numero_guia", f"%{texto_seguro}%")
-            .execute()
-            .data
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento,
+                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion
+            FROM operaciones
+            {where}
+            ORDER BY creado_en DESC
+            """,
+            parametros,
         )
+        return cur.fetchall()
 
-    def armar():
-        consulta = cliente.table("marcas").select(
-            "codigo, tipo, estado, vence_en, propietarios(nombre, documento), operaciones(numero_guia, fecha)"
+
+def exportar_marcas(conexion, texto: str | None = None, estado: str | None = None, tipo: str | None = None) -> list[dict]:
+    """Todas las marcas que cumplen el filtro activo (sin paginar), para el CSV."""
+    condiciones = []
+    parametros: dict = {}
+    if estado in ("activa", "revisar", "baja"):
+        condiciones.append("m.estado = %(estado)s")
+        parametros["estado"] = estado
+    if tipo in ("dominante", "complementaria"):
+        condiciones.append("m.tipo = %(tipo)s")
+        parametros["tipo"] = tipo
+    texto = (texto or "").strip()
+    if texto:
+        parametros["patron"] = f"%{texto}%"
+        condiciones.append(
+            "(m.codigo ILIKE %(patron)s OR o.numero_guia ILIKE %(patron)s "
+            "OR p.nombre ILIKE %(patron)s OR p.documento ILIKE %(patron)s)"
         )
-        if estado in ("activa", "revisar", "baja"):
-            consulta = consulta.eq("estado", estado)
-        if tipo in ("dominante", "complementaria"):
-            consulta = consulta.eq("tipo", tipo)
-        if texto:
-            texto_seguro = _escapar_filtro(texto)
-            filtro = f"codigo.ilike.%{texto_seguro}%,numero_guia.ilike.%{texto_seguro}%"
-            if propietarios_coincidentes:
-                lista = ",".join(str(p["id"]) for p in propietarios_coincidentes)
-                filtro += f",propietario_id.in.({lista})"
-            if operaciones_coincidentes:
-                lista = ",".join(str(o["id"]) for o in operaciones_coincidentes)
-                filtro += f",operacion_id.in.({lista})"
-            consulta = consulta.or_(filtro)
-        return consulta.order("codigo")
-
-    return _traer_todas_las_filas(armar)
-
-
-def ultimos_asientos(cliente: Client, limite: int = 6) -> list[dict]:
-    return (
-        cliente.table("operaciones")
-        .select("id, numero_guia, fecha, vendedor_nombre, creado_en")
-        .order("creado_en", desc=True)
-        .limit(limite)
-        .execute()
-        .data
-    )
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+    with conexion.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT m.codigo, m.tipo, m.estado, m.vence_en, m.propietario_id, m.operacion_id,
+                   p.nombre AS propietario_nombre, p.documento AS propietario_documento,
+                   o.numero_guia AS operacion_numero_guia, o.fecha AS operacion_fecha
+            FROM marcas m
+            LEFT JOIN propietarios p ON p.id = m.propietario_id
+            LEFT JOIN operaciones o ON o.id = m.operacion_id
+            {where}
+            ORDER BY m.codigo
+            """,
+            parametros,
+        )
+        filas = cur.fetchall()
+    for f in filas:
+        _anidar_relacion(f, "propietario_id", "propietario", "propietarios", ["nombre", "documento"])
+        _anidar_relacion(f, "operacion_id", "operacion", "operaciones", ["numero_guia", "fecha"])
+        del f["propietario_id"], f["operacion_id"]
+    return filas
 
 
-def marcas_a_revisar(cliente: Client, limite: int = 6) -> list[dict]:
-    return (
-        cliente.table("marcas")
-        .select("codigo, motivo_calidad")
-        .eq("estado", "revisar")
-        .order("actualizado_en", desc=True)
-        .limit(limite)
-        .execute()
-        .data
-    )
+def ultimos_asientos(conexion, limite: int = 6) -> list[dict]:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, numero_guia, fecha, vendedor_nombre, creado_en
+            FROM operaciones
+            ORDER BY creado_en DESC
+            LIMIT %s
+            """,
+            (limite,),
+        )
+        return cur.fetchall()
 
 
-def _completar_referencias_cambios(cliente: Client, cambios: list[dict]) -> list[dict]:
-    for c in cambios:
-        c["referencia"] = c["fila_id"]
-        if c["tabla"] == "marcas":
-            fila = (
-                cliente.table("marcas").select("codigo").eq("id", c["fila_id"]).maybe_single().execute()
-            )
-            if fila and fila.data:
-                c["referencia"] = fila.data["codigo"]
-            for campo_imagen in ("archivo_png", "archivo_svg"):
-                if campo_imagen in c["cambios"]:
-                    c[f"{campo_imagen}_anterior_url"] = url_imagen(
-                        cliente, c["valores_anteriores"].get(campo_imagen)
-                    )
-                    c[f"{campo_imagen}_nueva_url"] = url_imagen(cliente, c["cambios"].get(campo_imagen))
-        elif c["tabla"] == "operaciones":
-            fila = (
-                cliente.table("operaciones")
-                .select("numero_guia")
-                .eq("id", c["fila_id"])
-                .maybe_single()
-                .execute()
-            )
-            if fila and fila.data:
-                c["referencia"] = fila.data["numero_guia"] or c["fila_id"]
+def marcas_a_revisar(conexion, limite: int = 6) -> list[dict]:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT codigo, motivo_calidad
+            FROM marcas
+            WHERE estado = 'revisar'
+            ORDER BY actualizado_en DESC
+            LIMIT %s
+            """,
+            (limite,),
+        )
+        return cur.fetchall()
+
+
+def _completar_referencias_cambios(conexion, cambios: list[dict]) -> list[dict]:
+    with conexion.cursor() as cur:
+        for c in cambios:
+            c["referencia"] = c["fila_id"]
+            if c["tabla"] == "marcas":
+                cur.execute("SELECT codigo FROM marcas WHERE id = %s", (c["fila_id"],))
+                fila = cur.fetchone()
+                if fila:
+                    c["referencia"] = fila["codigo"]
+            elif c["tabla"] == "operaciones":
+                cur.execute("SELECT numero_guia FROM operaciones WHERE id = %s", (c["fila_id"],))
+                fila = cur.fetchone()
+                if fila:
+                    c["referencia"] = fila["numero_guia"] or c["fila_id"]
     return cambios
 
 
-def cambios_pendientes_detalle(cliente: Client) -> list[dict]:
+def cambios_pendientes_detalle(conexion) -> list[dict]:
     """Los cambios en cola de aprobación, con el código de la marca/operación."""
-    cambios = (
-        cliente.table("cambios_pendientes")
-        .select("*")
-        .eq("estado", "pendiente")
-        .order("propuesto_en")
-        .execute()
-        .data
-    )
-    return _completar_referencias_cambios(cliente, cambios)
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM cambios_pendientes WHERE estado = 'pendiente' ORDER BY propuesto_en"
+        )
+        cambios = cur.fetchall()
+    return _completar_referencias_cambios(conexion, cambios)
 
 
-def historial_cambios_resueltos(cliente: Client, limite: int = 200) -> list[dict]:
-    """La bitácora completa: cambios ya aprobados o rechazados, más recientes primero.
-
-    Complementa a ``cambios_pendientes_detalle`` (que sólo muestra la cola en
-    espera) con lo que ya se resolvió, para que quede visible quién propuso y
-    quién aprobó/rechazó cada modificación pasada, no sólo la vigente."""
+def historial_cambios_resueltos(conexion, limite: int = 200) -> list[dict]:
+    """La bitácora completa: cambios ya aprobados o rechazados, más recientes primero."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT * FROM cambios_pendientes
+            WHERE estado != 'pendiente'
+            ORDER BY revisado_en DESC
+            LIMIT %s
+            """,
+            (limite,),
+        )
+        cambios = cur.fetchall()
+    cambios = _completar_referencias_cambios(conexion, cambios)
     nombres_ids: set[str] = set()
-    cambios = (
-        cliente.table("cambios_pendientes")
-        .select("*")
-        .neq("estado", "pendiente")
-        .order("revisado_en", desc=True)
-        .limit(limite)
-        .execute()
-        .data
-    )
-    cambios = _completar_referencias_cambios(cliente, cambios)
     for c in cambios:
         nombres_ids.add(c.get("propuesto_por"))
         nombres_ids.add(c.get("revisado_por"))
-    nombres = nombres_usuarios(cliente, nombres_ids)
+    nombres = nombres_usuarios(conexion, nombres_ids)
     for c in cambios:
-        c["propuesto_por_nombre"] = nombres.get(c.get("propuesto_por"))
-        c["revisado_por_nombre"] = nombres.get(c.get("revisado_por"))
+        c["propuesto_por_nombre"] = nombres.get(str(c.get("propuesto_por")))
+        c["revisado_por_nombre"] = nombres.get(str(c.get("revisado_por")))
     return cambios
 
 
-def url_imagen(cliente: Client, ruta: str | None, expira_seg: int = 3600) -> str | None:
-    """URL firmada y temporal hacia el bucket privado -- nunca una URL pública fija."""
-    if not ruta:
-        return None
-    try:
-        resultado = cliente.storage.from_(BUCKET_IMAGENES).create_signed_url(ruta, expira_seg)
-    except Exception as exc:
-        print(f"url_imagen: no se pudo firmar {ruta!r}: {exc}")
-        return None
-    return resultado.get("signedURL") or resultado.get("signed_url") or resultado.get("signedUrl")
+def listar_usuarios(conexion) -> list[dict]:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT id, email, nombre, rol, activo, creado_en FROM usuarios ORDER BY creado_en")
+        return cur.fetchall()
+
+
+def obtener_usuario_por_email(conexion, email: str) -> dict | None:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT * FROM usuarios WHERE email = %s", (email,))
+        return cur.fetchone()
+
+
+def obtener_usuario_por_id(conexion, usuario_id: str) -> dict | None:
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT id, email, nombre, rol, activo, creado_en FROM usuarios WHERE id = %s", (usuario_id,)
+        )
+        return cur.fetchone()
+
+
+def crear_usuario(conexion, email: str, password_hash: str, nombre: str, rol: str, activo: bool) -> str:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO usuarios (email, password_hash, nombre, rol, activo)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (email, password_hash, nombre, rol, activo),
+        )
+        return cur.fetchone()["id"]
+
+
+def actualizar_usuario_campos(conexion, usuario_id: str, campos: dict) -> None:
+    if not campos:
+        return
+    columnas = ", ".join(f"{c} = %({c})s" for c in campos)
+    with conexion.cursor() as cur:
+        cur.execute(f"UPDATE usuarios SET {columnas} WHERE id = %(_id)s", {**campos, "_id": usuario_id})

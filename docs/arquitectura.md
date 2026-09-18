@@ -92,8 +92,11 @@ El detalle del formulario y lo que queda por confirmar está en
 
 ## 3. Base de datos
 
-**PostgreSQL** (16 o superior), gestionado por un proveedor (Supabase, Neon,
-RDS, Cloud SQL) para tener el 24/7 sin administrar servidores.
+**PostgreSQL** (16 o superior). Se probó con Supabase como proveedor
+gestionado, pero el proyecto desapareció de la cuenta sin aviso (visto el
+2026-09-18) -- desde entonces corre como un Postgres propio (plugin de
+Railway, mismo proyecto que la app), con `pg_dump` propio como respaldo en
+vez de depender del respaldo automático de un tercero.
 
 Por qué, concretamente para este caso:
 
@@ -108,10 +111,10 @@ Por qué, concretamente para este caso:
 - **`pg_trgm` + `unaccent`** para buscar por nombre de propietario tolerando
   errores de tipeo y tildes.
 
-**Las imágenes no van adentro de la base.** Van a almacenamiento de objetos
-(S3, Cloudflare R2, Supabase Storage) y en la base queda la ruta más el
-`sha256`. La base se mantiene chica, los respaldos rápidos y los archivos
-siguen siendo utilizables por fuera del sistema.
+**Las imágenes de las marcas van adentro de la base** (columnas `bytea`),
+no en un storage aparte -- para este volumen (unas pocas decenas de miles
+de imágenes chicas) un solo respaldo de Postgres cubre datos e imágenes
+juntos, sin depender de un servicio de almacenamiento de objetos externo.
 
 SQLite sigue siendo útil: desarrollo local y, si hiciera falta, un modo de
 consulta sin conexión.

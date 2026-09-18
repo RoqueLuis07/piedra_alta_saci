@@ -1,19 +1,21 @@
-"""Sistema multiusuario: login por Supabase Auth + búsqueda + panel de roles.
+"""Sistema multiusuario: login propio + búsqueda + panel de roles.
 
-Es la app que corre en Railway (ver ``wsgi.py``). Toda consulta de datos
-pasa por un cliente de Supabase con el token de la sesión, para que RLS
-decida qué puede ver o tocar cada rol -- el código de acá no es la única
-barrera, es la primera.
+Es la app que corre en Railway (ver ``wsgi.py``). Toda la persistencia --
+datos, usuarios e incluso las imágenes de las marcas -- vive en un único
+Postgres propio (ver ``db.py``). ``requiere_sesion``/``requiere_rol`` (en
+``auth.py``) son la barrera de acceso; no hay una segunda capa de RLS como
+antes con Supabase, así que estos decoradores son la única barrera real.
 """
 
 from __future__ import annotations
 
+import base64
 import csv
 import io
 import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -21,16 +23,18 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
-from postgrest.exceptions import APIError
 
 from marcas.pdf.guia import completar_guia, completar_venta
 from marcas.servidor.auth import (
+    cerrar_conexion_actual,
     cerrar_sesion,
-    cliente_actual,
+    conexion_actual,
+    encriptar_contrasena,
     iniciar_sesion,
     perfil_actual,
     requiere_rol,
     requiere_sesion,
+    verificar_contrasena,
 )
 from marcas.servidor.consultas import (
     CAMPOS_MARCA_EDITABLES,
@@ -38,42 +42,52 @@ from marcas.servidor.consultas import (
     CAMPOS_PROPIETARIO_EDITABLES,
     POR_PAGINA_MARCAS,
     POR_PAGINA_PROPIETARIOS,
+    ErrorResolverCambio,
+    actualizar_marca_campos,
+    actualizar_operacion_campos,
     actualizar_propietario,
+    actualizar_usuario_campos,
+    borrador_venta_dominante as obtener_borrador_venta_dominante,
+    borrador_venta_pdf as obtener_borrador_venta_pdf,
     buscar_marcas,
     cambio_pendiente_de,
     cambios_pendientes_detalle,
     crear_marca,
     crear_operacion,
+    crear_usuario,
     desglose_marcas,
-    descargar_archivo_bucket,
-    descargar_imagen_marca,
     eliminar_borrador_venta,
     estadisticas,
     exportar_marcas,
     exportar_operaciones,
     ficha_marca,
-    guardar_archivo_borrador,
     guardar_borrador_venta,
     historial_cambios_resueltos,
+    imagen_marca,
     listar_operaciones_paginado,
     listar_propietarios,
+    listar_usuarios,
     marcas_a_revisar,
     marcas_de_operacion,
     marcas_de_propietario,
     marcas_por_codigos,
     marcas_por_vencer,
     nombres_usuarios,
+    obtener_marca_por_id,
     obtener_operacion_por_id,
     obtener_propietario,
+    obtener_usuario_por_email,
+    obtener_usuario_por_id,
     operaciones_de_propietario,
     proponer_cambio,
     ranking_participantes,
+    resolver_cambio_pendiente,
     resumen_mensual,
     subir_imagen_marca,
     ultimos_asientos,
     url_imagen,
 )
-from marcas.servidor.supa import cliente_anonimo
+from marcas.servidor.db import ejecutar_schema
 
 _CODIGO_VALIDO = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -97,6 +111,10 @@ def crear_app() -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = True
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    # La sesión ya no depende de un token de un tercero que vence solo --
+    # es la propia cookie de Flask, así que le ponemos nosotros un límite
+    # (se cierra sola tras 12 horas de inactividad).
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
     # Sin este límite, cualquier sesión logueada podría mandar un archivo
     # enorme (imagen de marca o PDF de guía) y agotar memoria/disco del
     # servidor. 20 MB alcanza de sobra para una imagen o un PDF de guía.
@@ -113,29 +131,51 @@ def crear_app() -> Flask:
     # backend compartido (Redis) para que el límite sea real entre todos.
     limiter = Limiter(get_remote_address, app=app, default_limits=[])
 
+    app.teardown_appcontext(cerrar_conexion_actual)
+
+    @app.cli.command("crear-esquema")
+    def crear_esquema_cli():
+        """Aplica schema.sql -- idempotente, se puede correr en cada deploy."""
+        ejecutar_schema()
+        print("Esquema aplicado.")
+
+    @app.cli.command("crear-admin")
+    def crear_admin_cli():
+        """Da de alta la primera cuenta administradora (o cualquier otra,
+        a mano) -- para cuando todavía no hay nadie que pueda entrar al Panel."""
+        import getpass
+
+        email = input("Email: ").strip().lower()
+        nombre = input("Nombre: ").strip()
+        contrasena = getpass.getpass("Contraseña: ")
+        if len(contrasena) < 6:
+            print("La contraseña debe tener al menos 6 caracteres.")
+            return
+        with app.app_context():
+            conexion = conexion_actual()
+            if obtener_usuario_por_email(conexion, email):
+                print(f"Ya existe una cuenta con ese email ({email}).")
+                return
+            crear_usuario(conexion, email, encriptar_contrasena(contrasena), nombre, "administrador", True)
+            conexion.commit()
+        print(f"Cuenta administradora creada: {email}")
+
     @app.get("/login")
     def login():
-        if session.get("access_token"):
+        if session.get("usuario_id"):
             return redirect(url_for("inicio"))
         return render_template("login.html", error=None)
 
     @app.post("/login")
     @limiter.limit("8 per minute; 30 per hour")
     def login_post():
-        email = request.form.get("email", "").strip()
+        email = request.form.get("email", "").strip().lower()
         contrasena = request.form.get("contrasena", "")
-        try:
-            resultado = cliente_anonimo().auth.sign_in_with_password(
-                {"email": email, "password": contrasena}
-            )
-        except Exception:
+        conexion = conexion_actual()
+        usuario = obtener_usuario_por_email(conexion, email)
+        if not usuario or not verificar_contrasena(contrasena, usuario["password_hash"]):
             return render_template("login.html", error="Usuario o contraseña incorrectos."), 401
-        iniciar_sesion(
-            resultado.session.access_token,
-            resultado.session.refresh_token,
-            resultado.user.id,
-            resultado.user.email,
-        )
+        iniciar_sesion(str(usuario["id"]))
         return redirect(url_for("inicio"))
 
     @app.post("/logout")
@@ -147,46 +187,31 @@ def crear_app() -> Flask:
     def cuenta_pendiente():
         return render_template("cuenta_pendiente.html")
 
-    @app.get("/recuperar")
-    def recuperar():
-        return render_template("recuperar.html", enviado=False, error=None)
+    @app.get("/mi-cuenta")
+    @requiere_sesion
+    def mi_cuenta():
+        return render_template("mi_cuenta.html", activo="mi_cuenta", perfil=perfil_actual(), error=None)
 
-    @app.post("/recuperar")
-    @limiter.limit("5 per hour")
-    def recuperar_post():
-        email = request.form.get("email", "").strip()
-        if email:
-            destino = request.host_url.rstrip("/") + url_for("restablecer")
-            try:
-                cliente_anonimo().auth.reset_password_for_email(email, {"redirect_to": destino})
-            except Exception:
-                pass  # nunca revelar si el email existe o no
-        return render_template("recuperar.html", enviado=True, error=None)
-
-    @app.get("/restablecer")
-    def restablecer():
-        return render_template("restablecer.html", error=None)
-
-    @app.post("/restablecer")
-    @limiter.limit("10 per hour")
-    def restablecer_post():
-        access_token = request.form.get("access_token", "")
-        refresh_token = request.form.get("refresh_token", "")
-        nueva = request.form.get("nueva_contrasena", "")
-        if not access_token or not refresh_token or len(nueva) < 6:
-            return render_template(
-                "restablecer.html",
-                error="Datos incompletos o contraseña muy corta (mínimo 6 caracteres).",
-            ), 400
-        try:
-            cliente = cliente_anonimo()
-            cliente.auth.set_session(access_token, refresh_token)
-            cliente.auth.update_user({"password": nueva})
-        except Exception:
-            return render_template(
-                "restablecer.html", error="El enlace venció o no es válido. Pedí uno nuevo."
-            ), 400
-        return redirect(url_for("login"))
+    @app.post("/mi-cuenta")
+    @requiere_sesion
+    def mi_cuenta_post():
+        conexion = conexion_actual()
+        perfil = perfil_actual()
+        actual = request.form.get("actual", "")
+        nueva = request.form.get("nueva", "")
+        repetir = request.form.get("repetir", "")
+        usuario = obtener_usuario_por_email(conexion, perfil["email"])
+        error = None
+        if not verificar_contrasena(actual, usuario["password_hash"]):
+            error = "La contraseña actual no es correcta."
+        elif len(nueva) < 6:
+            error = "La contraseña nueva debe tener al menos 6 caracteres."
+        elif nueva != repetir:
+            error = "Las dos contraseñas nuevas no coinciden."
+        if error:
+            return render_template("mi_cuenta.html", activo="mi_cuenta", perfil=perfil, error=error), 400
+        actualizar_usuario_campos(conexion, perfil["id"], {"password_hash": encriptar_contrasena(nueva)})
+        return redirect(url_for("mi_cuenta"))
 
     @app.errorhandler(429)
     def demasiados_intentos(_exc):
@@ -236,18 +261,11 @@ def crear_app() -> Flask:
         perfil = perfil_actual()
         if not perfil or perfil.get("rol") not in ("administrador", "operador"):
             return {}
-        cliente = cliente_actual()
-        if not cliente:
-            return {}
         try:
-            n = (
-                cliente.table("cambios_pendientes")
-                .select("id", count="exact")
-                .eq("estado", "pendiente")
-                .execute()
-                .count
-                or 0
-            )
+            conexion = conexion_actual()
+            with conexion.cursor() as cur:
+                cur.execute("SELECT count(*) AS total FROM cambios_pendientes WHERE estado = 'pendiente'")
+                n = cur.fetchone()["total"]
         except Exception:
             n = 0
         return {"pendientes_nav": n}
@@ -255,28 +273,28 @@ def crear_app() -> Flask:
     @app.get("/")
     @requiere_sesion
     def inicio():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         return render_template(
             "inicio.html",
             activo="inicio",
             perfil=perfil_actual(),
-            stats=estadisticas(cliente),
-            asientos=ultimos_asientos(cliente),
-            a_revisar=marcas_a_revisar(cliente),
-            a_vencer=marcas_por_vencer(cliente),
+            stats=estadisticas(conexion),
+            asientos=ultimos_asientos(conexion),
+            a_revisar=marcas_a_revisar(conexion),
+            a_vencer=marcas_por_vencer(conexion),
         )
 
     @app.get("/buscar")
     @requiere_sesion
     def buscar():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         texto = request.args.get("q") or None
         estado = request.args.get("estado") or None
         tipo = request.args.get("tipo") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
-        resultados, total = buscar_marcas(cliente, texto, pagina=pagina, estado=estado, tipo=tipo)
+        resultados, total = buscar_marcas(conexion, texto, pagina=pagina, estado=estado, tipo=tipo)
         for fila in resultados:
-            fila["imagen_url"] = url_imagen(cliente, fila.get("archivo_png"))
+            fila["imagen_url"] = url_imagen(fila["id"], fila.get("archivo_png"))
         return render_template(
             "buscar.html",
             activo="buscar",
@@ -293,10 +311,10 @@ def crear_app() -> Flask:
     @app.get("/marcas/exportar.csv")
     @requiere_sesion
     def exportar_marcas_csv():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         try:
             filas = exportar_marcas(
-                cliente,
+                conexion,
                 texto=request.args.get("q") or None,
                 estado=request.args.get("estado") or None,
                 tipo=request.args.get("tipo") or None,
@@ -323,19 +341,19 @@ def crear_app() -> Flask:
     @app.get("/marcas/<codigo>")
     @requiere_sesion
     def ver_marca(codigo: str):
-        cliente = cliente_actual()
-        ficha = ficha_marca(cliente, codigo)
+        conexion = conexion_actual()
+        ficha = ficha_marca(conexion, codigo)
         if not ficha:
             return _registro_no_encontrado("No se encontró esa marca.")
-        ficha["marca"]["imagen_url"] = url_imagen(cliente, ficha["marca"].get("archivo_png"))
+        ficha["marca"]["imagen_url"] = url_imagen(ficha["marca"]["id"], ficha["marca"].get("archivo_png"))
         for acompanante in ficha["acompanantes"]:
-            acompanante["imagen_url"] = url_imagen(cliente, acompanante.get("archivo_png"))
+            acompanante["imagen_url"] = url_imagen(acompanante["id"], acompanante.get("archivo_png"))
         nombres = nombres_usuarios(
-            cliente, [ficha["marca"].get("creado_por"), ficha["marca"].get("actualizado_por")]
+            conexion, [ficha["marca"].get("creado_por"), ficha["marca"].get("actualizado_por")]
         )
-        ficha["marca"]["creado_por_nombre"] = nombres.get(ficha["marca"].get("creado_por"))
-        ficha["marca"]["actualizado_por_nombre"] = nombres.get(ficha["marca"].get("actualizado_por"))
-        cambio_pendiente = cambio_pendiente_de(cliente, "marcas", ficha["marca"]["id"])
+        ficha["marca"]["creado_por_nombre"] = nombres.get(str(ficha["marca"].get("creado_por")))
+        ficha["marca"]["actualizado_por_nombre"] = nombres.get(str(ficha["marca"].get("actualizado_por")))
+        cambio_pendiente = cambio_pendiente_de(conexion, "marcas", ficha["marca"]["id"])
         return render_template(
             "marca_detalle.html",
             activo="buscar",
@@ -348,10 +366,9 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def editar_marca(marca_id: int):
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         perfil = perfil_actual()
-        actual = cliente.table("marcas").select("*").eq("id", marca_id).maybe_single().execute()
-        marca_actual = actual.data if actual else None
+        marca_actual = obtener_marca_por_id(conexion, marca_id)
         if not marca_actual:
             return _registro_no_encontrado("No se encontró esa marca.")
 
@@ -374,36 +391,60 @@ def crear_app() -> Flask:
                 if valor != marca_actual.get(campo):
                     cambios[campo] = valor
 
+        # Las imágenes nuevas se leen acá pero recién se aplican más abajo,
+        # según el rol: un Operador las escribe directo; para un
+        # Administrador quedan "en espera" (codificadas en el propio cambio
+        # propuesto) hasta que otra persona lo apruebe -- así una propuesta
+        # rechazada nunca llega a pisar la imagen real.
+        archivos_subidos: dict[str, bytes] = {}
         for campo, extension in (("nuevo_png", "png"), ("nuevo_svg", "svg")):
             archivo = request.files.get(campo)
             if archivo and archivo.filename:
-                nombre = subir_imagen_marca(cliente, marca_actual["codigo"], archivo.read(), extension)
-                cambios[f"archivo_{extension}"] = nombre
+                archivos_subidos[extension] = archivo.read()
 
         codigo_para_volver = marca_actual["codigo"]
-        if cambios:
+        if cambios or archivos_subidos:
             try:
                 if perfil["rol"] == "operador":
-                    cliente.table("marcas").update(cambios).eq("id", marca_id).execute()
+                    for extension, contenido in archivos_subidos.items():
+                        subir_imagen_marca(conexion, marca_id, contenido, extension)
+                    if cambios:
+                        actualizar_marca_campos(conexion, marca_id, cambios)
                     codigo_para_volver = cambios.get("codigo", codigo_para_volver)
                 else:  # administrador -- pasa por modificación supervisada
                     valores_anteriores = {k: marca_actual.get(k) for k in cambios}
-                    proponer_cambio(cliente, "marcas", marca_id, cambios, valores_anteriores, perfil["id"])
+                    for extension, contenido in archivos_subidos.items():
+                        campo = f"archivo_{extension}"
+                        cambios[campo] = base64.b64encode(contenido).decode("ascii")
+                        valores_anteriores[campo] = None  # no se arrastra la imagen vieja completa a la cola
+                    proponer_cambio(conexion, "marcas", marca_id, cambios, valores_anteriores, perfil["id"])
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_marca", codigo=codigo_para_volver))
 
+    @app.get("/imagenes/marca/<int:marca_id>.<extension>", endpoint="imagen_marca")
+    @requiere_sesion
+    def imagen_marca_ruta(marca_id: int, extension: str):
+        if extension not in ("png", "svg"):
+            return _registro_no_encontrado("Formato de imagen no soportado.")
+        conexion = conexion_actual()
+        contenido = imagen_marca(conexion, marca_id, extension)
+        if not contenido:
+            return _registro_no_encontrado("Esa marca no tiene esa imagen guardada.")
+        mimetype = "image/svg+xml" if extension == "svg" else "image/png"
+        return send_file(io.BytesIO(contenido), mimetype=mimetype, max_age=3600)
+
     @app.get("/guias")
     @requiere_sesion
     def guias():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         pagina = max(1, request.args.get("pagina", 1, type=int))
         texto = request.args.get("q") or None
         estado = request.args.get("estado") or None
         creada_desde = request.args.get("desde") or None
         creada_hasta = request.args.get("hasta") or None
         operaciones, total = listar_operaciones_paginado(
-            cliente, pagina=pagina, texto=texto, estado=estado,
+            conexion, pagina=pagina, texto=texto, estado=estado,
             creada_desde=creada_desde, creada_hasta=creada_hasta, tipo_operacion="compra",
         )
         return render_template(
@@ -423,14 +464,14 @@ def crear_app() -> Flask:
     @app.get("/ventas")
     @requiere_sesion
     def ventas():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         pagina = max(1, request.args.get("pagina", 1, type=int))
         texto = request.args.get("q") or None
         estado = request.args.get("estado") or None
         creada_desde = request.args.get("desde") or None
         creada_hasta = request.args.get("hasta") or None
         operaciones, total = listar_operaciones_paginado(
-            cliente, pagina=pagina, texto=texto, estado=estado,
+            conexion, pagina=pagina, texto=texto, estado=estado,
             creada_desde=creada_desde, creada_hasta=creada_hasta, tipo_operacion="venta",
         )
         return render_template(
@@ -450,10 +491,10 @@ def crear_app() -> Flask:
     @app.get("/guias/exportar.csv")
     @requiere_sesion
     def exportar_guias_csv():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         try:
             filas = exportar_operaciones(
-                cliente,
+                conexion,
                 texto=request.args.get("q") or None,
                 estado=request.args.get("estado") or None,
                 creada_desde=request.args.get("desde") or None,
@@ -486,10 +527,10 @@ def crear_app() -> Flask:
     @app.get("/ventas/exportar.csv")
     @requiere_sesion
     def exportar_ventas_csv():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         try:
             filas = exportar_operaciones(
-                cliente,
+                conexion,
                 texto=request.args.get("q") or None,
                 estado=request.args.get("estado") or None,
                 creada_desde=request.args.get("desde") or None,
@@ -535,7 +576,7 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def crear_guia():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         perfil = perfil_actual()
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
@@ -548,7 +589,7 @@ def crear_app() -> Flask:
             campos[campo] = valor
         campos["tipo_operacion"] = "compra"
         try:
-            operacion_id = crear_operacion(cliente, campos, perfil["id"])
+            operacion_id = crear_operacion(conexion, campos, perfil["id"])
         except Exception as exc:
             return _error_seguro("No se pudo crear la guía.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
@@ -557,7 +598,7 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def crear_venta():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         perfil = perfil_actual()
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
@@ -570,7 +611,7 @@ def crear_app() -> Flask:
             campos[campo] = valor
         campos["tipo_operacion"] = "venta"
         try:
-            operacion_id = crear_operacion(cliente, campos, perfil["id"])
+            operacion_id = crear_operacion(conexion, campos, perfil["id"])
         except Exception as exc:
             return _error_seguro("No se pudo crear la venta.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
@@ -578,16 +619,16 @@ def crear_app() -> Flask:
     @app.get("/guias/<int:operacion_id>")
     @requiere_sesion
     def ver_guia(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion:
             return _registro_no_encontrado("No se encontró esa guía.")
-        marcas = marcas_de_operacion(cliente, operacion_id)
+        marcas = marcas_de_operacion(conexion, operacion_id)
         for m in marcas:
-            m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
-        nombres = nombres_usuarios(cliente, [operacion.get("creado_por")])
-        operacion["creado_por_nombre"] = nombres.get(operacion.get("creado_por"))
-        cambio_pendiente = cambio_pendiente_de(cliente, "operaciones", operacion_id)
+            m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
+        nombres = nombres_usuarios(conexion, [operacion.get("creado_por")])
+        operacion["creado_por_nombre"] = nombres.get(str(operacion.get("creado_por")))
+        cambio_pendiente = cambio_pendiente_de(conexion, "operaciones", operacion_id)
         return render_template(
             "guia_detalle.html",
             activo="ventas" if operacion.get("tipo_operacion") == "venta" else "guias",
@@ -601,9 +642,9 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def editar_guia(operacion_id: int):
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         perfil = perfil_actual()
-        operacion_actual = obtener_operacion_por_id(cliente, operacion_id)
+        operacion_actual = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion_actual:
             return _registro_no_encontrado("No se encontró esa guía.")
 
@@ -623,10 +664,10 @@ def crear_app() -> Flask:
         if cambios:
             try:
                 if perfil["rol"] == "operador":
-                    cliente.table("operaciones").update(cambios).eq("id", operacion_id).execute()
+                    actualizar_operacion_campos(conexion, operacion_id, cambios)
                 else:  # administrador -- pasa por modificación supervisada
                     valores_anteriores = {k: operacion_actual.get(k) for k in cambios}
-                    proponer_cambio(cliente, "operaciones", operacion_id, cambios, valores_anteriores, perfil["id"])
+                    proponer_cambio(conexion, "operaciones", operacion_id, cambios, valores_anteriores, perfil["id"])
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
@@ -635,9 +676,9 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def agregar_marca_a_guia(operacion_id: int):
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         perfil = perfil_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion:
             return _registro_no_encontrado("No se encontró esa guía.")
 
@@ -651,12 +692,11 @@ def crear_app() -> Flask:
         try:
             for archivo in archivos or [None]:
                 nueva = crear_marca(
-                    cliente, {"tipo": tipo, "descripcion": descripcion, "operacion_id": operacion_id}, perfil["id"]
+                    conexion, {"tipo": tipo, "descripcion": descripcion, "operacion_id": operacion_id}, perfil["id"]
                 )
                 if archivo:
                     extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
-                    nombre = subir_imagen_marca(cliente, nueva["codigo"], archivo.read(), extension)
-                    cliente.table("marcas").update({f"archivo_{extension}": nombre}).eq("id", nueva["id"]).execute()
+                    subir_imagen_marca(conexion, nueva["id"], archivo.read(), extension)
         except Exception as exc:
             return _error_seguro("No se pudo agregar la marca.", exc)
 
@@ -665,13 +705,13 @@ def crear_app() -> Flask:
     @app.get("/guias/<int:operacion_id>/imprimir")
     @requiere_sesion
     def imprimir_guia(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion:
             return _registro_no_encontrado("No se encontró esa guía.")
-        marcas = marcas_de_operacion(cliente, operacion_id)
+        marcas = marcas_de_operacion(conexion, operacion_id)
         for m in marcas:
-            m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
+            m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
         return render_template(
             "guia_imprimir.html",
             activo="guias",
@@ -683,8 +723,8 @@ def crear_app() -> Flask:
     @app.post("/guias/<int:operacion_id>/imprimir")
     @requiere_sesion
     def generar_guia_pdf(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion:
             return _registro_no_encontrado("No se encontró esa guía.")
 
@@ -696,7 +736,7 @@ def crear_app() -> Flask:
         if not ids_elegidos:
             return "Seleccioná al menos una marca.", 400
 
-        marcas = [m for m in marcas_de_operacion(cliente, operacion_id) if m["id"] in ids_elegidos]
+        marcas = [m for m in marcas_de_operacion(conexion, operacion_id) if m["id"] in ids_elegidos]
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -705,7 +745,7 @@ def crear_app() -> Flask:
 
             rutas_imagenes = []
             for m in marcas:
-                contenido = descargar_imagen_marca(cliente, m.get("archivo_png"))
+                contenido = imagen_marca(conexion, m["id"], "png")
                 if not contenido:
                     continue
                 destino = tmp_path / f"{m['codigo']}.png"
@@ -736,9 +776,9 @@ def crear_app() -> Flask:
         """Para el buscador de marcas complementarias al armar una Venta --
         busca en TODO el catálogo existente (no en una guía puntual), porque
         lo que se vende ya está cargado de antes."""
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         texto = request.args.get("q") or None
-        resultados, total = buscar_marcas(cliente, texto, pagina=1, por_pagina=15)
+        resultados, total = buscar_marcas(conexion, texto, pagina=1, por_pagina=15)
         return jsonify([
             {
                 "codigo": m["codigo"],
@@ -746,7 +786,7 @@ def crear_app() -> Flask:
                 "estado": m.get("estado"),
                 "propietario": (m.get("propietarios") or {}).get("nombre"),
                 "numero_guia": (m.get("operaciones") or {}).get("numero_guia"),
-                "imagen_url": url_imagen(cliente, m.get("archivo_png")),
+                "imagen_url": url_imagen(m["id"], m.get("archivo_png")),
             }
             for m in resultados
         ])
@@ -755,31 +795,39 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def imprimir_venta(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion or operacion.get("tipo_operacion") != "venta":
             return _registro_no_encontrado("No se encontró esa venta.")
 
         borrador = operacion.get("borrador_venta")
         marcas_borrador = []
         if borrador and borrador.get("marcas"):
-            por_codigo = marcas_por_codigos(cliente, borrador["marcas"])
+            por_codigo = marcas_por_codigos(conexion, borrador["marcas"])
             marcas_borrador = [
                 {
                     "codigo": codigo,
                     "tipo": por_codigo[codigo].get("tipo"),
                     "propietario": (por_codigo[codigo].get("propietarios") or {}).get("nombre"),
-                    "imagen_url": url_imagen(cliente, por_codigo[codigo].get("archivo_png")),
+                    "imagen_url": url_imagen(por_codigo[codigo]["id"], por_codigo[codigo].get("archivo_png")),
                 }
                 for codigo in borrador["marcas"]
                 if codigo in por_codigo
             ]
+        borrador_para_plantilla = None
+        if borrador:
+            borrador_para_plantilla = {
+                **borrador,
+                "pdf_ruta": bool(operacion.get("borrador_pdf")),
+                "pdf_nombre_original": operacion.get("borrador_pdf_nombre"),
+                "dominante_ruta": bool(operacion.get("borrador_dominante_png")),
+            }
         return render_template(
             "venta_imprimir.html",
             activo="ventas",
             operacion=operacion,
             perfil=perfil_actual(),
-            borrador=borrador,
+            borrador=borrador_para_plantilla,
             marcas_borrador=marcas_borrador,
         )
 
@@ -790,69 +838,52 @@ def crear_app() -> Flask:
         """Guarda el avance de la carga (marcas elegidas, PDF y Dominante ya
         puestos) para que la persona pueda cerrar esto y continuar más tarde
         -- desde cualquier computadora, no sólo desde este navegador."""
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion or operacion.get("tipo_operacion") != "venta":
             return _registro_no_encontrado("No se encontró esa venta.")
 
-        anterior = operacion.get("borrador_venta") or {}
-        borrador = {
-            "marcas": [c.strip() for c in request.form.getlist("marca_codigo") if c.strip()],
-            "pdf_ruta": anterior.get("pdf_ruta"),
-            "pdf_nombre_original": anterior.get("pdf_nombre_original"),
-            "dominante_ruta": anterior.get("dominante_ruta"),
-        }
-
+        marcas = [c.strip() for c in request.form.getlist("marca_codigo") if c.strip()]
         archivo_pdf = request.files.get("pdf_guia")
-        if archivo_pdf and archivo_pdf.filename:
-            ruta = guardar_archivo_borrador(cliente, operacion_id, "pdf", archivo_pdf.read(), "pdf")
-            borrador["pdf_ruta"] = ruta
-            borrador["pdf_nombre_original"] = archivo_pdf.filename
-
+        pdf_bytes = archivo_pdf.read() if archivo_pdf and archivo_pdf.filename else None
+        pdf_nombre = archivo_pdf.filename if archivo_pdf and archivo_pdf.filename else None
         archivo_dominante = request.files.get("imagen_dominante")
-        if archivo_dominante and archivo_dominante.filename:
-            ruta = guardar_archivo_borrador(cliente, operacion_id, "dominante", archivo_dominante.read(), "png")
-            borrador["dominante_ruta"] = ruta
+        dominante_bytes = archivo_dominante.read() if archivo_dominante and archivo_dominante.filename else None
 
-        borrador["guardado_en"] = datetime.now(timezone.utc).isoformat()
-        guardar_borrador_venta(cliente, operacion_id, borrador)
+        guardar_borrador_venta(
+            conexion, operacion_id, marcas, datetime.now(timezone.utc).isoformat(),
+            pdf_bytes=pdf_bytes, pdf_nombre=pdf_nombre, dominante_bytes=dominante_bytes,
+        )
         return redirect(url_for("imprimir_venta", operacion_id=operacion_id))
 
     @app.post("/ventas/<int:operacion_id>/borrador/descartar")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def descartar_borrador_venta_ruta(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion or operacion.get("tipo_operacion") != "venta":
             return _registro_no_encontrado("No se encontró esa venta.")
-        eliminar_borrador_venta(cliente, operacion_id, operacion.get("borrador_venta"))
+        eliminar_borrador_venta(conexion, operacion_id)
         return redirect(url_for("imprimir_venta", operacion_id=operacion_id))
 
     @app.get("/ventas/<int:operacion_id>/borrador/pdf")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def borrador_venta_pdf(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
-        borrador = operacion.get("borrador_venta") if operacion else None
-        contenido = descargar_archivo_bucket(cliente, borrador.get("pdf_ruta")) if borrador else None
-        if not contenido:
+        conexion = conexion_actual()
+        resultado = obtener_borrador_venta_pdf(conexion, operacion_id)
+        if not resultado:
             return _registro_no_encontrado("Ese borrador no tiene un PDF guardado.")
-        return send_file(
-            io.BytesIO(contenido),
-            download_name=borrador.get("pdf_nombre_original") or "borrador.pdf",
-            mimetype="application/pdf",
-        )
+        contenido, nombre = resultado
+        return send_file(io.BytesIO(contenido), download_name=nombre, mimetype="application/pdf")
 
     @app.get("/ventas/<int:operacion_id>/borrador/dominante.png")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def borrador_venta_dominante(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
-        borrador = operacion.get("borrador_venta") if operacion else None
-        contenido = descargar_archivo_bucket(cliente, borrador.get("dominante_ruta")) if borrador else None
+        conexion = conexion_actual()
+        contenido = obtener_borrador_venta_dominante(conexion, operacion_id)
         if not contenido:
             return _registro_no_encontrado("Ese borrador no tiene una Dominante guardada.")
         return send_file(io.BytesIO(contenido), download_name="dominante.png", mimetype="image/png")
@@ -861,8 +892,8 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def generar_venta_pdf(operacion_id: int):
-        cliente = cliente_actual()
-        operacion = obtener_operacion_por_id(cliente, operacion_id)
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion or operacion.get("tipo_operacion") != "venta":
             return _registro_no_encontrado("No se encontró esa venta.")
 
@@ -874,7 +905,7 @@ def crear_app() -> Flask:
         if not codigos_elegidos:
             return _error_seguro("Elegí al menos una marca complementaria para la venta.", "sin marcas")
 
-        por_codigo = marcas_por_codigos(cliente, codigos_elegidos)
+        por_codigo = marcas_por_codigos(conexion, codigos_elegidos)
         faltantes = [c for c in codigos_elegidos if c not in por_codigo]
         if faltantes:
             return _error_seguro(f"No se encontró la marca {faltantes[0]} en el catálogo.", "código inexistente")
@@ -893,7 +924,7 @@ def crear_app() -> Flask:
             rutas_complementarias = []
             for codigo in codigos_elegidos:
                 marca = por_codigo[codigo]
-                contenido = descargar_imagen_marca(cliente, marca.get("archivo_png"))
+                contenido = imagen_marca(conexion, marca["id"], "png")
                 if not contenido:
                     continue
                 destino = tmp_path / f"{codigo}.png"
@@ -912,7 +943,7 @@ def crear_app() -> Flask:
 
         if operacion.get("borrador_venta"):
             try:
-                eliminar_borrador_venta(cliente, operacion_id, operacion.get("borrador_venta"))
+                eliminar_borrador_venta(conexion, operacion_id)
             except Exception as exc:
                 print(f"generar_venta_pdf: no se pudo limpiar el borrador de {operacion_id}: {exc}")
 
@@ -927,10 +958,10 @@ def crear_app() -> Flask:
     @app.get("/propietarios")
     @requiere_sesion
     def propietarios():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         texto = request.args.get("q") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
-        resultados, total = listar_propietarios(cliente, texto, pagina=pagina)
+        resultados, total = listar_propietarios(conexion, texto, pagina=pagina)
         return render_template(
             "propietarios.html",
             activo="propietarios",
@@ -945,14 +976,14 @@ def crear_app() -> Flask:
     @app.get("/propietarios/<int:propietario_id>")
     @requiere_sesion
     def ver_propietario(propietario_id: int):
-        cliente = cliente_actual()
-        propietario = obtener_propietario(cliente, propietario_id)
+        conexion = conexion_actual()
+        propietario = obtener_propietario(conexion, propietario_id)
         if not propietario:
-            return "Propietario no encontrado", 404
-        marcas = marcas_de_propietario(cliente, propietario_id)
+            return _registro_no_encontrado("No se encontró ese propietario.")
+        marcas = marcas_de_propietario(conexion, propietario_id)
         for m in marcas:
-            m["imagen_url"] = url_imagen(cliente, m.get("archivo_png"))
-        operaciones = operaciones_de_propietario(cliente, propietario.get("documento"))
+            m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
+        operaciones = operaciones_de_propietario(conexion, propietario.get("documento"))
         return render_template(
             "propietario_detalle.html",
             activo="propietarios",
@@ -966,10 +997,10 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def editar_propietario(propietario_id: int):
-        cliente = cliente_actual()
-        propietario_actual = obtener_propietario(cliente, propietario_id)
+        conexion = conexion_actual()
+        propietario_actual = obtener_propietario(conexion, propietario_id)
         if not propietario_actual:
-            return "Propietario no encontrado", 404
+            return _registro_no_encontrado("No se encontró ese propietario.")
         campos = {}
         for campo in CAMPOS_PROPIETARIO_EDITABLES:
             if campo not in request.form:
@@ -979,7 +1010,7 @@ def crear_app() -> Flask:
                 campos[campo] = valor
         if campos:
             try:
-                actualizar_propietario(cliente, propietario_id, campos)
+                actualizar_propietario(conexion, propietario_id, campos)
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_propietario", propietario_id=propietario_id))
@@ -987,13 +1018,13 @@ def crear_app() -> Flask:
     @app.get("/estadisticas")
     @requiere_sesion
     def estadisticas_vista():
-        cliente = cliente_actual()
-        top_vendedores, top_compradores = ranking_participantes(cliente)
+        conexion = conexion_actual()
+        top_vendedores, top_compradores = ranking_participantes(conexion)
         return render_template(
             "estadisticas.html",
             activo="estadisticas",
-            desglose=desglose_marcas(cliente),
-            mensual=resumen_mensual(cliente),
+            desglose=desglose_marcas(conexion),
+            mensual=resumen_mensual(conexion),
             top_vendedores=top_vendedores,
             top_compradores=top_compradores,
             perfil=perfil_actual(),
@@ -1003,14 +1034,14 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def aprobaciones():
-        cliente = cliente_actual()
+        conexion = conexion_actual()
         vista = request.args.get("vista") or "pendientes"
         return render_template(
             "aprobaciones.html",
             activo="aprobaciones",
             vista=vista,
-            cambios=cambios_pendientes_detalle(cliente) if vista == "pendientes" else [],
-            historial=historial_cambios_resueltos(cliente) if vista == "historial" else [],
+            cambios=cambios_pendientes_detalle(conexion) if vista == "pendientes" else [],
+            historial=historial_cambios_resueltos(conexion) if vista == "historial" else [],
             perfil=perfil_actual(),
         )
 
@@ -1018,23 +1049,16 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador", "operador")
     def resolver_cambio(cambio_id: int):
-        cliente = cliente_actual()
+        conexion = conexion_actual()
+        perfil = perfil_actual()
         decision = request.form.get("decision")
         motivo = request.form.get("motivo") or None
         try:
-            cliente.rpc(
-                "resolver_cambio_pendiente",
-                {"p_cambio_id": cambio_id, "p_decision": decision, "p_motivo": motivo},
-            ).execute()
-        except APIError as exc:
-            # resolver_cambio_pendiente() sólo levanta textos pensados para
-            # mostrarse tal cual (nunca nombres de columna sin filtrar) --
-            # por ejemplo "quien propone el cambio no puede aprobarlo". Esconder
-            # ese motivo detrás de un mensaje genérico no protege nada y sólo
-            # confunde a quien está tratando de aprobar o rechazar el cambio.
+            resolver_cambio_pendiente(conexion, cambio_id, decision, perfil["id"], motivo)
+        except ErrorResolverCambio as exc:
             print(f"No se pudo resolver el cambio {cambio_id}: {exc}")
             return render_template(
-                "error_simple.html", titulo="No se pudo resolver el cambio", mensaje=exc.message
+                "error_simple.html", titulo="No se pudo resolver el cambio", mensaje=str(exc)
             ), 400
         except Exception as exc:
             return _error_seguro("No se pudo resolver el cambio.", exc)
@@ -1044,24 +1068,56 @@ def crear_app() -> Flask:
     @requiere_sesion
     @requiere_rol("administrador")
     def panel():
-        cliente = cliente_actual()
-        usuarios = cliente.table("perfiles").select("*").order("creado_en").execute().data
+        conexion = conexion_actual()
+        usuarios = listar_usuarios(conexion)
         return render_template(
-            "panel.html", activo="panel", usuarios=usuarios, perfil=perfil_actual()
+            "panel.html", activo="panel", usuarios=usuarios, perfil=perfil_actual(), error=None
         )
+
+    @app.post("/panel/usuarios")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def crear_usuario_ruta():
+        conexion = conexion_actual()
+        email = request.form.get("email", "").strip().lower()
+        nombre = request.form.get("nombre", "").strip()
+        rol = request.form.get("rol") or "consulta"
+        contrasena = request.form.get("contrasena", "")
+        error = None
+        if not email or not nombre:
+            error = "Completá el email y el nombre."
+        elif len(contrasena) < 6:
+            error = "La contraseña debe tener al menos 6 caracteres."
+        elif rol not in ("administrador", "operador", "consulta"):
+            error = "Rol inválido."
+        elif obtener_usuario_por_email(conexion, email):
+            error = "Ya existe una cuenta con ese email."
+        if error:
+            return render_template(
+                "panel.html", activo="panel", usuarios=listar_usuarios(conexion), perfil=perfil_actual(), error=error
+            ), 400
+        crear_usuario(conexion, email, encriptar_contrasena(contrasena), nombre, rol, True)
+        return redirect(url_for("panel"))
 
     @app.post("/panel/usuarios/<usuario_id>")
     @requiere_sesion
     @requiere_rol("administrador")
     def actualizar_usuario(usuario_id: str):
-        cliente = cliente_actual()
+        conexion = conexion_actual()
+        if not obtener_usuario_por_id(conexion, usuario_id):
+            return _registro_no_encontrado("No se encontró ese usuario.")
         campos = {}
         if request.form.get("rol"):
             campos["rol"] = request.form["rol"]
         if "activo" in request.form:
             campos["activo"] = request.form["activo"] == "1"
+        nueva_contrasena = request.form.get("nueva_contrasena", "")
+        if nueva_contrasena:
+            if len(nueva_contrasena) < 6:
+                return _error_seguro("La contraseña debe tener al menos 6 caracteres.", "contraseña corta")
+            campos["password_hash"] = encriptar_contrasena(nueva_contrasena)
         if campos:
-            cliente.table("perfiles").update(campos).eq("id", usuario_id).execute()
+            actualizar_usuario_campos(conexion, usuario_id, campos)
         return redirect(url_for("panel"))
 
     return app
