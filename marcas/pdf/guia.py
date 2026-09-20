@@ -268,6 +268,94 @@ def paginas_principales(pdf: Path | str) -> list[tuple[int, str]]:
     return paginas
 
 
+def _texto_ordenado_por_posicion(pdf: Path | str, pagina: int) -> str:
+    """El texto de la página, reordenado por posición visual (de arriba
+    hacia abajo, de izquierda a derecha) en vez del orden del propio
+    content stream del PDF.
+
+    ``pypdf.extract_text()`` intercala las etiquetas de un campo y su valor
+    en un orden distinto según cómo haya quedado armado ESE documento en
+    particular -- se comprobó contra varias guías reales de SENACSA que a
+    veces el valor del Rubro 1 aparece pegado a su etiqueta y a veces
+    termina volcado al final de la página entera. La posición en la
+    página, en cambio, es siempre la misma."""
+    doc = pdfium.PdfDocument(str(pdf))
+    try:
+        textpage = doc[pagina].get_textpage()
+        piezas = []
+        for i in range(textpage.count_rects()):
+            l, t, r, b = textpage.get_rect(i)
+            texto = textpage.get_text_bounded(l, b, r, t).strip()
+            if texto:
+                piezas.append((t, l, texto))
+    finally:
+        doc.close()
+    piezas.sort(key=lambda p: -p[0])
+    filas: list[list[tuple[float, float, str]]] = []
+    tolerancia = 4.0
+    for pieza in piezas:
+        if filas and abs(pieza[0] - filas[-1][0][0]) <= tolerancia:
+            filas[-1].append(pieza)
+        else:
+            filas.append([pieza])
+    return "\n".join(
+        " ".join(p[2] for p in sorted(fila, key=lambda p: p[1])) for fila in filas
+    )
+
+
+_RE_RUBRO1 = re.compile(
+    r"N°\s*de\s*Orden\s*CI\s*/\s*RUC\s*DV\n"
+    r"(\S+)\s+(\S+)\s+(\S+)\n"
+    r"Nombre y Apellido / Razón Social\n"
+    r"([^\n]+)"
+)
+_RE_RUBRO7 = re.compile(
+    r"Rubro 7 - Identificación del Adquiriente.*?"
+    r"Nombre y Apellido / Razón Social\s*CI\s*/\s*RUC\s*DV\n"
+    r"([^\n]+)",
+    re.DOTALL,
+)
+_RE_NOMBRE_CI_DV = re.compile(r"^(.*?)\s+(\d+)(?:\s+(\d+))?$")
+
+
+def extraer_encabezado(pdf: Path | str) -> dict:
+    """Lee el N° de Orden y los datos del Rubro 1 (Vendedor) y el Rubro 7
+    (Adquiriente/Comprador) de la página principal.
+
+    Nunca por coordenadas fijas -- siempre relativo a las etiquetas del
+    propio formulario -- para tolerar que el documento venga con más o
+    menos páginas, o en otro orden. Cualquier campo que no se pueda leer
+    queda en ``None`` en vez de fallar: quien llama decide si eso importa
+    (acá sólo se lee, nunca se valida)."""
+    principales = paginas_principales(pdf)
+    if not principales:
+        raise ValueError(
+            "No se encontró el Rubro 2 en el PDF. ¿Es una Guía de Traslado oficial descargada de SENACSA?"
+        )
+    texto = _texto_ordenado_por_posicion(pdf, principales[0][0])
+
+    resultado: dict = {
+        "numero_orden": None,
+        "vendedor_nombre": None, "vendedor_ci_ruc": None, "vendedor_dv": None,
+        "comprador_nombre": None, "comprador_ci_ruc": None, "comprador_dv": None,
+    }
+    coincidencia = _RE_RUBRO1.search(texto)
+    if coincidencia:
+        resultado["numero_orden"] = coincidencia.group(1)
+        resultado["vendedor_ci_ruc"] = coincidencia.group(2)
+        resultado["vendedor_dv"] = coincidencia.group(3)
+        resultado["vendedor_nombre"] = coincidencia.group(4).strip()
+
+    coincidencia = _RE_RUBRO7.search(texto)
+    if coincidencia:
+        partes = _RE_NOMBRE_CI_DV.match(coincidencia.group(1).strip())
+        if partes:
+            resultado["comprador_nombre"] = partes.group(1).strip()
+            resultado["comprador_ci_ruc"] = partes.group(2)
+            resultado["comprador_dv"] = partes.group(3)
+    return resultado
+
+
 def hojas_de_anexo(pdf: Path | str) -> list[HojaAnexo]:
     """Encuentra las hojas de anexo, con su copia y su orden dentro de la copia."""
     lector = pypdf.PdfReader(str(pdf))

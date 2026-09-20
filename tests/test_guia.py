@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from generar_guia_demo import generar as generar_guia  # noqa: E402
 
 from marcas.pdf.guia import (  # noqa: E402
-    completar_guia, detectar_casillas, hojas_de_anexo, planificar,
+    completar_guia, detectar_casillas, extraer_encabezado, hojas_de_anexo, planificar,
 )
 
 pdfium = pytest.importorskip("pypdfium2")
@@ -150,3 +150,83 @@ def test_la_imagen_reducida_se_reutiliza(marcas):
     a = _lector(marcas[0], lado_pt=113, dpi=300, cache=cache)
     b = _lector(marcas[0], lado_pt=113, dpi=300, cache=cache)
     assert a is b and len(cache) == 1
+
+
+def _generar_pagina_con_encabezado(
+    salida: Path,
+    *,
+    numero_orden="91181756",
+    vendedor_ci_ruc="80020081",
+    vendedor_dv="0",
+    vendedor_nombre="PIEDRA ALTA S.A. INMOBILIARIA",
+    comprador_nombre="GANADERA MADREJON S.A.",
+    comprador_ci_ruc="80083402",
+    comprador_dv="0",
+) -> Path:
+    """Una sola página con el mismo layout de etiquetas del Rubro 1 y el
+    Rubro 7 que la Guía real -- no hace falta la grilla de casillas ni las
+    cuatro copias, sólo lo que lee ``extraer_encabezado``.
+
+    Etiqueta y valor de una misma fila van a la MISMA altura (approx.),
+    como en el formulario real, para que se agrupen en la misma línea al
+    reordenar por posición -- eso es justamente lo que se está probando."""
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    c = rl_canvas.Canvas(str(salida), pagesize=(612, 1008))
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(100, 950, "GUIA DE TRASLADO Y TRANSFERENCIA DE GANADO")
+    c.setFont("Helvetica", 9)
+    c.drawString(80, 900, "N° de Orden")
+    c.drawString(250, 900, "CI / RUC")
+    c.drawString(400, 900, "DV")
+    c.drawString(80, 885, numero_orden)
+    c.drawString(250, 885, vendedor_ci_ruc)
+    c.drawString(400, 885, vendedor_dv)
+    c.drawString(80, 865, "Nombre y Apellido / Razón Social")
+    c.drawString(40, 850, vendedor_nombre)
+    c.drawString(40, 300, "Rubro 7 - Identificación del Adquiriente")
+    c.drawString(120, 280, "Nombre y Apellido / Razón Social")
+    c.drawString(400, 280, "CI / RUC")
+    c.drawString(480, 280, "DV")
+    linea_comprador = f"{comprador_nombre} {comprador_ci_ruc}"
+    if comprador_dv:
+        linea_comprador += f" {comprador_dv}"
+    c.drawString(40, 265, linea_comprador)
+    c.save()
+    return Path(salida)
+
+
+def test_extraer_encabezado_lee_vendedor_y_comprador(tmp_path):
+    pdf = _generar_pagina_con_encabezado(tmp_path / "guia.pdf")
+    datos = extraer_encabezado(pdf)
+    assert datos["numero_orden"] == "91181756"
+    assert datos["vendedor_nombre"] == "PIEDRA ALTA S.A. INMOBILIARIA"
+    assert datos["vendedor_ci_ruc"] == "80020081"
+    assert datos["vendedor_dv"] == "0"
+    assert datos["comprador_nombre"] == "GANADERA MADREJON S.A."
+    assert datos["comprador_ci_ruc"] == "80083402"
+    assert datos["comprador_dv"] == "0"
+
+
+def test_extraer_encabezado_tolera_comprador_sin_dv(tmp_path):
+    """Cuando el DV del comprador viene vacío, el nombre puede tener varias
+    palabras y no se lo tiene que confundir con el CI/RUC (caso real: una
+    guía donde comprador_dv nunca se imprimió)."""
+    pdf = _generar_pagina_con_encabezado(
+        tmp_path / "guia.pdf",
+        comprador_nombre="CLEDSON DAL TOE MARCELINO",
+        comprador_ci_ruc="3712507",
+        comprador_dv="",
+    )
+    datos = extraer_encabezado(pdf)
+    assert datos["comprador_nombre"] == "CLEDSON DAL TOE MARCELINO"
+    assert datos["comprador_ci_ruc"] == "3712507"
+    assert datos["comprador_dv"] is None
+
+
+def test_extraer_encabezado_rechaza_un_pdf_que_no_es_una_guia(tmp_path):
+    from marcas.pdf import generar_plantilla_captura
+
+    otro = generar_plantilla_captura(tmp_path / "otro.pdf", hojas=1)
+    with pytest.raises(ValueError, match="Rubro 2"):
+        extraer_encabezado(otro)
