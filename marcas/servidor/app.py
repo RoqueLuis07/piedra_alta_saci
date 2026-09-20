@@ -86,10 +86,16 @@ from marcas.servidor.consultas import (
     obtener_propietario,
     obtener_usuario_por_email,
     obtener_usuario_por_id,
+    ocultar_marca,
+    ocultar_operacion,
+    ocultar_propietario,
     operaciones_de_propietario,
     proponer_cambio,
     ranking_participantes,
     resolver_cambio_pendiente,
+    restaurar_marca,
+    restaurar_operacion,
+    restaurar_propietario,
     resumen_mensual,
     subir_imagen_marca,
     ultimos_asientos,
@@ -340,11 +346,15 @@ def crear_app() -> Flask:
     @requiere_sesion
     def buscar():
         conexion = conexion_actual()
+        perfil = perfil_actual()
         texto = request.args.get("q") or None
         estado = request.args.get("estado") or None
         tipo = request.args.get("tipo") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
-        resultados, total = buscar_marcas(conexion, texto, pagina=pagina, estado=estado, tipo=tipo)
+        ver_ocultos = perfil["rol"] == "administrador" and request.args.get("ver") == "ocultos"
+        resultados, total = buscar_marcas(
+            conexion, texto, pagina=pagina, estado=estado, tipo=tipo, incluir_ocultos=ver_ocultos
+        )
         for fila in resultados:
             fila["imagen_url"] = url_imagen(fila["id"], fila.get("archivo_png"))
         return render_template(
@@ -357,7 +367,8 @@ def crear_app() -> Flask:
             texto=texto or "",
             estado=estado or "",
             tipo=tipo or "",
-            perfil=perfil_actual(),
+            ver_ocultos=ver_ocultos,
+            perfil=perfil,
         )
 
     @app.get("/marcas/<codigo>")
@@ -444,6 +455,28 @@ def crear_app() -> Flask:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_marca", codigo=codigo_para_volver))
 
+    @app.post("/marcas/<int:marca_id>/ocultar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def ocultar_marca_ruta(marca_id: int):
+        conexion = conexion_actual()
+        marca = obtener_marca_por_id(conexion, marca_id)
+        if not marca:
+            return _registro_no_encontrado("No se encontró esa marca.")
+        ocultar_marca(conexion, marca_id)
+        return redirect(url_for("ver_marca", codigo=marca["codigo"]))
+
+    @app.post("/marcas/<int:marca_id>/restaurar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def restaurar_marca_ruta(marca_id: int):
+        conexion = conexion_actual()
+        marca = obtener_marca_por_id(conexion, marca_id)
+        if not marca:
+            return _registro_no_encontrado("No se encontró esa marca.")
+        restaurar_marca(conexion, marca_id)
+        return redirect(url_for("ver_marca", codigo=marca["codigo"]))
+
     @app.get("/imagenes/marca/<int:marca_id>.<extension>", endpoint="imagen_marca")
     @requiere_sesion
     def imagen_marca_ruta(marca_id: int, extension: str):
@@ -460,14 +493,17 @@ def crear_app() -> Flask:
     @requiere_sesion
     def guias():
         conexion = conexion_actual()
+        perfil = perfil_actual()
         pagina = max(1, request.args.get("pagina", 1, type=int))
         texto = request.args.get("q") or None
         estado = request.args.get("estado") or None
         creada_desde = request.args.get("desde") or None
         creada_hasta = request.args.get("hasta") or None
+        ver_ocultos = perfil["rol"] == "administrador" and request.args.get("ver") == "ocultos"
         operaciones, total = listar_operaciones_paginado(
             conexion, pagina=pagina, texto=texto, estado=estado,
             creada_desde=creada_desde, creada_hasta=creada_hasta, tipo_operacion="compra",
+            incluir_ocultos=ver_ocultos,
         )
         return render_template(
             "guias.html",
@@ -480,21 +516,25 @@ def crear_app() -> Flask:
             estado=estado or "",
             desde=creada_desde or "",
             hasta=creada_hasta or "",
-            perfil=perfil_actual(),
+            ver_ocultos=ver_ocultos,
+            perfil=perfil,
         )
 
     @app.get("/ventas")
     @requiere_sesion
     def ventas():
         conexion = conexion_actual()
+        perfil = perfil_actual()
         pagina = max(1, request.args.get("pagina", 1, type=int))
         texto = request.args.get("q") or None
         estado = request.args.get("estado") or None
         creada_desde = request.args.get("desde") or None
         creada_hasta = request.args.get("hasta") or None
+        ver_ocultos = perfil["rol"] == "administrador" and request.args.get("ver") == "ocultos"
         operaciones, total = listar_operaciones_paginado(
             conexion, pagina=pagina, texto=texto, estado=estado,
             creada_desde=creada_desde, creada_hasta=creada_hasta, tipo_operacion="venta",
+            incluir_ocultos=ver_ocultos,
         )
         return render_template(
             "guias.html",
@@ -507,7 +547,8 @@ def crear_app() -> Flask:
             estado=estado or "",
             desde=creada_desde or "",
             hasta=creada_hasta or "",
-            perfil=perfil_actual(),
+            ver_ocultos=ver_ocultos,
+            perfil=perfil,
         )
 
     @app.get("/exportar")
@@ -730,6 +771,26 @@ def crear_app() -> Flask:
                     proponer_cambio(conexion, "operaciones", operacion_id, cambios, valores_anteriores, perfil["id"])
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
+        return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
+    @app.post("/guias/<int:operacion_id>/ocultar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def ocultar_guia_ruta(operacion_id: int):
+        conexion = conexion_actual()
+        if not obtener_operacion_por_id(conexion, operacion_id):
+            return _registro_no_encontrado("No se encontró esa guía.")
+        ocultar_operacion(conexion, operacion_id)
+        return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
+    @app.post("/guias/<int:operacion_id>/restaurar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def restaurar_guia_ruta(operacion_id: int):
+        conexion = conexion_actual()
+        if not obtener_operacion_por_id(conexion, operacion_id):
+            return _registro_no_encontrado("No se encontró esa guía.")
+        restaurar_operacion(conexion, operacion_id)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.post("/guias/<int:operacion_id>/marcas")
@@ -1019,9 +1080,13 @@ def crear_app() -> Flask:
     @requiere_sesion
     def propietarios():
         conexion = conexion_actual()
+        perfil = perfil_actual()
         texto = request.args.get("q") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
-        resultados, total = listar_propietarios(conexion, texto, pagina=pagina)
+        ver_ocultos = perfil["rol"] == "administrador" and request.args.get("ver") == "ocultos"
+        resultados, total = listar_propietarios(
+            conexion, texto, pagina=pagina, incluir_ocultos=ver_ocultos
+        )
         return render_template(
             "propietarios.html",
             activo="propietarios",
@@ -1030,7 +1095,8 @@ def crear_app() -> Flask:
             pagina=pagina,
             por_pagina=POR_PAGINA_PROPIETARIOS,
             texto=texto or "",
-            perfil=perfil_actual(),
+            ver_ocultos=ver_ocultos,
+            perfil=perfil,
         )
 
     @app.get("/propietarios/<int:propietario_id>")
@@ -1073,6 +1139,26 @@ def crear_app() -> Flask:
                 actualizar_propietario(conexion, propietario_id, campos)
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
+        return redirect(url_for("ver_propietario", propietario_id=propietario_id))
+
+    @app.post("/propietarios/<int:propietario_id>/ocultar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def ocultar_propietario_ruta(propietario_id: int):
+        conexion = conexion_actual()
+        if not obtener_propietario(conexion, propietario_id):
+            return _registro_no_encontrado("No se encontró ese propietario.")
+        ocultar_propietario(conexion, propietario_id)
+        return redirect(url_for("ver_propietario", propietario_id=propietario_id))
+
+    @app.post("/propietarios/<int:propietario_id>/restaurar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def restaurar_propietario_ruta(propietario_id: int):
+        conexion = conexion_actual()
+        if not obtener_propietario(conexion, propietario_id):
+            return _registro_no_encontrado("No se encontró ese propietario.")
+        restaurar_propietario(conexion, propietario_id)
         return redirect(url_for("ver_propietario", propietario_id=propietario_id))
 
     @app.get("/estadisticas")

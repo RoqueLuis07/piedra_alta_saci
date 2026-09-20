@@ -6,6 +6,24 @@
 
 {% block contenido %}
 <div class="contenido">
+  {% if propietario.activo == false %}
+  <div class="aviso-pendiente">
+    Este propietario está oculto -- no aparece en el listado ni en las búsquedas normales.
+    {% if perfil.rol == 'administrador' %}
+    <form method="post" action="{{ url_for('restaurar_propietario_ruta', propietario_id=propietario.id) }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="boton" style="min-height: auto; padding: 4px 10px; margin-left: 8px;">Restaurar</button>
+    </form>
+    {% endif %}
+  </div>
+  {% elif perfil.rol == 'administrador' %}
+  <div style="display: flex; justify-content: flex-end; margin-top: 18px;">
+    <form method="post" action="{{ url_for('ocultar_propietario_ruta', propietario_id=propietario.id) }}" onsubmit="return confirm('¿Ocultar este propietario? No aparecerá más en el listado ni en las búsquedas, pero se puede restaurar después.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="boton" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Ocultar</button>
+    </form>
+  </div>
+  {% endif %}
   <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-top: 20px;" class="buscar-cols">
     <div style="flex: 1 1 480px; min-width: 0;">
       <div class="campo-fila"><div class="campo-etiqueta">CI / RUC</div><div class="campo-valor mono">{{ propietario.documento or '—' }}</div></div>

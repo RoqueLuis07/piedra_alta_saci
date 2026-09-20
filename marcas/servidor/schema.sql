@@ -138,3 +138,16 @@ create index if not exists idx_marcas_tipo on marcas(tipo);
 create index if not exists idx_cambios_pendientes_estado on cambios_pendientes(estado);
 create index if not exists idx_operaciones_tipo_operacion on operaciones(tipo_operacion);
 create index if not exists idx_operaciones_creado_en on operaciones(creado_en);
+
+-- Ocultar (nunca borrado físico -- son documentos con valor legal/SENACSA):
+-- un registro oculto sigue en la base tal cual, pero desaparece de los
+-- listados/búsquedas por defecto. Reversible, y sólo lo hace Administrador.
+-- ALTER (no en el CREATE TABLE de arriba) para que se aplique también sobre
+-- una base ya desplegada, no sólo en una instalación nueva.
+alter table marcas add column if not exists activo boolean not null default true;
+alter table operaciones add column if not exists activo boolean not null default true;
+alter table propietarios add column if not exists activo boolean not null default true;
+
+create index if not exists idx_marcas_activo on marcas(activo) where not activo;
+create index if not exists idx_operaciones_activo on operaciones(activo) where not activo;
+create index if not exists idx_propietarios_activo on propietarios(activo) where not activo;

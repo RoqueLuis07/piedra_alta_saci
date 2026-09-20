@@ -79,10 +79,16 @@ def buscar_marcas(
     por_pagina: int = POR_PAGINA_MARCAS,
     estado: str | None = None,
     tipo: str | None = None,
+    incluir_ocultos: bool = False,
 ) -> tuple[list[dict], int]:
-    """Los resultados de la página pedida y el total real de coincidencias."""
+    """Los resultados de la página pedida y el total real de coincidencias.
+
+    ``incluir_ocultos`` no mezcla ocultas con activas -- son dos vistas
+    separadas (como "activos" y "papelera"): en False (default) sólo trae
+    lo activo, en True sólo lo oculto, para el link "Ver ocultos" del
+    Administrador."""
     texto = (texto or "").strip()
-    condiciones = []
+    condiciones = [f"m.activo = {'false' if incluir_ocultos else 'true'}"]
     parametros: dict = {}
     if estado in ("activa", "revisar", "baja"):
         condiciones.append("m.estado = %(estado)s")
@@ -135,6 +141,7 @@ def listar_operaciones_paginado(
     creada_desde: str | None = None,
     creada_hasta: str | None = None,
     tipo_operacion: str | None = None,
+    incluir_ocultos: bool = False,
 ) -> tuple[list[dict], int]:
     """``estado`` filtra por lo que ya se muestra como estado en el listado:
     'revisar' (tiene notas de revisión), 'colisiona' (guía colisionada) o
@@ -143,8 +150,9 @@ def listar_operaciones_paginado(
     de carga en el sistema, no el campo de texto libre ``fecha`` del
     formulario de origen, que en más de las tres cuartas partes de las guías
     migradas llegó vacío o en formatos dispares. ``tipo_operacion`` filtra
-    'compra' o 'venta'."""
-    condiciones = []
+    'compra' o 'venta'. ``incluir_ocultos`` (ver ``buscar_marcas``): vista
+    separada, no mezclada."""
+    condiciones = [f"activo = {'false' if incluir_ocultos else 'true'}"]
     parametros: dict = {}
     if tipo_operacion in ("compra", "venta"):
         condiciones.append("tipo_operacion = %(tipo_operacion)s")
@@ -200,7 +208,7 @@ def marcas_de_operacion(conexion, operacion_id: int) -> list[dict]:
             """
             SELECT id, codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png, estado
             FROM marcas
-            WHERE operacion_id = %s
+            WHERE operacion_id = %s AND activo = true
             ORDER BY tipo, posicion
             """,
             (operacion_id,),
@@ -328,6 +336,29 @@ def actualizar_operacion_campos(conexion, operacion_id: int, campos: dict) -> No
         cur.execute(
             f"UPDATE operaciones SET {columnas} WHERE id = %(_id)s", {**campos, "_id": operacion_id}
         )
+
+
+def ocultar_marca(conexion, marca_id: int) -> None:
+    """Ocultar/restaurar es acción directa de Administrador -- a diferencia
+    de editar, no pasa por la cola de Aprobaciones (nunca borra la fila:
+    son documentos con valor legal/SENACSA, siempre reversible)."""
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE marcas SET activo = false WHERE id = %s", (marca_id,))
+
+
+def restaurar_marca(conexion, marca_id: int) -> None:
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE marcas SET activo = true WHERE id = %s", (marca_id,))
+
+
+def ocultar_operacion(conexion, operacion_id: int) -> None:
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE operaciones SET activo = false WHERE id = %s", (operacion_id,))
+
+
+def restaurar_operacion(conexion, operacion_id: int) -> None:
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE operaciones SET activo = true WHERE id = %s", (operacion_id,))
 
 
 def proponer_cambio(
@@ -497,7 +528,7 @@ def ficha_marca(conexion, codigo: str) -> dict | None:
                    m.numero_guia, m.origen_archivo, (m.archivo_png IS NOT NULL) AS archivo_png,
                    (m.archivo_svg IS NOT NULL) AS archivo_svg, m.borde_limpiado, m.sospechosa_calidad,
                    m.motivo_calidad, m.estado, m.observaciones, m.creado_por, m.actualizado_por,
-                   m.creado_en, m.actualizado_en, m.vence_en,
+                   m.creado_en, m.actualizado_en, m.vence_en, m.activo,
                    p.nombre AS propietario_nombre, p.documento AS propietario_documento,
                    p.establecimiento AS propietario_establecimiento
             FROM marcas m
@@ -628,9 +659,13 @@ def marcas_por_vencer(conexion, dias: int = 90, limite: int = 10) -> list[dict]:
 
 
 def listar_propietarios(
-    conexion, texto: str | None = None, pagina: int = 1, por_pagina: int = POR_PAGINA_PROPIETARIOS
+    conexion,
+    texto: str | None = None,
+    pagina: int = 1,
+    por_pagina: int = POR_PAGINA_PROPIETARIOS,
+    incluir_ocultos: bool = False,
 ) -> tuple[list[dict], int]:
-    condiciones = []
+    condiciones = [f"activo = {'false' if incluir_ocultos else 'true'}"]
     parametros: dict = {}
     texto = (texto or "").strip()
     if texto:
@@ -667,9 +702,9 @@ def marcas_de_propietario(conexion, propietario_id: int) -> list[dict]:
     with conexion.cursor() as cur:
         cur.execute(
             """
-            SELECT codigo, tipo, estado, (archivo_png IS NOT NULL) AS archivo_png, vence_en
+            SELECT id, codigo, tipo, estado, (archivo_png IS NOT NULL) AS archivo_png, vence_en
             FROM marcas
-            WHERE propietario_id = %s
+            WHERE propietario_id = %s AND activo = true
             ORDER BY codigo
             """,
             (propietario_id,),
@@ -691,7 +726,7 @@ def operaciones_de_propietario(conexion, documento: str | None) -> list[dict]:
             """
             SELECT id, numero_guia, fecha, vendedor_nombre, comprador_nombre, cantidad_animales, creado_en
             FROM operaciones
-            WHERE vendedor_documento = %(doc)s OR comprador_documento = %(doc)s
+            WHERE (vendedor_documento = %(doc)s OR comprador_documento = %(doc)s) AND activo = true
             ORDER BY creado_en DESC
             """,
             {"doc": documento},
@@ -711,6 +746,16 @@ def actualizar_propietario(conexion, propietario_id: int, campos: dict) -> None:
         )
 
 
+def ocultar_propietario(conexion, propietario_id: int) -> None:
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE propietarios SET activo = false WHERE id = %s", (propietario_id,))
+
+
+def restaurar_propietario(conexion, propietario_id: int) -> None:
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE propietarios SET activo = true WHERE id = %s", (propietario_id,))
+
+
 def exportar_operaciones(
     conexion,
     texto: str | None = None,
@@ -719,11 +764,12 @@ def exportar_operaciones(
     creada_hasta: str | None = None,
     tipo_operacion: str | None = None,
     ids: list[int] | None = None,
+    incluir_ocultos: bool = False,
 ) -> list[dict]:
     """Todas las guías/ventas que cumplen el filtro activo (sin paginar), para
     la planilla. ``ids``, si se manda, restringe a exactamente esos
     registros -- es lo que arma el paso de "elegir los ítems" en /exportar."""
-    condiciones = []
+    condiciones = [f"activo = {'false' if incluir_ocultos else 'true'}"]
     parametros: dict = {}
     if ids is not None:
         condiciones.append("id = ANY(%(ids)s::bigint[])")
@@ -771,10 +817,11 @@ def exportar_marcas(
     estado: str | None = None,
     tipo: str | None = None,
     ids: list[int] | None = None,
+    incluir_ocultos: bool = False,
 ) -> list[dict]:
     """Todas las marcas que cumplen el filtro activo (sin paginar), para la
     planilla. ``ids``, si se manda, restringe a exactamente esos registros."""
-    condiciones = []
+    condiciones = [f"m.activo = {'false' if incluir_ocultos else 'true'}"]
     parametros: dict = {}
     if ids is not None:
         condiciones.append("m.id = ANY(%(ids)s::bigint[])")

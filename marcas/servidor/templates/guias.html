@@ -46,9 +46,15 @@
     </div>
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
-  <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+  <div style="display: flex; justify-content: flex-end; gap: 16px; align-items: baseline; margin-top: 10px;">
+    {% if perfil.rol == 'administrador' %}
+    <a href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, ver=None if ver_ocultos else 'ocultos') }}">{{ 'Ver activas' if ver_ocultos else 'Ver ocultas' }}</a>
+    {% endif %}
     <a href="{{ url_for('exportar', seccion='operaciones', tipo_operacion=modo, q=texto, estado=estado, desde=desde, hasta=hasta) }}">Exportar a Excel &darr;</a>
   </div>
+  {% if ver_ocultos %}
+  <div class="aviso-pendiente">Mostrando sólo {{ 'ventas' if modo == 'venta' else 'guías' }} ocultas.</div>
+  {% endif %}
 
   <table class="registro" style="margin-top: 12px;">
     <thead>
@@ -86,12 +92,12 @@
   <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // 40) + 1 if total else 1 }}</div>
   <div class="enlaces">
     {% if pagina > 1 %}
-    <a class="boton" href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, pagina=pagina - 1) }}">&larr; Anteriores 40</a>
+    <a class="boton" href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, ver='ocultos' if ver_ocultos else None, pagina=pagina - 1) }}">&larr; Anteriores 40</a>
     {% else %}
     <span class="boton-inactivo">&larr; Anteriores 40</span>
     {% endif %}
     {% if pagina * 40 < total %}
-    <a class="boton" href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, pagina=pagina + 1) }}">Siguientes 40 &rarr;</a>
+    <a class="boton" href="{{ url_for(ruta_lista, q=texto, estado=estado, desde=desde, hasta=hasta, ver='ocultos' if ver_ocultos else None, pagina=pagina + 1) }}">Siguientes 40 &rarr;</a>
     {% else %}
     <span class="boton-inactivo">Siguientes 40 &rarr;</span>
     {% endif %}

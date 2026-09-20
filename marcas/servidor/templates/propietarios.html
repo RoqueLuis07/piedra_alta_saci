@@ -17,9 +17,17 @@
     </div>
   </form>
 
-  <div class="mono" style="font-size: 11px; color: var(--texto-secundario); padding: 10px 0; border-top: 1px solid var(--borde-suave); margin-top: 12px;">
-    {{ total }} PROPIETARIO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
+  <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--borde-suave); margin-top: 12px; flex-wrap: wrap;">
+    <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
+      {{ total }} PROPIETARIO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
+    </div>
+    {% if perfil.rol == 'administrador' %}
+    <a href="{{ url_for('propietarios', q=texto, ver=None if ver_ocultos else 'ocultos') }}">{{ 'Ver activos' if ver_ocultos else 'Ver ocultos' }}</a>
+    {% endif %}
   </div>
+  {% if ver_ocultos %}
+  <div class="aviso-pendiente">Mostrando sólo propietarios ocultos.</div>
+  {% endif %}
 
   <table class="registro">
     <thead>
@@ -49,12 +57,12 @@
   <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
   <div class="enlaces">
     {% if pagina > 1 %}
-    <a class="boton" href="{{ url_for('propietarios', q=texto, pagina=pagina - 1) }}">&larr; Anteriores</a>
+    <a class="boton" href="{{ url_for('propietarios', q=texto, ver='ocultos' if ver_ocultos else None, pagina=pagina - 1) }}">&larr; Anteriores</a>
     {% else %}
     <span class="boton-inactivo">&larr; Anteriores</span>
     {% endif %}
     {% if pagina * por_pagina < total %}
-    <a class="boton" href="{{ url_for('propietarios', q=texto, pagina=pagina + 1) }}">Siguientes &rarr;</a>
+    <a class="boton" href="{{ url_for('propietarios', q=texto, ver='ocultos' if ver_ocultos else None, pagina=pagina + 1) }}">Siguientes &rarr;</a>
     {% else %}
     <span class="boton-inactivo">Siguientes &rarr;</span>
     {% endif %}

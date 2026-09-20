@@ -13,6 +13,18 @@
   </div>
   {% endif %}
 
+  {% if ficha.marca.activo == false %}
+  <div class="aviso-pendiente">
+    Esta marca está oculta -- no aparece en el catálogo ni en las búsquedas normales.
+    {% if perfil.rol == 'administrador' %}
+    <form method="post" action="{{ url_for('restaurar_marca_ruta', marca_id=ficha.marca.id) }}" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="boton" style="min-height: auto; padding: 4px 10px; margin-left: 8px;">Restaurar</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div style="display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap;">
     <span class="estado estado-{{ ficha.marca.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(ficha.marca.estado, ficha.marca.estado) }}</span>
     {% if ficha.marca.creado_por_nombre or ficha.marca.actualizado_por_nombre %}
@@ -20,6 +32,12 @@
       {% if ficha.marca.creado_por_nombre %}CARGADA POR {{ ficha.marca.creado_por_nombre|upper }}{% if ficha.marca.creado_en %} · {{ ficha.marca.creado_en }}{% endif %}{% endif %}
       {% if ficha.marca.actualizado_por_nombre and ficha.marca.actualizado_por != ficha.marca.creado_por %} · ÚLTIMA EDICIÓN DE {{ ficha.marca.actualizado_por_nombre|upper }}{% endif %}
     </span>
+    {% endif %}
+    {% if perfil.rol == 'administrador' and ficha.marca.activo != false %}
+    <form method="post" action="{{ url_for('ocultar_marca_ruta', marca_id=ficha.marca.id) }}" style="margin-left: auto;" onsubmit="return confirm('¿Ocultar esta marca? No aparecerá más en el catálogo ni en las búsquedas, pero se puede restaurar después.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="boton" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Ocultar</button>
+    </form>
     {% endif %}
   </div>
 
