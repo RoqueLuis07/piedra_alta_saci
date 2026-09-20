@@ -154,6 +154,16 @@
   .aviso-pendiente { border-left: 3px solid var(--dorado); background: var(--aviso-fondo); color: var(--aviso-texto); font-size: 12.5px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
   .error { border-left: 3px solid var(--error-texto); background: var(--error-fondo); color: var(--error-texto); font-size: 13px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
 
+  /* El lienzo para dibujar una marca a mano queda siempre blanco (así se ve
+     igual que el trazo negro sobre papel de una marca real) en los dos temas
+     -- todo lo demás adentro necesita texto oscuro fijo, si no hereda el
+     texto claro del tema oscuro y desaparece sobre ese fondo blanco. */
+  .panel-dibujo, .panel-dibujo .sub, .panel-dibujo label { color: var(--sobre-claro); }
+  .panel-dibujo canvas { border-color: var(--sobre-claro) !important; }
+  .panel-dibujo select { border-color: var(--sobre-claro); background: #fff; color: var(--sobre-claro); }
+  .panel-dibujo .boton:not(.boton-primario) { border-color: var(--sobre-claro); color: var(--sobre-claro); }
+  .panel-dibujo .boton:not(.boton-primario):hover { border-color: var(--verde-oscuro); color: var(--verde-oscuro); }
+
   @media (max-width: 760px) {
     .shell { flex-direction: column; }
     .nav, html.nav-colapsado .nav { width: 100%; flex-basis: auto; height: auto; position: static; overflow: visible; flex-direction: row; flex-wrap: wrap; }

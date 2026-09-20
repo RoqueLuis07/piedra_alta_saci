@@ -14,7 +14,7 @@
   </p>
 
   {% if borrador %}
-  <div style="margin-top: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--borde-suave); padding: 12px 16px; background: var(--fondo-resaltado, #f7f5f0);">
+  <div style="margin-top: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--borde-suave); padding: 12px 16px; background: var(--tabla-hover);">
     <p class="sub" style="margin: 0;">
       Tenés un borrador guardado{% if borrador.guardado_en %} el {{ borrador.guardado_en[:16].replace('T', ' ') }}{% endif %} -- se restableció abajo.
     </p>
@@ -42,7 +42,7 @@
     <div id="previa-dominante-venta" style="display: flex; gap: 6px; margin-bottom: 14px;"></div>
     <details id="panel-dibujo-dominante-venta" style="margin-bottom: 14px; max-width: 420px;">
       <summary class="sub" style="cursor: pointer;">Dibujar a mano en vez de subir un archivo</summary>
-      <div style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
+      <div class="panel-dibujo" style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
         <canvas width="260" height="260" style="width: 100%; max-width: 260px; border: 1px solid var(--texto); touch-action: none; cursor: crosshair;"></canvas>
         <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
           <label class="sub" style="margin: 0;">Grosor
