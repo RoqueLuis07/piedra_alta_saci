@@ -6,8 +6,8 @@
 {% block contenido %}
 <div class="contenido">
   <div style="display: flex; gap: 0; margin-top: 22px; border-bottom: 1px solid var(--texto);">
-    <a href="{{ url_for('aprobaciones', vista='pendientes') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if vista == 'pendientes' %}background: var(--verde-oscuro); color: var(--fondo);{% else %}color: var(--texto-secundario);{% endif %}">PENDIENTES</a>
-    <a href="{{ url_for('aprobaciones', vista='historial') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if vista == 'historial' %}background: var(--verde-oscuro); color: var(--fondo);{% else %}color: var(--texto-secundario);{% endif %}">HISTORIAL</a>
+    <a href="{{ url_for('aprobaciones', vista='pendientes') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if vista == 'pendientes' %}background: var(--verde-oscuro); color: var(--sobre-oscuro);{% else %}color: var(--texto-secundario);{% endif %}">PENDIENTES</a>
+    <a href="{{ url_for('aprobaciones', vista='historial') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if vista == 'historial' %}background: var(--verde-oscuro); color: var(--sobre-oscuro);{% else %}color: var(--texto-secundario);{% endif %}">HISTORIAL</a>
   </div>
 
   {% if vista == 'pendientes' %}

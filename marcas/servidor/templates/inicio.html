@@ -35,11 +35,11 @@
   </div>
 
   {% if a_vencer %}
-  <div style="margin-top: 30px; border-left: 3px solid var(--dorado); background: #FBF3D9; padding: 16px 20px;">
-    <div style="font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; color: #7A6410;">Marcas por vencer (próximos 90 días)</div>
+  <div style="margin-top: 30px; border-left: 3px solid var(--dorado); background: var(--aviso-fondo); padding: 16px 20px;">
+    <div style="font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; color: var(--aviso-texto);">Marcas por vencer (próximos 90 días)</div>
     <div style="display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 10px;">
       {% for m in a_vencer %}
-      <a class="mono" style="font-size: 12.5px; color: #7A6410;" href="{{ url_for('ver_marca', codigo=m.codigo) }}">
+      <a class="mono" style="font-size: 12.5px; color: var(--aviso-texto);" href="{{ url_for('ver_marca', codigo=m.codigo) }}">
         {{ m.codigo }} — {{ m.propietarios.nombre if m.propietarios else 'sin propietario' }} · vence {{ m.vence_en }}
       </a>
       {% endfor %}

@@ -13,6 +13,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script>
   try { if (localStorage.getItem('nav-colapsado') === '1') document.documentElement.classList.add('nav-colapsado'); } catch (e) {}
+  try {
+    var temaGuardado = localStorage.getItem('tema');
+    var prefiereOscuro = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (temaGuardado === 'oscuro' || (!temaGuardado && prefiereOscuro)) document.documentElement.classList.add('oscuro');
+  } catch (e) {}
 </script>
 <style>
   :root {
@@ -25,16 +30,45 @@
     --borde-suave: #D8D8D0;
     --borde-fina: #E4E4DC;
     --superficie: #FFFFFF;
+    /* Texto fijo sobre superficies que son oscuras en los dos temas (nav,
+       encabezado de tabla, botón primario) -- a diferencia de --fondo, esto
+       NO se invierte en modo oscuro. */
+    --sobre-oscuro: #FAFAF7;
+    /* Lo mismo pero al revés: texto oscuro fijo sobre superficies que son
+       claras en los dos temas (el verde claro del hover de los botones). */
+    --sobre-claro: #14181A;
+    --tabla-hover: #F0F2EA;
+    --aviso-fondo: #FBF3D9;
+    --aviso-texto: #7A6410;
+    --error-fondo: #FBEFEF;
+    --error-texto: #a63244;
+    --estado-ok-texto: #3F6B2E;
+    --enlace: #1F4D34;
+  }
+  html.oscuro {
+    --fondo: #14181A;
+    --texto: #EDEDE8;
+    --texto-secundario: #97A199;
+    --borde-suave: #333B34;
+    --borde-fina: #262E28;
+    --superficie: #1B211D;
+    --tabla-hover: #1F2621;
+    --aviso-fondo: #3A2F12;
+    --aviso-texto: #E8C468;
+    --error-fondo: #3A1418;
+    --error-texto: #E68A96;
+    --estado-ok-texto: #8FCB6E;
+    --enlace: #8FCB6E;
   }
   * { box-sizing: border-box; border-radius: 0 !important; }
   html, body { margin: 0; padding: 0; background: var(--fondo); font-family: 'Public Sans', system-ui, sans-serif; color: var(--texto); -webkit-font-smoothing: antialiased; }
-  a { color: var(--verde-oscuro); text-decoration: underline; text-underline-offset: 2px; }
+  a { color: var(--enlace); text-decoration: underline; text-underline-offset: 2px; }
   a:hover { color: var(--verde-claro); }
   input, select, button { font-family: inherit; border-radius: 0; }
   .mono { font-family: 'IBM Plex Mono', monospace; }
   .shell { display: flex; align-items: stretch; min-height: 100vh; }
 
-  .nav { flex: 0 0 236px; align-self: flex-start; position: sticky; top: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; background: var(--verde-oscuro); color: var(--fondo); display: flex; flex-direction: column; transition: flex-basis .16s ease; }
+  .nav { flex: 0 0 236px; align-self: flex-start; position: sticky; top: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; background: var(--verde-oscuro); color: var(--sobre-oscuro); display: flex; flex-direction: column; transition: flex-basis .16s ease; }
   .nav-brand { padding: 22px 20px 18px; border-bottom: 1px solid rgba(250,250,247,0.22); }
   .nav-logo { width: 46px; display: block; margin-bottom: 12px; flex-shrink: 0; }
   .nav-titulo { font-family: 'Source Serif 4', serif; font-size: 14.5px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.2; white-space: nowrap; }
@@ -42,7 +76,7 @@
   .nav-seccion { padding: 18px 20px 8px; font-size: 9.5px; letter-spacing: 0.2em; color: rgba(250,250,247,0.55); white-space: nowrap; }
   .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; color: rgba(250,250,247,0.88); border: 0; border-left: 3px solid transparent; padding: 11px 20px; font-size: 13.5px; letter-spacing: 0.02em; cursor: pointer; text-decoration: none; box-sizing: border-box; }
   .nav-item:hover { background: rgba(127,174,107,0.28); color: rgba(250,250,247,0.95); }
-  .nav-item.activo { background: var(--verde-claro); color: var(--texto); border-left-color: var(--dorado); font-weight: 600; }
+  .nav-item.activo { background: var(--verde-claro); color: var(--sobre-claro); border-left-color: var(--dorado); font-weight: 600; }
   .nav-icono { width: 18px; height: 18px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; }
   .nav-icono svg { width: 18px; height: 18px; }
   .nav-texto { white-space: nowrap; overflow: hidden; }
@@ -50,6 +84,8 @@
   .nav-toggle { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0; border-top: 1px solid rgba(250,250,247,0.22); color: rgba(250,250,247,0.6); padding: 11px 20px; font-size: 11.5px; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; }
   .nav-toggle:hover { color: var(--dorado); }
   .nav-toggle .nav-icono svg { transition: transform .16s ease; }
+  html.oscuro .tema-icono-claro { display: none !important; }
+  html.oscuro .tema-icono-oscura { display: inline-flex !important; }
   .nav-pie { margin-top: auto; padding: 16px 20px; border-top: 1px solid rgba(250,250,247,0.22); font-size: 11px; line-height: 1.6; color: rgba(250,250,247,0.72); }
   .nav-pie button { background: transparent; border: 1px solid rgba(250,250,247,0.4); color: inherit; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-top: 8px; }
   .nav-pie button:hover { border-color: var(--dorado); color: var(--dorado); }
@@ -79,31 +115,31 @@
   h2.subtitulo { font-family: 'Source Serif 4', serif; font-size: 17px; font-weight: 600; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--texto); }
 
   table.registro { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.registro thead tr { background: var(--verde-oscuro); color: var(--fondo); }
+  table.registro thead tr { background: var(--verde-oscuro); color: var(--sobre-oscuro); }
   table.registro th { text-align: left; font-weight: 600; font-size: 9.5px; letter-spacing: 0.14em; padding: 8px 10px; }
   table.registro td { padding: 9px 10px; vertical-align: top; border-bottom: 1px solid var(--borde-fina); }
-  table.registro tr.seleccionada { background: var(--verde-oscuro); color: var(--fondo); }
+  table.registro tr.seleccionada { background: var(--verde-oscuro); color: var(--sobre-oscuro); }
   table.registro tr.seleccionada td { border-bottom-color: var(--verde-oscuro); }
   table.registro tr.seleccionada .sub { color: rgba(250,250,247,0.72) !important; }
-  table.registro tbody tr:hover:not(.seleccionada) { background: #F0F2EA; cursor: pointer; }
+  table.registro tbody tr:hover:not(.seleccionada) { background: var(--tabla-hover); cursor: pointer; }
   .sub { font-size: 11.5px; color: var(--texto-secundario); margin-top: 2px; }
 
   .estado { display: inline-block; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 6px; white-space: nowrap; }
-  .estado-activa { color: #3F6B2E; }
-  .estado-revisar { border: 1px solid var(--verde-claro); color: #3F6B2E; }
-  .estado-baja { border-bottom: 2px solid var(--dorado); color: #7A6410; }
+  .estado-activa { color: var(--estado-ok-texto); }
+  .estado-revisar { border: 1px solid var(--verde-claro); color: var(--estado-ok-texto); }
+  .estado-baja { border-bottom: 2px solid var(--dorado); color: var(--aviso-texto); }
 
   .boton { border: 1px solid var(--texto); background: transparent; color: var(--texto); padding: 11px 16px; font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; min-height: 44px; }
-  .boton:hover { border-color: var(--verde-claro); color: #3F6B2E; }
-  .boton-primario { background: var(--verde-oscuro); border-color: var(--verde-oscuro); color: var(--fondo); }
-  .boton-primario:hover { background: var(--verde-claro); border-color: var(--verde-claro); color: var(--texto); }
+  .boton:hover { border-color: var(--verde-claro); color: var(--estado-ok-texto); }
+  .boton-primario { background: var(--verde-oscuro); border-color: var(--verde-oscuro); color: var(--sobre-oscuro); }
+  .boton-primario:hover { background: var(--verde-claro); border-color: var(--verde-claro); color: var(--sobre-claro); }
 
   .campo-fila { display: flex; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--borde-fina); align-items: baseline; }
   .campo-etiqueta { flex: 0 0 118px; font-size: 11px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
   .campo-valor { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.5; }
 
   input[type=text], input[type=search] { border: 1px solid var(--texto); background: var(--superficie); padding: 9px 10px; font-size: 13.5px; font-family: 'IBM Plex Mono', monospace; }
-  textarea, select, input[type=number], input[type=email] { border: 1px solid var(--texto); background: var(--superficie); padding: 9px 10px; font-size: 13.5px; font-family: 'Public Sans', sans-serif; }
+  textarea, select, input[type=number], input[type=email], input[type=password], input[type=date] { border: 1px solid var(--texto); background: var(--superficie); padding: 9px 10px; font-size: 13.5px; font-family: 'Public Sans', sans-serif; }
 
   .campo-edicion { margin-bottom: 14px; }
   .campo-edicion label { display: block; font-size: 10.5px; letter-spacing: 0.1em; color: var(--texto-secundario); text-transform: uppercase; margin-bottom: 5px; }
@@ -115,8 +151,8 @@
   .paginado a.boton, .paginado span.boton-inactivo { padding: 7px 14px; font-size: 12px; min-height: auto; }
   .boton-inactivo { border: 1px solid var(--borde-suave); color: var(--borde-suave); padding: 7px 14px; font-size: 12px; display: inline-block; }
 
-  .aviso-pendiente { border-left: 3px solid var(--dorado); background: #FBF3D9; color: #7A6410; font-size: 12.5px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
-  .error { border-left: 3px solid #a63244; background: #FBEFEF; color: #a63244; font-size: 13px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
+  .aviso-pendiente { border-left: 3px solid var(--dorado); background: var(--aviso-fondo); color: var(--aviso-texto); font-size: 12.5px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
+  .error { border-left: 3px solid var(--error-texto); background: var(--error-fondo); color: var(--error-texto); font-size: 13px; line-height: 1.6; padding: 10px 14px; margin: 16px 0; }
 
   @media (max-width: 760px) {
     .shell { flex-direction: column; }
@@ -178,6 +214,11 @@
         <span class="nav-texto">Usuarios</span>
       </a>
       {% endif %}
+      <button type="button" class="nav-toggle" id="tema-toggle" title="Cambiar entre modo claro y oscuro">
+        <span class="nav-icono tema-icono-claro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg></span>
+        <span class="nav-icono tema-icono-oscura" style="display: none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></span>
+        <span class="nav-texto tema-texto">Modo oscuro</span>
+      </button>
       <button type="button" class="nav-toggle" id="nav-toggle" title="Contraer / expandir menú">
         <span class="nav-icono" id="nav-toggle-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></span>
         <span class="nav-texto">Contraer menú</span>
@@ -207,6 +248,20 @@
     boton.addEventListener('click', function () {
       var colapsado = document.documentElement.classList.toggle('nav-colapsado');
       try { localStorage.setItem('nav-colapsado', colapsado ? '1' : '0'); } catch (e) {}
+    });
+  })();
+  (function () {
+    var boton = document.getElementById('tema-toggle');
+    var texto = boton && boton.querySelector('.tema-texto');
+    if (!boton || !texto) return;
+    function actualizarTexto() {
+      texto.textContent = document.documentElement.classList.contains('oscuro') ? 'Modo claro' : 'Modo oscuro';
+    }
+    actualizarTexto();
+    boton.addEventListener('click', function () {
+      var oscuro = document.documentElement.classList.toggle('oscuro');
+      try { localStorage.setItem('tema', oscuro ? 'oscuro' : 'claro'); } catch (e) {}
+      actualizarTexto();
     });
   })();
 </script>

@@ -27,7 +27,7 @@
     <div class="campo-edicion" style="flex: 1 1 180px; margin-bottom: 0;"><label>Nombre</label><input type="text" name="nombre" required></div>
     <div class="campo-edicion" style="flex: 0 0 auto; margin-bottom: 0;">
       <label>Rol</label>
-      <select name="rol" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 150px;">
+      <select name="rol" style="border: 1px solid var(--texto); background: var(--superficie); color: var(--texto); padding: 9px 10px; font-size: 13px; min-width: 150px;">
         {% for r in ['consulta', 'operador', 'administrador'] %}
         <option value="{{ r }}">{{ {'consulta': 'Consulta', 'operador': 'Operador', 'administrador': 'Administrador'}.get(r, r) }}</option>
         {% endfor %}
@@ -50,7 +50,7 @@
 
       <label style="margin: 0; flex: 0 0 auto;">
         <span class="etiqueta" style="display: block; margin-bottom: 6px;">ROL</span>
-        <select name="rol" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 150px;">
+        <select name="rol" style="border: 1px solid var(--texto); background: var(--superficie); color: var(--texto); padding: 9px 10px; font-size: 13px; min-width: 150px;">
           {% for r in ['consulta', 'operador', 'administrador'] %}
           <option value="{{ r }}" {% if u.rol == r %}selected{% endif %}>{{ {'consulta': 'Consulta', 'operador': 'Operador', 'administrador': 'Administrador'}.get(r, r) }}</option>
           {% endfor %}
@@ -59,7 +59,7 @@
 
       <label style="margin: 0; flex: 0 0 auto;">
         <span class="etiqueta" style="display: block; margin-bottom: 6px;">ESTADO</span>
-        <select name="activo" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 120px;">
+        <select name="activo" style="border: 1px solid var(--texto); background: var(--superficie); color: var(--texto); padding: 9px 10px; font-size: 13px; min-width: 120px;">
           <option value="1" {% if u.activo %}selected{% endif %}>Activo</option>
           <option value="0" {% if not u.activo %}selected{% endif %}>Inactivo</option>
         </select>
@@ -67,7 +67,7 @@
 
       <label style="margin: 0; flex: 0 0 auto;">
         <span class="etiqueta" style="display: block; margin-bottom: 6px;">RESETEAR CONTRASEÑA</span>
-        <input type="password" name="nueva_contrasena" placeholder="Dejar vacío para no cambiarla" minlength="6" style="border: 1px solid var(--texto); background: #fff; padding: 9px 10px; font-size: 13px; min-width: 200px;">
+        <input type="password" name="nueva_contrasena" placeholder="Dejar vacío para no cambiarla" minlength="6" style="border: 1px solid var(--texto); background: var(--superficie); color: var(--texto); padding: 9px 10px; font-size: 13px; min-width: 200px;">
       </label>
 
       <div style="flex: 0 0 auto; align-self: flex-end;">
