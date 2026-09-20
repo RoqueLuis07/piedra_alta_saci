@@ -44,8 +44,13 @@
     --error-texto: #a63244;
     --estado-ok-texto: #3F6B2E;
     --enlace: #1F4D34;
+    /* Le dice al navegador que esta página ya maneja los dos temas, para que
+       Chrome/Android no le aplique su propio "oscurecido automático" a los
+       controles nativos (select, checkboxes) por encima de nuestros colores. */
+    color-scheme: light;
   }
   html.oscuro {
+    color-scheme: dark;
     --fondo: #14181A;
     --texto: #EDEDE8;
     --texto-secundario: #97A199;
@@ -158,8 +163,13 @@
      igual que el trazo negro sobre papel de una marca real) en los dos temas
      -- todo lo demás adentro necesita texto oscuro fijo, si no hereda el
      texto claro del tema oscuro y desaparece sobre ese fondo blanco. */
+  .panel-dibujo { color-scheme: light; }
   .panel-dibujo, .panel-dibujo .sub, .panel-dibujo label { color: var(--sobre-claro); }
-  .panel-dibujo canvas { border-color: var(--sobre-claro) !important; }
+  /* box-sizing: content-box para que el borde quede afuera del lienzo de
+     260x260 en vez de superponerse y recortar visualmente el borde del
+     dibujo (con el "border-box" general de la página, el borde comía un
+     par de píxeles del área donde sí se podía dibujar). */
+  .panel-dibujo canvas { border-color: var(--sobre-claro) !important; box-sizing: content-box; }
   .panel-dibujo select { border-color: var(--sobre-claro); background: #fff; color: var(--sobre-claro); }
   .panel-dibujo .boton:not(.boton-primario) { border-color: var(--sobre-claro); color: var(--sobre-claro); }
   .panel-dibujo .boton:not(.boton-primario):hover { border-color: var(--verde-oscuro); color: var(--verde-oscuro); }
