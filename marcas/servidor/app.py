@@ -15,6 +15,7 @@ import io
 import os
 import re
 import tempfile
+import zipfile
 
 import click
 from datetime import datetime, timedelta, timezone
@@ -58,10 +59,12 @@ from marcas.servidor.consultas import (
     crear_operacion,
     crear_usuario,
     desglose_marcas,
+    dict_a_json,
     eliminar_borrador_venta,
     estadisticas,
     exportar_marcas,
     exportar_operaciones,
+    exportar_todo_para_respaldo,
     ficha_marca,
     guardar_borrador_venta,
     historial_cambios_resueltos,
@@ -1078,6 +1081,29 @@ def crear_app() -> Flask:
         return render_template(
             "panel.html", activo="panel", usuarios=usuarios, perfil=perfil_actual(), error=None
         )
+
+    @app.get("/panel/respaldo.zip")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def respaldo_completo():
+        conexion = conexion_actual()
+        datos = exportar_todo_para_respaldo(conexion)
+        ahora = datetime.now(timezone.utc)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for tabla, filas in datos.items():
+                zf.writestr(f"{tabla}.json", dict_a_json(filas))
+            zf.writestr(
+                "manifiesto.json",
+                dict_a_json({
+                    "generado_en": ahora,
+                    "generado_por": perfil_actual()["email"],
+                    "cantidades": {tabla: len(filas) for tabla, filas in datos.items()},
+                }),
+            )
+        buffer.seek(0)
+        nombre = f"respaldo_piedra_alta_{ahora.strftime('%Y%m%d_%H%M%S')}.zip"
+        return send_file(buffer, as_attachment=True, download_name=nombre, mimetype="application/zip")
 
     @app.post("/panel/usuarios")
     @requiere_sesion

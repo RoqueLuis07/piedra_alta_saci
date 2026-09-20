@@ -12,6 +12,14 @@
 
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
+  <div style="margin-top: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border: 1px solid var(--borde-suave); padding: 14px 18px;">
+    <div style="flex: 1 1 320px; min-width: 0;">
+      <div style="font-weight: 600;">Respaldo completo</div>
+      <div class="sub">Descarga un .zip con todos los datos del sistema en JSON. Incluye las contraseñas encriptadas de todas las cuentas -- guardalo en un lugar seguro, no lo compartas.</div>
+    </div>
+    <a class="boton boton-primario" href="{{ url_for('respaldo_completo') }}" style="min-height: auto; padding: 9px 20px;">Descargar respaldo completo</a>
+  </div>
+
   <h2 class="subtitulo" style="margin-top: 28px;">Nueva cuenta</h2>
   <form method="post" action="{{ url_for('crear_usuario_ruta') }}" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; max-width: 720px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

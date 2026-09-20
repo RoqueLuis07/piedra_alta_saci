@@ -11,8 +11,9 @@ saliendo como ``dict``, igual que antes.
 from __future__ import annotations
 
 import base64
+import json
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import psycopg2
 from flask import url_for
@@ -914,3 +915,58 @@ def actualizar_usuario_campos(conexion, usuario_id: str, campos: dict) -> None:
     columnas = ", ".join(f"{c} = %({c})s" for c in campos)
     with conexion.cursor() as cur:
         cur.execute(f"UPDATE usuarios SET {columnas} WHERE id = %(_id)s", {**campos, "_id": usuario_id})
+
+
+_CAMPOS_BYTEA_MARCAS = ("archivo_png", "archivo_svg")
+_CAMPOS_BYTEA_OPERACIONES = ("borrador_pdf", "borrador_dominante_png")
+
+
+def exportar_todo_para_respaldo(conexion) -> dict:
+    """Todo el contenido de la base, listo para guardar como respaldo.
+
+    Incluye ``password_hash`` de cada usuario -- sin eso, un respaldo sirve
+    para mirar datos viejos pero no para de verdad recuperar el sistema
+    (nadie podría loguearse). Las columnas ``bytea`` (imágenes de marca,
+    PDF/Dominante de un borrador de venta) se codifican en base64 para
+    poder ir en JSON.
+    """
+    with conexion.cursor() as cur:
+        cur.execute("SELECT * FROM usuarios ORDER BY creado_en")
+        usuarios = cur.fetchall()
+        cur.execute("SELECT * FROM propietarios ORDER BY id")
+        propietarios = cur.fetchall()
+        cur.execute("SELECT * FROM operaciones ORDER BY id")
+        operaciones = cur.fetchall()
+        cur.execute("SELECT * FROM marcas ORDER BY id")
+        marcas = cur.fetchall()
+        cur.execute("SELECT * FROM cambios_pendientes ORDER BY id")
+        cambios_pendientes = cur.fetchall()
+
+    for m in marcas:
+        for campo in _CAMPOS_BYTEA_MARCAS:
+            if m.get(campo) is not None:
+                m[campo] = base64.b64encode(bytes(m[campo])).decode("ascii")
+    for o in operaciones:
+        for campo in _CAMPOS_BYTEA_OPERACIONES:
+            if o.get(campo) is not None:
+                o[campo] = base64.b64encode(bytes(o[campo])).decode("ascii")
+
+    return {
+        "usuarios": usuarios,
+        "propietarios": propietarios,
+        "operaciones": operaciones,
+        "marcas": marcas,
+        "cambios_pendientes": cambios_pendientes,
+    }
+
+
+def _json_default(valor):
+    if isinstance(valor, (datetime, date)):
+        return valor.isoformat()
+    raise TypeError(f"No se puede convertir a JSON: {type(valor)!r}")
+
+
+def dict_a_json(datos) -> str:
+    """``json.dumps`` con las fechas de Postgres ya resueltas -- lo usan
+    tanto la descarga manual del Panel como el script de respaldo a GitHub."""
+    return json.dumps(datos, ensure_ascii=False, indent=2, default=_json_default)
