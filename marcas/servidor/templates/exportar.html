@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block titulo %}Exportar{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · EXPORTAR A EXCEL{% endblock %}
+{% block titulo_pagina %}Exportar{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 66ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Filtrá lo que necesites, tildá los registros que van al informe (por defecto quedan todos marcados) y generá una
+    planilla Excel prolija -- encabezados en negrita, columnas con ancho ajustado y fechas con formato real.
+  </p>
+
+  <div style="display: flex; gap: 0; margin-top: 22px; border-bottom: 1px solid var(--texto);">
+    <a href="{{ url_for('exportar', seccion='operaciones') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if seccion == 'operaciones' %}background: var(--verde-oscuro); color: var(--sobre-oscuro);{% else %}color: var(--texto-secundario);{% endif %}">GUÍAS Y VENTAS</a>
+    <a href="{{ url_for('exportar', seccion='marcas') }}" style="padding: 8px 16px; text-decoration: none; font-size: 12.5px; letter-spacing: 0.04em; {% if seccion == 'marcas' %}background: var(--verde-oscuro); color: var(--sobre-oscuro);{% else %}color: var(--texto-secundario);{% endif %}">MARCAS</a>
+  </div>
+
+  <form method="get" action="{{ url_for('exportar') }}" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 20px;">
+    <input type="hidden" name="seccion" value="{{ seccion }}">
+    <div style="flex: 1 1 260px; min-width: 0;">
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">{{ 'N.º DE GUÍA, VENDEDOR O COMPRADOR' if seccion == 'operaciones' else 'CÓDIGO, PROPIETARIO O N.º DE GUÍA' }}</span>
+      <input type="text" name="q" value="{{ filtros.q }}" style="width: 100%;">
+    </div>
+    {% if seccion == 'operaciones' %}
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">TIPO DE OPERACIÓN</span>
+      <select name="tipo_operacion">
+        <option value="">Ambas</option>
+        <option value="compra" {% if filtros.tipo_operacion == 'compra' %}selected{% endif %}>Compra</option>
+        <option value="venta" {% if filtros.tipo_operacion == 'venta' %}selected{% endif %}>Venta</option>
+      </select>
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">ESTADO</span>
+      <select name="estado">
+        <option value="">Todos</option>
+        <option value="al_dia" {% if filtros.estado == 'al_dia' %}selected{% endif %}>Al día</option>
+        <option value="revisar" {% if filtros.estado == 'revisar' %}selected{% endif %}>Revisar</option>
+        <option value="colisiona" {% if filtros.estado == 'colisiona' %}selected{% endif %}>Colisiona</option>
+      </select>
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">CARGADA DESDE</span>
+      <input type="date" name="desde" value="{{ filtros.desde }}">
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">HASTA</span>
+      <input type="date" name="hasta" value="{{ filtros.hasta }}">
+    </div>
+    {% else %}
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">TIPO</span>
+      <select name="tipo">
+        <option value="">Todos</option>
+        <option value="dominante" {% if filtros.tipo == 'dominante' %}selected{% endif %}>Dominante</option>
+        <option value="complementaria" {% if filtros.tipo == 'complementaria' %}selected{% endif %}>Complementaria</option>
+      </select>
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">ESTADO</span>
+      <select name="estado">
+        <option value="">Todos</option>
+        <option value="activa" {% if filtros.estado == 'activa' %}selected{% endif %}>Al día</option>
+        <option value="revisar" {% if filtros.estado == 'revisar' %}selected{% endif %}>Revisar</option>
+        <option value="baja" {% if filtros.estado == 'baja' %}selected{% endif %}>De baja</option>
+      </select>
+    </div>
+    {% endif %}
+    <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
+  </form>
+
+  <div class="mono" style="font-size: 11px; color: var(--texto-secundario); margin-top: 16px;">
+    {% if total > resultados|length %}
+    MOSTRANDO LOS PRIMEROS {{ limite }} DE {{ total }} RESULTADOS -- REFINÁ LOS FILTROS PARA VER EL RESTO
+    {% else %}
+    {{ total }} RESULTADO{{ '' if total == 1 else 'S' }}
+    {% endif %}
+  </div>
+
+  <form method="post" action="{{ url_for('exportar_operaciones_xlsx' if seccion == 'operaciones' else 'exportar_marcas_xlsx') }}" id="form-exportar">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; flex-wrap: wrap; gap: 10px;">
+      <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 0;">
+        <input type="checkbox" id="marcar-todos" checked style="width: auto;">
+        Seleccionar / deseleccionar todos
+      </label>
+      <button type="submit" class="boton boton-primario" style="min-height: auto;" {% if not resultados %}disabled{% endif %}>Exportar seleccionados a Excel &darr;</button>
+    </div>
+
+    <table class="registro" style="margin-top: 12px;">
+      {% if seccion == 'operaciones' %}
+      <thead>
+        <tr>
+          <th style="width: 30px;"></th>
+          <th>TIPO</th>
+          <th>FECHA</th>
+          <th>N.º DE GUÍA</th>
+          <th>VENDEDOR</th>
+          <th>COMPRADOR</th>
+          <th>CANTIDAD</th>
+          <th>ESTADO</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in resultados %}
+        <tr>
+          <td><input type="checkbox" class="fila-exportar" name="ids" value="{{ o.id }}" checked style="width: auto;"></td>
+          <td>{{ 'Venta' if o.tipo_operacion == 'venta' else 'Compra' }}</td>
+          <td class="mono" style="white-space: nowrap;">{{ o.fecha or '—' }}</td>
+          <td class="mono" style="white-space: nowrap;">{{ o.numero_guia or '—' }}</td>
+          <td>{{ o.vendedor_nombre or 'Sin identificar' }}</td>
+          <td>{{ o.comprador_nombre or '—' }}</td>
+          <td class="mono">{{ o.cantidad_animales if o.cantidad_animales is not none else '—' }}</td>
+          <td>
+            {% if o.guia_colisionada %}<span class="estado estado-revisar">COLISIONA</span>
+            {% elif o.revisar %}<span class="estado estado-revisar">REVISAR</span>
+            {% else %}<span class="estado estado-activa">AL DÍA</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados para estos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% else %}
+      <thead>
+        <tr>
+          <th style="width: 30px;"></th>
+          <th>CÓDIGO</th>
+          <th>TIPO</th>
+          <th>PROPIETARIO</th>
+          <th>N.º DE GUÍA</th>
+          <th>VENCE</th>
+          <th>ESTADO</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in resultados %}
+        <tr>
+          <td><input type="checkbox" class="fila-exportar" name="ids" value="{{ m.id }}" checked style="width: auto;"></td>
+          <td class="mono" style="white-space: nowrap;">{{ m.codigo }}</td>
+          <td>{{ 'Complementaria' if m.tipo == 'complementaria' else 'Dominante' }}</td>
+          <td>
+            <div style="font-weight: 500;">{{ m.propietarios.nombre if m.propietarios else 'Sin identificar' }}</div>
+            <div class="sub">{{ m.propietarios.documento if m.propietarios else '' }}</div>
+          </td>
+          <td class="mono" style="white-space: nowrap;">{{ m.operaciones.numero_guia if m.operaciones else '—' }}</td>
+          <td class="mono" style="white-space: nowrap;">{{ m.vence_en or '—' }}</td>
+          <td>
+            <span class="estado estado-{{ m.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados para estos filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% endif %}
+    </table>
+  </form>
+</div>
+<script>
+  (function () {
+    var maestro = document.getElementById('marcar-todos');
+    var filas = document.querySelectorAll('.fila-exportar');
+    if (!maestro) return;
+    maestro.addEventListener('change', function () {
+      filas.forEach(function (casilla) { casilla.checked = maestro.checked; });
+    });
+  })();
+</script>
+{% endblock %}

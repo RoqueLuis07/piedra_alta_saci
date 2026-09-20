@@ -2,7 +2,6 @@
 {% set modo = modo or 'compra' %}
 {% set ruta_lista = 'ventas' if modo == 'venta' else 'guias' %}
 {% set ruta_nueva = 'nueva_venta' if modo == 'venta' else 'nueva_guia' %}
-{% set ruta_exportar = 'exportar_ventas_csv' if modo == 'venta' else 'exportar_guias_csv' %}
 {% block titulo %}{{ 'Ventas' if modo == 'venta' else 'Guías' }}{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · {{ 'VENTAS' if modo == 'venta' else 'GUÍAS DE TRASLADO' }}{% endblock %}
 {% block titulo_pagina %}{{ 'Ventas' if modo == 'venta' else 'Guías' }}{% endblock %}
@@ -48,7 +47,7 @@
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
   <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
-    <a href="{{ url_for(ruta_exportar, q=texto, estado=estado, desde=desde, hasta=hasta) }}">Exportar a CSV &darr;</a>
+    <a href="{{ url_for('exportar', seccion='operaciones', tipo_operacion=modo, q=texto, estado=estado, desde=desde, hasta=hasta) }}">Exportar a Excel &darr;</a>
   </div>
 
   <table class="registro" style="margin-top: 12px;">

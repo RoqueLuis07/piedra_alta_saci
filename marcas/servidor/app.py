@@ -10,7 +10,6 @@ antes con Supabase, así que estos decoradores son la única barrera real.
 from __future__ import annotations
 
 import base64
-import csv
 import io
 import os
 import re
@@ -18,14 +17,17 @@ import tempfile
 import zipfile
 
 import click
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf import CSRFProtect
 from flask_wtf.csrf import CSRFError
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from marcas.pdf.guia import completar_guia, completar_venta
 from marcas.servidor.auth import (
@@ -43,6 +45,7 @@ from marcas.servidor.consultas import (
     CAMPOS_MARCA_EDITABLES,
     CAMPOS_OPERACION_EDITABLES,
     CAMPOS_PROPIETARIO_EDITABLES,
+    LIMITE_EXPORTAR,
     POR_PAGINA_MARCAS,
     POR_PAGINA_PROPIETARIOS,
     ErrorResolverCambio,
@@ -106,6 +109,47 @@ def _error_seguro(mensaje: str, exc: Exception):
 
 def _registro_no_encontrado(mensaje: str):
     return render_template("error_simple.html", titulo="No encontrado", mensaje=mensaje), 404
+
+
+def _fecha_sin_tz(valor):
+    """openpyxl no admite datetimes con huso horario (falla al guardar el
+    .xlsx) -- ``creado_en`` es timestamptz, así que hay que sacarle el tzinfo
+    antes de escribirlo en una celda."""
+    if isinstance(valor, datetime) and valor.tzinfo is not None:
+        return valor.replace(tzinfo=None)
+    return valor
+
+
+def _libro_excel(nombre_hoja: str, encabezados: list[str], filas: list[list]) -> io.BytesIO:
+    """Arma un .xlsx prolijo para presentar como informe -- encabezado en
+    negrita con fondo verde, congelado arriba, columnas con ancho ajustado
+    al contenido y fechas con formato real (no todo como texto plano, como
+    quedaba en el CSV viejo)."""
+    libro = Workbook()
+    hoja = libro.active
+    hoja.title = nombre_hoja[:31]
+    hoja.append(encabezados)
+    for celda in hoja[1]:
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill("solid", fgColor="1F4D34")
+        celda.alignment = Alignment(vertical="center")
+    hoja.freeze_panes = "A2"
+    for fila in filas:
+        hoja.append(fila)
+    for fila_celdas in hoja.iter_rows(min_row=2):
+        for celda in fila_celdas:
+            if isinstance(celda.value, datetime):
+                celda.number_format = "DD/MM/YYYY HH:MM"
+            elif isinstance(celda.value, date):
+                celda.number_format = "DD/MM/YYYY"
+    for indice, encabezado in enumerate(encabezados):
+        valores = [encabezado] + [fila[indice] for fila in filas]
+        ancho = max((len(str(v)) for v in valores if v is not None), default=0)
+        hoja.column_dimensions[get_column_letter(indice + 1)].width = min(max(ancho + 2, 10), 42)
+    buffer = io.BytesIO()
+    libro.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 
 def crear_app() -> Flask:
@@ -316,36 +360,6 @@ def crear_app() -> Flask:
             perfil=perfil_actual(),
         )
 
-    @app.get("/marcas/exportar.csv")
-    @requiere_sesion
-    def exportar_marcas_csv():
-        conexion = conexion_actual()
-        try:
-            filas = exportar_marcas(
-                conexion,
-                texto=request.args.get("q") or None,
-                estado=request.args.get("estado") or None,
-                tipo=request.args.get("tipo") or None,
-            )
-        except Exception as exc:
-            return _error_seguro("No se pudo generar el archivo.", exc)
-        buffer = io.StringIO()
-        escritor = csv.writer(buffer)
-        escritor.writerow(["codigo", "tipo", "estado", "vence_en", "propietario", "documento", "numero_guia", "fecha"])
-        for m in filas:
-            propietario = m.get("propietarios") or {}
-            operacion = m.get("operaciones") or {}
-            escritor.writerow([
-                m.get("codigo"), m.get("tipo"), m.get("estado"), m.get("vence_en") or "",
-                propietario.get("nombre") or "", propietario.get("documento") or "",
-                operacion.get("numero_guia") or "", operacion.get("fecha") or "",
-            ])
-        return Response(
-            buffer.getvalue(),
-            mimetype="text/csv",
-            headers={"Content-Disposition": "attachment; filename=marcas.csv"},
-        )
-
     @app.get("/marcas/<codigo>")
     @requiere_sesion
     def ver_marca(codigo: str):
@@ -496,76 +510,114 @@ def crear_app() -> Flask:
             perfil=perfil_actual(),
         )
 
-    @app.get("/guias/exportar.csv")
+    @app.get("/exportar")
     @requiere_sesion
-    def exportar_guias_csv():
+    def exportar():
         conexion = conexion_actual()
-        try:
-            filas = exportar_operaciones(
-                conexion,
-                texto=request.args.get("q") or None,
-                estado=request.args.get("estado") or None,
-                creada_desde=request.args.get("desde") or None,
-                creada_hasta=request.args.get("hasta") or None,
-                tipo_operacion="compra",
+        seccion = request.args.get("seccion") or "operaciones"
+        if seccion not in ("operaciones", "marcas"):
+            seccion = "operaciones"
+        texto = request.args.get("q") or None
+        estado = request.args.get("estado") or None
+        resultados = []
+        total = 0
+        if seccion == "marcas":
+            tipo = request.args.get("tipo") or None
+            resultados, total = buscar_marcas(
+                conexion, texto, pagina=1, por_pagina=LIMITE_EXPORTAR, estado=estado, tipo=tipo
             )
-        except Exception as exc:
-            return _error_seguro("No se pudo generar el archivo.", exc)
-        buffer = io.StringIO()
-        escritor = csv.writer(buffer)
-        escritor.writerow([
-            "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento", "comprador_nombre",
-            "comprador_documento", "cantidad_animales", "categoria_animales", "revisar",
-            "guia_colisionada", "creado_en",
-        ])
-        for o in filas:
-            escritor.writerow([
-                o.get("numero_guia") or "", o.get("fecha") or "", o.get("vendedor_nombre") or "",
-                o.get("vendedor_documento") or "", o.get("comprador_nombre") or "",
-                o.get("comprador_documento") or "", o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
-                o.get("categoria_animales") or "", o.get("revisar") or "",
-                "si" if o.get("guia_colisionada") else "no", o.get("creado_en") or "",
-            ])
-        return Response(
-            buffer.getvalue(),
-            mimetype="text/csv",
-            headers={"Content-Disposition": "attachment; filename=guias.csv"},
+            filtros = {"q": texto or "", "estado": estado or "", "tipo": tipo or ""}
+        else:
+            tipo_operacion = request.args.get("tipo_operacion") or None
+            if tipo_operacion not in ("compra", "venta"):
+                tipo_operacion = None
+            desde = request.args.get("desde") or None
+            hasta = request.args.get("hasta") or None
+            resultados, total = listar_operaciones_paginado(
+                conexion, pagina=1, por_pagina=LIMITE_EXPORTAR, texto=texto, estado=estado,
+                creada_desde=desde, creada_hasta=hasta, tipo_operacion=tipo_operacion,
+            )
+            filtros = {
+                "q": texto or "", "estado": estado or "", "tipo_operacion": tipo_operacion or "",
+                "desde": desde or "", "hasta": hasta or "",
+            }
+        return render_template(
+            "exportar.html",
+            activo="exportar",
+            seccion=seccion,
+            resultados=resultados,
+            total=total,
+            limite=LIMITE_EXPORTAR,
+            filtros=filtros,
+            perfil=perfil_actual(),
         )
 
-    @app.get("/ventas/exportar.csv")
+    @app.post("/exportar/operaciones.xlsx")
     @requiere_sesion
-    def exportar_ventas_csv():
+    def exportar_operaciones_xlsx():
         conexion = conexion_actual()
+        ids = [int(v) for v in request.form.getlist("ids") if v.isdigit()]
+        if not ids:
+            return _error_seguro("Marcá al menos un registro para exportar.", ValueError("sin ids"))
         try:
-            filas = exportar_operaciones(
-                conexion,
-                texto=request.args.get("q") or None,
-                estado=request.args.get("estado") or None,
-                creada_desde=request.args.get("desde") or None,
-                creada_hasta=request.args.get("hasta") or None,
-                tipo_operacion="venta",
-            )
+            filas = exportar_operaciones(conexion, ids=ids)
         except Exception as exc:
-            return _error_seguro("No se pudo generar el archivo.", exc)
-        buffer = io.StringIO()
-        escritor = csv.writer(buffer)
-        escritor.writerow([
-            "numero_guia", "fecha", "vendedor_nombre", "vendedor_documento", "comprador_nombre",
-            "comprador_documento", "cantidad_animales", "categoria_animales", "revisar",
-            "guia_colisionada", "creado_en",
-        ])
-        for o in filas:
-            escritor.writerow([
+            return _error_seguro("No se pudo generar la planilla.", exc)
+        etiquetas_tipo = {"compra": "Compra", "venta": "Venta"}
+        cuerpo = [
+            [
+                etiquetas_tipo.get(o.get("tipo_operacion"), o.get("tipo_operacion") or ""),
                 o.get("numero_guia") or "", o.get("fecha") or "", o.get("vendedor_nombre") or "",
                 o.get("vendedor_documento") or "", o.get("comprador_nombre") or "",
-                o.get("comprador_documento") or "", o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
+                o.get("comprador_documento") or "",
+                o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
                 o.get("categoria_animales") or "", o.get("revisar") or "",
-                "si" if o.get("guia_colisionada") else "no", o.get("creado_en") or "",
+                "Sí" if o.get("guia_colisionada") else "No", _fecha_sin_tz(o.get("creado_en")),
+            ]
+            for o in filas
+        ]
+        buffer = _libro_excel(
+            "Guías y ventas",
+            ["Tipo", "N° de guía", "Fecha", "Vendedor", "Doc. vendedor", "Comprador", "Doc. comprador",
+             "Cantidad", "Categoría", "Revisar", "Colisiona", "Creado en"],
+            cuerpo,
+        )
+        return send_file(
+            buffer, as_attachment=True, download_name="guias_y_ventas.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    @app.post("/exportar/marcas.xlsx")
+    @requiere_sesion
+    def exportar_marcas_xlsx():
+        conexion = conexion_actual()
+        ids = [int(v) for v in request.form.getlist("ids") if v.isdigit()]
+        if not ids:
+            return _error_seguro("Marcá al menos un registro para exportar.", ValueError("sin ids"))
+        try:
+            filas = exportar_marcas(conexion, ids=ids)
+        except Exception as exc:
+            return _error_seguro("No se pudo generar la planilla.", exc)
+        etiquetas_tipo = {"dominante": "Dominante", "complementaria": "Complementaria"}
+        etiquetas_estado = {"activa": "Al día", "revisar": "Revisar", "baja": "De baja"}
+        cuerpo = []
+        for m in filas:
+            propietario = m.get("propietarios") or {}
+            operacion = m.get("operaciones") or {}
+            cuerpo.append([
+                m.get("codigo") or "", etiquetas_tipo.get(m.get("tipo"), m.get("tipo") or ""),
+                etiquetas_estado.get(m.get("estado"), m.get("estado") or ""), m.get("vence_en") or "",
+                propietario.get("nombre") or "", propietario.get("documento") or "",
+                operacion.get("numero_guia") or "", operacion.get("fecha") or "",
             ])
-        return Response(
-            buffer.getvalue(),
-            mimetype="text/csv",
-            headers={"Content-Disposition": "attachment; filename=ventas.csv"},
+        buffer = _libro_excel(
+            "Marcas",
+            ["Código", "Tipo", "Estado", "Vence", "Propietario", "Documento", "N° de guía", "Fecha"],
+            cuerpo,
+        )
+        return send_file(
+            buffer, as_attachment=True, download_name="marcas.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     @app.get("/guias/nueva")

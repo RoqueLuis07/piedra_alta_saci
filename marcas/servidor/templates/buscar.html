@@ -43,7 +43,7 @@
       {{ total }} ASIENTO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
       {% endif %}
     </div>
-    <a href="{{ url_for('exportar_marcas_csv', q=texto, estado=estado, tipo=tipo) }}">Exportar a CSV &darr;</a>
+    <a href="{{ url_for('exportar', seccion='marcas', q=texto, estado=estado, tipo=tipo) }}">Exportar a Excel &darr;</a>
   </div>
 
   <table class="registro">

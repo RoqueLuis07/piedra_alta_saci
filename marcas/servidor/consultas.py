@@ -22,6 +22,10 @@ from psycopg2.extras import Json
 POR_PAGINA_GUIAS = 40
 POR_PAGINA_MARCAS = 40
 POR_PAGINA_PROPIETARIOS = 40
+# Tope de filas que se muestran para elegir con checkbox en /exportar --
+# suficiente para el tamaño real de este registro y evita cargar una tabla
+# gigante en el navegador si alguien no filtra nada.
+LIMITE_EXPORTAR = 1000
 
 # Deben coincidir exactamente con lo que ``resolver_cambio_pendiente()``
 # vuelve a chequear al aplicar un cambio aprobado (defensa en profundidad) --
@@ -714,10 +718,16 @@ def exportar_operaciones(
     creada_desde: str | None = None,
     creada_hasta: str | None = None,
     tipo_operacion: str | None = None,
+    ids: list[int] | None = None,
 ) -> list[dict]:
-    """Todas las guías que cumplen el filtro activo (sin paginar), para el CSV."""
+    """Todas las guías/ventas que cumplen el filtro activo (sin paginar), para
+    la planilla. ``ids``, si se manda, restringe a exactamente esos
+    registros -- es lo que arma el paso de "elegir los ítems" en /exportar."""
     condiciones = []
     parametros: dict = {}
+    if ids is not None:
+        condiciones.append("id = ANY(%(ids)s::bigint[])")
+        parametros["ids"] = ids
     if tipo_operacion in ("compra", "venta"):
         condiciones.append("tipo_operacion = %(tipo_operacion)s")
         parametros["tipo_operacion"] = tipo_operacion
@@ -755,10 +765,20 @@ def exportar_operaciones(
         return cur.fetchall()
 
 
-def exportar_marcas(conexion, texto: str | None = None, estado: str | None = None, tipo: str | None = None) -> list[dict]:
-    """Todas las marcas que cumplen el filtro activo (sin paginar), para el CSV."""
+def exportar_marcas(
+    conexion,
+    texto: str | None = None,
+    estado: str | None = None,
+    tipo: str | None = None,
+    ids: list[int] | None = None,
+) -> list[dict]:
+    """Todas las marcas que cumplen el filtro activo (sin paginar), para la
+    planilla. ``ids``, si se manda, restringe a exactamente esos registros."""
     condiciones = []
     parametros: dict = {}
+    if ids is not None:
+        condiciones.append("m.id = ANY(%(ids)s::bigint[])")
+        parametros["ids"] = ids
     if estado in ("activa", "revisar", "baja"):
         condiciones.append("m.estado = %(estado)s")
         parametros["estado"] = estado
