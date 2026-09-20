@@ -5,12 +5,12 @@
 {% block meta_encabezado %}<a href="{{ url_for('ver_guia', operacion_id=operacion.id) }}">&larr; Volver al detalle</a>{% endblock %}
 
 {% block contenido %}
-<div class="contenido" style="max-width: 900px;">
-  <p style="max-width: 70ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+<div class="contenido" style="max-width: 1360px;">
+  <p style="max-width: 90ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
     Subí el PDF de la Guía de Traslado tal como lo descargás de SENACSA para esta venta. El sistema revisa qué casillas
     del Rubro 2 y del Anexo ya vienen ocupadas (la Dominante, si ya está puesta, no se toca) y completa el resto con
     las marcas complementarias que elijas de tu catálogo -- no se crean marcas nuevas, se transfieren las existentes.
-    Se aplica igual en las cuatro copias.
+    Se aplica igual en las cuatro copias. El panel de la izquierda se actualiza solo con cada marca que agregues.
   </p>
 
   {% if borrador %}
@@ -25,57 +25,95 @@
   </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('generar_venta_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data" style="margin-top: 24px;">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-
-    <h2 class="subtitulo">1. Subí el PDF de SENACSA</h2>
-    <div class="campo-edicion" style="max-width: 420px;">
-      <input type="file" name="pdf_guia" id="campo-pdf-venta" accept="application/pdf">
+  <div style="display: flex; gap: 32px; margin-top: 24px; align-items: flex-start; flex-wrap: wrap;" class="buscar-cols">
+    <div style="flex: 1 1 440px; min-width: 0;">
+      <h2 class="subtitulo">Vista previa en vivo</h2>
+      <div id="vp-cupo" class="sub" style="min-height: 16px;"></div>
+      <div id="vp-encabezado" style="font-size: 12.5px; line-height: 1.7; margin: 8px 0; display: none;">
+        <div><span class="etiqueta">VENDEDOR (leído del PDF)</span> <span id="vp-vendedor"></span></div>
+        <div><span class="etiqueta">COMPRADOR (leído del PDF)</span> <span id="vp-comprador"></span></div>
+      </div>
+      <div id="vp-error" class="error" style="display: none;"></div>
+      <div id="vp-paginas" style="border: 1px solid var(--borde-suave); min-height: 240px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--superficie);">
+        <p class="sub" style="margin: 0;">Subí el PDF para ver la vista previa.</p>
+      </div>
     </div>
-    <p class="sub" id="nota-pdf-restaurado" style="display: none; margin: 4px 0 0;"></p>
 
-    <h2 class="subtitulo" style="margin-top: 28px;">2. Marca Dominante (opcional)</h2>
-    <p class="sub" style="margin: 0 0 12px;">Si el PDF ya trae la Dominante dibujada, dejá esto vacío -- no se pisa lo que ya viene.</p>
-    <div class="campo-edicion" style="max-width: 420px;">
-      <input type="file" name="imagen_dominante" id="campo-dominante-venta" accept="image/png">
+    <div style="flex: 1 1 420px; min-width: 0;">
+      <form id="form-venta" method="post" action="{{ url_for('generar_venta_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <h2 class="subtitulo">1. Subí el PDF de SENACSA</h2>
+        <div class="campo-edicion" style="max-width: 420px;">
+          <input type="file" name="pdf_guia" id="campo-pdf-venta" accept="application/pdf">
+        </div>
+        <p class="sub" id="nota-pdf-restaurado" style="display: none; margin: 4px 0 0;"></p>
+
+        <h2 class="subtitulo" style="margin-top: 28px;">2. Marca Dominante (opcional)</h2>
+        <p class="sub" style="margin: 0 0 12px;">Si el PDF ya trae la Dominante dibujada, dejá esto vacío -- no se pisa lo que ya viene.</p>
+        <div class="campo-edicion" style="max-width: 420px;">
+          <input type="file" name="imagen_dominante" id="campo-dominante-venta" accept="image/png">
+        </div>
+        <div id="previa-dominante-venta" style="display: flex; gap: 6px; margin-bottom: 14px;"></div>
+        <details id="panel-dibujo-dominante-venta" style="margin-bottom: 14px; max-width: 420px;">
+          <summary class="sub" style="cursor: pointer;">Dibujar a mano en vez de subir un archivo</summary>
+          <div class="panel-dibujo" style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
+            <canvas width="260" height="260" style="width: 100%; max-width: 260px; border: 1px solid var(--texto); touch-action: none; cursor: crosshair;"></canvas>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+              <label class="sub" style="margin: 0;">Grosor
+                <select class="grosor-dibujo" style="margin-left: 4px;">
+                  <option value="2">Fino</option>
+                  <option value="4" selected>Medio</option>
+                  <option value="8">Grueso</option>
+                </select>
+              </label>
+              <button type="button" class="boton dibujo-deshacer" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Deshacer</button>
+              <button type="button" class="boton dibujo-borrar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Borrar</button>
+              <button type="button" class="boton boton-primario dibujo-usar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Usar este dibujo</button>
+            </div>
+          </div>
+        </details>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 28px; gap: 12px; flex-wrap: wrap;">
+          <h2 class="subtitulo" style="margin: 0; border: 0; padding: 0;">3. Marcas complementarias estampadas</h2>
+          <button type="button" class="boton boton-primario" id="abrir-modal-buscar" style="min-height: auto;">Buscar y estampar marca</button>
+        </div>
+        <p class="sub" style="margin: 8px 0 12px;">Se completan primero en el Rubro 2 y, si sobran, pasan al Anexo -- en el orden en que las agregues.</p>
+
+        <div id="seleccionadas-venta" style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave);">
+          <p class="sub" style="padding: 14px;" id="seleccionadas-vacio">Todavía no estampaste ninguna marca complementaria.</p>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px;">
+          <button type="submit" class="boton boton-primario">Generar PDF de la venta</button>
+          <button type="submit" formaction="{{ url_for('guardar_borrador_venta_ruta', operacion_id=operacion.id) }}" formnovalidate class="boton">Guardar borrador</button>
+          <p class="sub" style="margin: 0;">Guardá el avance para continuar más tarde, desde cualquier computadora.</p>
+        </div>
+      </form>
     </div>
-    <div id="previa-dominante-venta" style="display: flex; gap: 6px; margin-bottom: 14px;"></div>
-    <details id="panel-dibujo-dominante-venta" style="margin-bottom: 14px; max-width: 420px;">
-      <summary class="sub" style="cursor: pointer;">Dibujar a mano en vez de subir un archivo</summary>
-      <div class="panel-dibujo" style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
-        <canvas width="260" height="260" style="width: 100%; max-width: 260px; border: 1px solid var(--texto); touch-action: none; cursor: crosshair;"></canvas>
-        <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
-          <label class="sub" style="margin: 0;">Grosor
-            <select class="grosor-dibujo" style="margin-left: 4px;">
-              <option value="2">Fino</option>
-              <option value="4" selected>Medio</option>
-              <option value="8">Grueso</option>
-            </select>
-          </label>
-          <button type="button" class="boton dibujo-deshacer" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Deshacer</button>
-          <button type="button" class="boton dibujo-borrar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Borrar</button>
-          <button type="button" class="boton boton-primario dibujo-usar" style="min-height: auto; padding: 6px 12px; font-size: 11.5px;">Usar este dibujo</button>
+  </div>
+</div>
+
+<div id="modal-buscar-marca" style="display: none; position: fixed; inset: 0; background: rgba(20,24,26,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 20px;">
+  <div style="background: var(--superficie); width: 100%; max-width: 560px; max-height: 82vh; overflow-y: auto; padding: 24px; border: 1px solid var(--texto);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+      <h2 class="subtitulo" style="margin: 0; border: 0; padding: 0;">Buscar y verificar marca</h2>
+      <button type="button" class="boton" id="cerrar-modal-buscar" style="min-height: auto; padding: 4px 10px;">Cerrar</button>
+    </div>
+    <input type="text" id="buscador-marcas-venta" placeholder="Ej. M-00001 / Villalba / 90906711" style="width: 100%;">
+    <div id="resultados-buscador-venta" style="margin-top: 10px;"></div>
+    <div id="verificacion-marca" style="display: none; margin-top: 16px; border-top: 1px solid var(--borde-suave); padding-top: 16px;">
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <img id="verificacion-imagen" width="76" height="76" style="object-fit: contain; border: 1px solid var(--borde-fina); flex-shrink: 0;">
+        <div style="min-width: 0;">
+          <div class="mono" id="verificacion-codigo" style="font-size: 15px; font-weight: 600;"></div>
+          <div class="sub" id="verificacion-propietario"></div>
+          <div class="sub" id="verificacion-detalle"></div>
         </div>
       </div>
-    </details>
-
-    <h2 class="subtitulo" style="margin-top: 28px;">3. Elegí las marcas complementarias a vender</h2>
-    <p class="sub" style="margin: 0 0 12px;">Buscá por código, propietario o N.º de guía. Se van a ir completando primero en el Rubro 2 y, si sobran, en el Anexo -- en el orden en que las agregues acá.</p>
-    <div style="max-width: 460px;">
-      <input type="text" id="buscador-marcas-venta" placeholder="Ej. M-00001 / Villalba / 90906711" style="width: 100%;">
-      <div id="resultados-buscador-venta" style="border: 1px solid var(--borde-fina); margin-top: 4px; max-height: 220px; overflow-y: auto; display: none;"></div>
+      <button type="button" class="boton boton-primario" id="confirmar-estampar" style="margin-top: 16px;">Estampar esta marca</button>
     </div>
-
-    <div id="seleccionadas-venta" style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave); margin-top: 14px;">
-      <p class="sub" style="padding: 14px;" id="seleccionadas-vacio">Todavía no elegiste ninguna marca complementaria.</p>
-    </div>
-
-    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px;">
-      <button type="submit" class="boton boton-primario">Generar PDF de la venta</button>
-      <button type="submit" formaction="{{ url_for('guardar_borrador_venta_ruta', operacion_id=operacion.id) }}" formnovalidate class="boton">Guardar borrador</button>
-      <p class="sub" style="margin: 0;">Guardá el avance para continuar más tarde, desde cualquier computadora.</p>
-    </div>
-  </form>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/marca_dibujo.js') }}"></script>
@@ -88,14 +126,6 @@
     inicializarVistaPreviaImagenes('campo-dominante-venta', 'previa-dominante-venta');
     inicializarDibujoMarca('campo-dominante-venta', 'panel-dibujo-dominante-venta');
 
-    // Dos mecanismos de "no perder lo cargado", que se complementan:
-    // 1) sessionStorage: red de contención automática dentro de esta misma
-    //    pestaña (por ejemplo, si falla la generación del PDF y volvés con
-    //    "Volver" desde la página de error).
-    // 2) El borrador guardado en el servidor (botón "Guardar borrador"):
-    //    sobrevive a cerrar el navegador y se puede continuar desde
-    //    cualquier computadora. Si hay algo más reciente en sessionStorage
-    //    (esta pestaña), gana eso; si no, se usa lo que vino del servidor.
     var claveElegidas = 'venta_imprimir_{{ operacion.id }}_elegidas';
     var claveDominante = 'venta_imprimir_{{ operacion.id }}_dominante';
     var campoDominante = document.getElementById('campo-dominante-venta');
@@ -116,7 +146,7 @@
 
     campoDominante.addEventListener('change', function () {
       var archivo = campoDominante.files[0];
-      if (!archivo) { sessionStorage.removeItem(claveDominante); return; }
+      if (!archivo) { sessionStorage.removeItem(claveDominante); refrescarVistaPrevia(); return; }
       var lector = new FileReader();
       lector.onload = function (e) {
         try {
@@ -124,7 +154,10 @@
         } catch (err) { /* almacenamiento lleno o no disponible: no es crítico */ }
       };
       lector.readAsDataURL(archivo);
+      refrescarVistaPrevia();
     });
+
+    campoPdf.addEventListener('change', function () { refrescarVistaPrevia(); });
 
     (function restaurarDominante() {
       var guardado;
@@ -155,13 +188,12 @@
           .then(function () {
             notaPdf.textContent = 'Restaurado de tu borrador: ' + nombre;
             notaPdf.style.display = 'block';
+            refrescarVistaPrevia();
           })
           .catch(function () { /* no es crítico */ });
       }
     })();
 
-    var buscador = document.getElementById('buscador-marcas-venta');
-    var resultados = document.getElementById('resultados-buscador-venta');
     var seleccionadas = document.getElementById('seleccionadas-venta');
     var vacio = document.getElementById('seleccionadas-vacio');
     var elegidas = {};  // codigo -> datos
@@ -184,35 +216,129 @@
       var codigos = Object.keys(elegidas);
       if (!codigos.length) {
         seleccionadas.appendChild(vacio);
+      } else {
+        codigos.forEach(function (codigo) {
+          var m = elegidas[codigo];
+          var celda = document.createElement('div');
+          celda.style.cssText = 'width: 200px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); display: flex; gap: 10px; align-items: center;';
+          celda.innerHTML =
+            (m.imagen_url ? '<img src="' + m.imagen_url + '" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">' : '') +
+            '<div style="min-width: 0; flex: 1 1 auto;"><div class="mono" style="font-size: 12px;">' + codigo + '</div>' +
+            '<div class="sub">' + (m.propietario || '') + '</div></div>' +
+            '<input type="hidden" name="marca_codigo" value="' + codigo + '">' +
+            '<button type="button" class="boton" data-quitar="' + codigo + '" style="min-height: auto; padding: 4px 8px; font-size: 11px;">Quitar</button>';
+          seleccionadas.appendChild(celda);
+        });
+        seleccionadas.querySelectorAll('[data-quitar]').forEach(function (boton) {
+          boton.addEventListener('click', function () {
+            delete elegidas[boton.getAttribute('data-quitar')];
+            guardarElegidas();
+            renderSeleccionadas();
+            refrescarVistaPrevia();
+          });
+        });
+      }
+      refrescarVistaPrevia();
+    }
+
+    // --- vista previa en vivo (panel izquierdo) ---
+    var vpPaginas = document.getElementById('vp-paginas');
+    var vpCupo = document.getElementById('vp-cupo');
+    var vpError = document.getElementById('vp-error');
+    var vpEncabezado = document.getElementById('vp-encabezado');
+    var vpVendedor = document.getElementById('vp-vendedor');
+    var vpComprador = document.getElementById('vp-comprador');
+    var previsualizarEnCurso = false;
+    var previsualizarPendiente = false;
+
+    function refrescarVistaPrevia() {
+      if (!campoPdf.files[0] && !(__borrador && __borrador.pdf_ruta)) {
+        vpPaginas.innerHTML = '<p class="sub" style="margin: 0;">Subí el PDF para ver la vista previa.</p>';
         return;
       }
-      codigos.forEach(function (codigo) {
-        var m = elegidas[codigo];
-        var celda = document.createElement('div');
-        celda.style.cssText = 'width: 200px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); display: flex; gap: 10px; align-items: center;';
-        celda.innerHTML =
-          (m.imagen_url ? '<img src="' + m.imagen_url + '" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">' : '') +
-          '<div style="min-width: 0; flex: 1 1 auto;"><div class="mono" style="font-size: 12px;">' + codigo + '</div>' +
-          '<div class="sub">' + (m.propietario || '') + '</div></div>' +
-          '<input type="hidden" name="marca_codigo" value="' + codigo + '">' +
-          '<button type="button" class="boton" data-quitar="' + codigo + '" style="min-height: auto; padding: 4px 8px; font-size: 11px;">Quitar</button>';
-        seleccionadas.appendChild(celda);
-      });
-      seleccionadas.querySelectorAll('[data-quitar]').forEach(function (boton) {
-        boton.addEventListener('click', function () {
-          delete elegidas[boton.getAttribute('data-quitar')];
-          guardarElegidas();
-          renderSeleccionadas();
+      if (previsualizarEnCurso) { previsualizarPendiente = true; return; }
+      previsualizarEnCurso = true;
+      var datos = new FormData();
+      datos.append('csrf_token', document.querySelector('#form-venta input[name=csrf_token]').value);
+      if (campoPdf.files[0]) datos.append('pdf_guia', campoPdf.files[0]);
+      if (campoDominante.files[0]) datos.append('imagen_dominante', campoDominante.files[0]);
+      Object.keys(elegidas).forEach(function (codigo) { datos.append('marca_codigo', codigo); });
+      fetch('{{ url_for("previsualizar_venta", operacion_id=operacion.id) }}', { method: 'POST', body: datos })
+        .then(function (r) { return r.json(); })
+        .then(function (resultado) {
+          if (resultado.error) {
+            vpError.textContent = resultado.error;
+            vpError.style.display = 'block';
+          } else {
+            vpError.style.display = 'none';
+          }
+          if (resultado.paginas && resultado.paginas.length) {
+            vpPaginas.innerHTML = '';
+            resultado.paginas.forEach(function (b64) {
+              var img = document.createElement('img');
+              img.src = 'data:image/png;base64,' + b64;
+              img.style.cssText = 'width: 100%; border: 1px solid var(--borde-fina);';
+              vpPaginas.appendChild(img);
+            });
+          }
+          if (resultado.cupo) {
+            vpCupo.textContent = 'Libres -- Rubro 2: ' + resultado.cupo.complementarias_libres_rubro2 +
+              (resultado.cupo.dominante_libre ? ' · Dominante libre' : '') +
+              ' · Anexo: ' + resultado.cupo.complementarias_libres_anexo;
+          }
+          if (resultado.encabezado && (resultado.encabezado.vendedor_nombre || resultado.encabezado.comprador_nombre)) {
+            vpEncabezado.style.display = 'block';
+            vpVendedor.textContent = resultado.encabezado.vendedor_nombre || '—';
+            vpComprador.textContent = resultado.encabezado.comprador_nombre || '—';
+          }
+        })
+        .catch(function () { /* la vista previa es una ayuda, no bloquea el flujo */ })
+        .finally(function () {
+          previsualizarEnCurso = false;
+          if (previsualizarPendiente) { previsualizarPendiente = false; refrescarVistaPrevia(); }
         });
-      });
     }
+
     renderSeleccionadas();
+
+    // --- modal de buscar / verificar / estampar ---
+    var modal = document.getElementById('modal-buscar-marca');
+    var abrirModal = document.getElementById('abrir-modal-buscar');
+    var cerrarModal = document.getElementById('cerrar-modal-buscar');
+    var buscador = document.getElementById('buscador-marcas-venta');
+    var resultados = document.getElementById('resultados-buscador-venta');
+    var verificacion = document.getElementById('verificacion-marca');
+    var verificacionImagen = document.getElementById('verificacion-imagen');
+    var verificacionCodigo = document.getElementById('verificacion-codigo');
+    var verificacionPropietario = document.getElementById('verificacion-propietario');
+    var verificacionDetalle = document.getElementById('verificacion-detalle');
+    var confirmarEstampar = document.getElementById('confirmar-estampar');
+    var marcaAVerificar = null;
+
+    abrirModal.addEventListener('click', function () {
+      modal.style.display = 'flex';
+      buscador.value = '';
+      resultados.innerHTML = '';
+      verificacion.style.display = 'none';
+      buscador.focus();
+    });
+    cerrarModal.addEventListener('click', function () { modal.style.display = 'none'; });
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
+
+    confirmarEstampar.addEventListener('click', function () {
+      if (!marcaAVerificar) return;
+      elegidas[marcaAVerificar.codigo] = marcaAVerificar;
+      guardarElegidas();
+      renderSeleccionadas();
+      modal.style.display = 'none';
+    });
 
     var temporizador = null;
     buscador.addEventListener('input', function () {
       clearTimeout(temporizador);
       var texto = buscador.value.trim();
-      if (!texto) { resultados.style.display = 'none'; resultados.innerHTML = ''; return; }
+      verificacion.style.display = 'none';
+      if (!texto) { resultados.innerHTML = ''; return; }
       temporizador = setTimeout(function () {
         fetch('{{ url_for("buscar_marcas_json") }}?q=' + encodeURIComponent(texto))
           .then(function (r) { return r.json(); })
@@ -229,15 +355,16 @@
                 '<div style="min-width: 0;"><div class="mono" style="font-size: 12px;">' + m.codigo + '</div>' +
                 '<div class="sub">' + (m.propietario || 'Sin propietario') + (m.numero_guia ? ' · ' + m.numero_guia : '') + '</div></div>';
               fila.addEventListener('click', function () {
-                elegidas[m.codigo] = m;
-                guardarElegidas();
-                renderSeleccionadas();
-                resultados.style.display = 'none';
-                buscador.value = '';
+                marcaAVerificar = m;
+                verificacionImagen.src = m.imagen_url || '';
+                verificacionImagen.style.visibility = m.imagen_url ? 'visible' : 'hidden';
+                verificacionCodigo.textContent = m.codigo;
+                verificacionPropietario.textContent = m.propietario || 'Sin propietario';
+                verificacionDetalle.textContent = [m.tipo, m.estado, m.numero_guia].filter(Boolean).join(' · ');
+                verificacion.style.display = 'block';
               });
               resultados.appendChild(fila);
             });
-            resultados.style.display = 'block';
           });
       }, 250);
     });

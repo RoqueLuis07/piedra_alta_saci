@@ -5,11 +5,12 @@
 {% block meta_encabezado %}<a href="{{ url_for('ver_guia', operacion_id=operacion.id) }}">&larr; Volver al detalle</a>{% endblock %}
 
 {% block contenido %}
-<div class="contenido">
-  <p style="max-width: 66ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+<div class="contenido" style="max-width: 1360px;">
+  <p style="max-width: 90ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
     Subí el PDF de la Guía de Traslado tal como lo descargás de SENACSA (con su número de orden, código de barras y QR).
-    El sistema coloca la imagen de cada marca que elijas en las casillas libres del anexo, respetando las cuatro copias, y te devuelve el PDF listo para imprimir.
-    No se toca ningún otro dato del formulario oficial.
+    El sistema coloca la imagen de cada marca que elijas en las casillas libres del anexo, respetando las cuatro copias, y te
+    devuelve el PDF listo para imprimir. No se toca ningún otro dato del formulario oficial. El panel de la izquierda se
+    actualiza solo con cada marca que tildes.
   </p>
 
   {% if operacion.vendedor_nombre or operacion.numero_guia %}
@@ -22,30 +23,137 @@
   </div>
   {% endif %}
 
-  <form method="post" action="{{ url_for('generar_guia_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data" style="margin-top: 24px;">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <h2 class="subtitulo">1. Elegí qué marcas van en esta guía ({{ marcas|length }} disponibles)</h2>
-    <div style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave); border-bottom: 0;">
-      {% for m in marcas %}
-      <label style="display: flex; align-items: center; gap: 10px; width: 260px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); cursor: pointer;">
-        <input type="checkbox" name="marca_id" value="{{ m.id }}" checked style="width: auto; flex-shrink: 0;">
-        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">{% endif %}
-        <div style="min-width: 0;">
-          <div class="mono" style="font-size: 12px;">{{ m.codigo }}</div>
-          <div class="sub">{{ m.tipo|capitalize if m.tipo else '' }}</div>
+  {% if not marcas %}
+  <p class="sub" style="margin-top: 20px;">Esta guía todavía no tiene marcas cargadas -- agregalas primero desde el detalle.</p>
+  {% else %}
+  <div style="display: flex; gap: 32px; margin-top: 24px; align-items: flex-start; flex-wrap: wrap;" class="buscar-cols">
+    <div style="flex: 1 1 440px; min-width: 0;">
+      <h2 class="subtitulo">Vista previa en vivo</h2>
+      <div id="vp-cupo" class="sub" style="min-height: 16px;"></div>
+      <div id="vp-encabezado" style="font-size: 12.5px; line-height: 1.7; margin: 8px 0; display: none;">
+        <div><span class="etiqueta">VENDEDOR (leído del PDF)</span> <span id="vp-vendedor"></span></div>
+        <div><span class="etiqueta">COMPRADOR (leído del PDF)</span> <span id="vp-comprador"></span></div>
+      </div>
+      <div id="vp-error" class="error" style="display: none;"></div>
+      <div id="vp-paginas" style="border: 1px solid var(--borde-suave); min-height: 240px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--superficie);">
+        <p class="sub" style="margin: 0;">Subí el PDF para ver la vista previa.</p>
+      </div>
+    </div>
+
+    <div style="flex: 1 1 420px; min-width: 0;">
+      <form id="form-guia" method="post" action="{{ url_for('generar_guia_pdf', operacion_id=operacion.id) }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <h2 class="subtitulo">1. Elegí qué marcas van en esta guía ({{ marcas|length }} disponibles)</h2>
+        <div id="lista-marcas-guia" style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave); border-bottom: 0;">
+          {% for m in marcas %}
+          <label style="display: flex; align-items: center; gap: 10px; width: 260px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); cursor: pointer;">
+            <input type="checkbox" class="check-marca-guia" name="marca_id" value="{{ m.id }}" {% if not ids_elegidas_borrador or m.id in ids_elegidas_borrador %}checked{% endif %} style="width: auto; flex-shrink: 0;">
+            {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">{% endif %}
+            <div style="min-width: 0;">
+              <div class="mono" style="font-size: 12px;">{{ m.codigo }}</div>
+              <div class="sub">{{ m.tipo|capitalize if m.tipo else '' }}</div>
+            </div>
+          </label>
+          {% endfor %}
         </div>
-      </label>
-      {% else %}
-      <p class="sub" style="padding: 14px;">Esta guía todavía no tiene marcas cargadas.</p>
-      {% endfor %}
-    </div>
 
-    <h2 class="subtitulo" style="margin-top: 28px;">2. Subí el PDF de SENACSA</h2>
-    <div class="campo-edicion" style="max-width: 420px;">
-      <input type="file" name="pdf_guia" accept="application/pdf" required>
-    </div>
+        <h2 class="subtitulo" style="margin-top: 28px;">2. Subí el PDF de SENACSA</h2>
+        <div class="campo-edicion" style="max-width: 420px;">
+          <input type="file" name="pdf_guia" id="campo-pdf-guia" accept="application/pdf" required>
+        </div>
+        <p class="sub" id="nota-pdf-restaurado-guia" style="display: none; margin: 4px 0 0;"></p>
 
-    <button type="submit" class="boton boton-primario" style="margin-top: 8px;">Generar PDF con las marcas</button>
-  </form>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px;">
+          <button type="submit" class="boton boton-primario">Generar PDF con las marcas</button>
+          <button type="submit" formaction="{{ url_for('guardar_borrador_guia_ruta', operacion_id=operacion.id) }}" formnovalidate class="boton">Guardar borrador</button>
+          {% if tiene_borrador_pdf %}
+          <button type="submit" formaction="{{ url_for('descartar_borrador_guia_ruta', operacion_id=operacion.id) }}" formnovalidate class="boton">Descartar borrador</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var campoPdf = document.getElementById('campo-pdf-guia');
+      var notaPdf = document.getElementById('nota-pdf-restaurado-guia');
+      var vpPaginas = document.getElementById('vp-paginas');
+      var vpCupo = document.getElementById('vp-cupo');
+      var vpError = document.getElementById('vp-error');
+      var vpEncabezado = document.getElementById('vp-encabezado');
+      var vpVendedor = document.getElementById('vp-vendedor');
+      var vpComprador = document.getElementById('vp-comprador');
+      var checks = document.querySelectorAll('.check-marca-guia');
+      var previsualizarEnCurso = false;
+      var previsualizarPendiente = false;
+
+      {% if tiene_borrador_pdf %}
+      (function restaurarPdf() {
+        fetch('{{ url_for("borrador_guia_pdf", operacion_id=operacion.id) }}')
+          .then(function (r) { if (!r.ok) throw new Error('no disponible'); return r.blob(); })
+          .then(function (blob) {
+            var archivo = new File([blob], {{ (borrador_pdf_nombre or 'borrador.pdf') | tojson }}, { type: 'application/pdf' });
+            var datos = new DataTransfer();
+            datos.items.add(archivo);
+            campoPdf.files = datos.files;
+            notaPdf.textContent = 'Restaurado de tu borrador: ' + archivo.name;
+            notaPdf.style.display = 'block';
+            refrescarVistaPrevia();
+          })
+          .catch(function () { /* no es crítico */ });
+      })();
+      {% endif %}
+
+      function refrescarVistaPrevia() {
+        if (!campoPdf.files[0]) {
+          vpPaginas.innerHTML = '<p class="sub" style="margin: 0;">Subí el PDF para ver la vista previa.</p>';
+          return;
+        }
+        if (previsualizarEnCurso) { previsualizarPendiente = true; return; }
+        previsualizarEnCurso = true;
+        var datos = new FormData();
+        datos.append('csrf_token', document.querySelector('#form-guia input[name=csrf_token]').value);
+        datos.append('pdf_guia', campoPdf.files[0]);
+        checks.forEach(function (c) { if (c.checked) datos.append('marca_id', c.value); });
+        fetch('{{ url_for("previsualizar_guia", operacion_id=operacion.id) }}', { method: 'POST', body: datos })
+          .then(function (r) { return r.json(); })
+          .then(function (resultado) {
+            if (resultado.error) {
+              vpError.textContent = resultado.error;
+              vpError.style.display = 'block';
+            } else {
+              vpError.style.display = 'none';
+            }
+            if (resultado.paginas && resultado.paginas.length) {
+              vpPaginas.innerHTML = '';
+              resultado.paginas.forEach(function (b64) {
+                var img = document.createElement('img');
+                img.src = 'data:image/png;base64,' + b64;
+                img.style.cssText = 'width: 100%; border: 1px solid var(--borde-fina);';
+                vpPaginas.appendChild(img);
+              });
+            }
+            if (resultado.cupo) {
+              vpCupo.textContent = 'Casillas libres en el Anexo: ' + resultado.cupo.complementarias_libres_anexo;
+            }
+            if (resultado.encabezado && (resultado.encabezado.vendedor_nombre || resultado.encabezado.comprador_nombre)) {
+              vpEncabezado.style.display = 'block';
+              vpVendedor.textContent = resultado.encabezado.vendedor_nombre || '—';
+              vpComprador.textContent = resultado.encabezado.comprador_nombre || '—';
+            }
+          })
+          .catch(function () { /* la vista previa es una ayuda, no bloquea el flujo */ })
+          .finally(function () {
+            previsualizarEnCurso = false;
+            if (previsualizarPendiente) { previsualizarPendiente = false; refrescarVistaPrevia(); }
+          });
+      }
+
+      campoPdf.addEventListener('change', refrescarVistaPrevia);
+      checks.forEach(function (c) { c.addEventListener('change', refrescarVistaPrevia); });
+    })();
+  </script>
+  {% endif %}
 </div>
 {% endblock %}

@@ -29,7 +29,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from marcas.pdf.guia import completar_guia, completar_venta
+import pypdfium2 as pdfium
+
+from marcas.pdf.guia import analizar_venta, completar_guia, completar_venta, extraer_encabezado
 from marcas.servidor.auth import (
     cerrar_conexion_actual,
     cerrar_sesion,
@@ -156,6 +158,79 @@ def _libro_excel(nombre_hoja: str, encabezados: list[str], filas: list[list]) ->
     libro.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+def _previsualizar_estampado(conexion, operacion: dict, marcas_elegidas: list[dict], pdf_bytes: bytes, dominante_bytes: bytes | None = None) -> dict:
+    """Corre completar_venta/completar_guia con las marcas elegidas hasta el
+    momento sobre un PDF y un directorio TEMPORALES -- nunca sobre el PDF
+    real que se termina descargando -- y devuelve las páginas que quedaron
+    con algo nuevo (como PNG) para el panel izquierdo, más el cupo libre
+    restante. Se usa tanto para Venta (Rubro 2 + Anexo) como para Guía (sólo
+    Anexo, completar_guia no toca el Rubro 2)."""
+    es_venta = operacion.get("tipo_operacion") == "venta"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        pdf_entrada = tmp_path / "entrada.pdf"
+        pdf_entrada.write_bytes(pdf_bytes)
+
+        rutas_imagenes = []
+        for marca in marcas_elegidas:
+            contenido = imagen_marca(conexion, marca["id"], "png")
+            if not contenido:
+                continue
+            destino = tmp_path / f"{marca['codigo']}.png"
+            destino.write_bytes(contenido)
+            rutas_imagenes.append(destino)
+
+        dominante_ruta = None
+        if dominante_bytes:
+            dominante_ruta = tmp_path / "dominante.png"
+            dominante_ruta.write_bytes(dominante_bytes)
+
+        salida = tmp_path / "salida.pdf"
+        paginas_modificadas: list[int] = []
+        error = None
+        try:
+            if es_venta:
+                info = completar_venta(pdf_entrada, dominante_ruta, rutas_imagenes, salida)
+            elif rutas_imagenes:
+                info = completar_guia(pdf_entrada, rutas_imagenes, salida)
+            else:
+                info = {"paginas_modificadas": []}
+            paginas_modificadas = info.get("paginas_modificadas", [])
+        except Exception as exc:
+            error = str(exc)
+            salida = pdf_entrada  # sin marcas que entren, se previsualiza el PDF tal cual
+
+        paginas_png = []
+        fuente = salida if salida.exists() else pdf_entrada
+        doc = pdfium.PdfDocument(str(fuente))
+        try:
+            # Sin nada estampado todavía, se muestra la primera página
+            # principal tal cual llegó, para que el panel izquierdo nunca
+            # quede vacío antes de la primera marca.
+            indices = paginas_modificadas or ([0] if len(doc) else [])
+            for i in indices:
+                if i >= len(doc):
+                    continue
+                imagen = doc[i].render(scale=1.3).to_pil()
+                buffer = io.BytesIO()
+                imagen.save(buffer, format="PNG")
+                paginas_png.append(base64.b64encode(buffer.getvalue()).decode("ascii"))
+        finally:
+            doc.close()
+
+        try:
+            cupo = analizar_venta(pdf_entrada)
+        except Exception:
+            cupo = None
+
+        try:
+            encabezado = extraer_encabezado(pdf_entrada)
+        except Exception:
+            encabezado = None
+
+    return {"paginas": paginas_png, "cupo": cupo, "encabezado": encabezado, "error": error}
 
 
 def crear_app() -> Flask:
@@ -833,11 +908,16 @@ def crear_app() -> Flask:
         marcas = marcas_de_operacion(conexion, operacion_id)
         for m in marcas:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
+        borrador = operacion.get("borrador_venta")
+        ids_elegidas_borrador = {int(v) for v in (borrador or {}).get("marcas", []) if v.isdigit()}
         return render_template(
             "guia_imprimir.html",
             activo="guias",
             operacion=operacion,
             marcas=marcas,
+            tiene_borrador_pdf=bool(operacion.get("borrador_pdf")),
+            borrador_pdf_nombre=operacion.get("borrador_pdf_nombre"),
+            ids_elegidas_borrador=ids_elegidas_borrador,
             perfil=perfil_actual(),
         )
 
@@ -883,6 +963,12 @@ def crear_app() -> Flask:
                 return _error_seguro("No se pudo generar el PDF.", exc)
             contenido_pdf = salida.read_bytes()
 
+        if operacion.get("borrador_venta"):
+            try:
+                eliminar_borrador_venta(conexion, operacion_id)
+            except Exception as exc:
+                print(f"generar_guia_pdf: no se pudo limpiar el borrador de {operacion_id}: {exc}")
+
         nombre_descarga = f"guia_{operacion.get('numero_guia') or operacion_id}.pdf"
         return send_file(
             io.BytesIO(contenido_pdf),
@@ -890,6 +976,82 @@ def crear_app() -> Flask:
             download_name=nombre_descarga,
             mimetype="application/pdf",
         )
+
+    @app.post("/guias/<int:operacion_id>/borrador")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def guardar_borrador_guia_ruta(operacion_id: int):
+        """Mismo mecanismo que el borrador de Venta (guardar_borrador_venta
+        es genérica por operacion_id) -- acá la lista guardada son ids de
+        marcas ya cargadas en esta guía, no códigos del catálogo entero."""
+        conexion = conexion_actual()
+        if not obtener_operacion_por_id(conexion, operacion_id):
+            return _registro_no_encontrado("No se encontró esa guía.")
+        ids = [v.strip() for v in request.form.getlist("marca_id") if v.strip()]
+        archivo_pdf = request.files.get("pdf_guia")
+        pdf_bytes = archivo_pdf.read() if archivo_pdf and archivo_pdf.filename else None
+        pdf_nombre = archivo_pdf.filename if archivo_pdf and archivo_pdf.filename else None
+        guardar_borrador_venta(
+            conexion, operacion_id, ids, datetime.now(timezone.utc).isoformat(),
+            pdf_bytes=pdf_bytes, pdf_nombre=pdf_nombre,
+        )
+        return redirect(url_for("imprimir_guia", operacion_id=operacion_id))
+
+    @app.post("/guias/<int:operacion_id>/borrador/descartar")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def descartar_borrador_guia_ruta(operacion_id: int):
+        conexion = conexion_actual()
+        if not obtener_operacion_por_id(conexion, operacion_id):
+            return _registro_no_encontrado("No se encontró esa guía.")
+        eliminar_borrador_venta(conexion, operacion_id)
+        return redirect(url_for("imprimir_guia", operacion_id=operacion_id))
+
+    @app.get("/guias/<int:operacion_id>/borrador/pdf")
+    @requiere_sesion
+    def borrador_guia_pdf(operacion_id: int):
+        conexion = conexion_actual()
+        resultado = obtener_borrador_venta_pdf(conexion, operacion_id)
+        if not resultado:
+            return _registro_no_encontrado("Ese borrador no tiene un PDF guardado.")
+        contenido, nombre = resultado
+        return send_file(io.BytesIO(contenido), download_name=nombre, mimetype="application/pdf")
+
+    @app.post("/guias/<int:operacion_id>/previsualizar")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def previsualizar_guia(operacion_id: int):
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
+        if not operacion:
+            return jsonify({"error": "No se encontró esa guía."}), 404
+
+        archivo_pdf = request.files.get("pdf_guia")
+        pdf_bytes = archivo_pdf.read() if archivo_pdf and archivo_pdf.filename else None
+        pdf_nombre = archivo_pdf.filename if archivo_pdf and archivo_pdf.filename else None
+
+        ids = [v.strip() for v in request.form.getlist("marca_id") if v.strip()]
+        if pdf_bytes or ids != (operacion.get("borrador_venta") or {}).get("marcas", []):
+            guardar_borrador_venta(
+                conexion, operacion_id, ids, datetime.now(timezone.utc).isoformat(),
+                pdf_bytes=pdf_bytes, pdf_nombre=pdf_nombre,
+            )
+
+        if not pdf_bytes:
+            guardado = obtener_borrador_venta_pdf(conexion, operacion_id)
+            if not guardado:
+                return jsonify({"error": "Subí primero el PDF de la guía."}), 400
+            pdf_bytes = guardado[0]
+
+        ids_int = {int(v) for v in ids if v.isdigit()}
+        marcas_elegidas = [m for m in marcas_de_operacion(conexion, operacion_id) if m["id"] in ids_int]
+
+        try:
+            resultado = _previsualizar_estampado(conexion, operacion, marcas_elegidas, pdf_bytes)
+        except Exception as exc:
+            print(f"previsualizar_guia: {exc}")
+            return jsonify({"error": "No se pudo generar la vista previa."}), 400
+        return jsonify(resultado)
 
     @app.get("/marcas/buscar.json")
     @requiere_sesion
@@ -1075,6 +1237,53 @@ def crear_app() -> Flask:
             download_name=nombre_descarga,
             mimetype="application/pdf",
         )
+
+    @app.post("/ventas/<int:operacion_id>/previsualizar")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def previsualizar_venta(operacion_id: int):
+        """Vista previa en vivo del panel izquierdo: corre completar_venta
+        sobre un archivo temporal con las marcas elegidas hasta el momento
+        (nunca sobre el PDF final) y devuelve las páginas como imágenes,
+        más el cupo libre y los datos leídos del encabezado. El PDF y la
+        Dominante recién subidos quedan guardados como borrador para no
+        tener que volver a mandarlos en cada llamada."""
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
+        if not operacion or operacion.get("tipo_operacion") != "venta":
+            return jsonify({"error": "No se encontró esa venta."}), 404
+
+        archivo_pdf = request.files.get("pdf_guia")
+        pdf_bytes = archivo_pdf.read() if archivo_pdf and archivo_pdf.filename else None
+        pdf_nombre = archivo_pdf.filename if archivo_pdf and archivo_pdf.filename else None
+        archivo_dominante = request.files.get("imagen_dominante")
+        dominante_bytes = archivo_dominante.read() if archivo_dominante and archivo_dominante.filename else None
+
+        codigos = [c.strip() for c in request.form.getlist("marca_codigo") if c.strip()]
+        if pdf_bytes or dominante_bytes or codigos != (operacion.get("borrador_venta") or {}).get("marcas", []):
+            guardar_borrador_venta(
+                conexion, operacion_id, codigos, datetime.now(timezone.utc).isoformat(),
+                pdf_bytes=pdf_bytes, pdf_nombre=pdf_nombre, dominante_bytes=dominante_bytes,
+            )
+            operacion = obtener_operacion_por_id(conexion, operacion_id)
+
+        if not pdf_bytes:
+            guardado = obtener_borrador_venta_pdf(conexion, operacion_id)
+            if not guardado:
+                return jsonify({"error": "Subí primero el PDF de la guía."}), 400
+            pdf_bytes = guardado[0]
+        if not dominante_bytes:
+            dominante_bytes = obtener_borrador_venta_dominante(conexion, operacion_id)
+
+        por_codigo = marcas_por_codigos(conexion, codigos)
+        marcas_elegidas = [por_codigo[c] for c in codigos if c in por_codigo]
+
+        try:
+            resultado = _previsualizar_estampado(conexion, operacion, marcas_elegidas, pdf_bytes, dominante_bytes)
+        except Exception as exc:
+            print(f"previsualizar_venta: {exc}")
+            return jsonify({"error": "No se pudo generar la vista previa."}), 400
+        return jsonify(resultado)
 
     @app.get("/propietarios")
     @requiere_sesion
