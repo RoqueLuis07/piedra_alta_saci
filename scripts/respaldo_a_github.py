@@ -33,9 +33,8 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from marcas.servidor.app import crear_app
-from marcas.servidor.auth import conexion_actual
 from marcas.servidor.consultas import dict_a_json, exportar_todo_para_respaldo
+from marcas.servidor.db import devolver_conexion, obtener_conexion
 
 TAMANO_LOTE_MARCAS = 200
 GITHUB_API = "https://api.github.com"
@@ -86,10 +85,11 @@ def main() -> None:
         "X-GitHub-Api-Version": "2022-11-28",
     })
 
-    app = crear_app()
-    with app.app_context():
-        conexion = conexion_actual()
+    conexion = obtener_conexion()
+    try:
         datos = exportar_todo_para_respaldo(conexion)
+    finally:
+        devolver_conexion(conexion)
 
     ahora = datetime.now(timezone.utc)
     marca_tiempo = ahora.strftime("%Y-%m-%d %H:%M UTC")
