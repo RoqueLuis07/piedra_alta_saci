@@ -29,12 +29,13 @@
     <div style="flex: 1 1 440px; min-width: 0;">
       <h2 class="subtitulo">Vista previa en vivo</h2>
       <div id="vp-cupo" class="sub" style="min-height: 16px;"></div>
+      <div id="vp-cargando" class="sub" style="display: none; margin: 2px 0 0;">Actualizando vista previa…</div>
       <div id="vp-encabezado" style="font-size: 12.5px; line-height: 1.7; margin: 8px 0; display: none;">
         <div><span class="etiqueta">VENDEDOR (leído del PDF)</span> <span id="vp-vendedor"></span></div>
         <div><span class="etiqueta">COMPRADOR (leído del PDF)</span> <span id="vp-comprador"></span></div>
       </div>
       <div id="vp-error" class="error" style="display: none;"></div>
-      <div id="vp-paginas" style="border: 1px solid var(--borde-suave); min-height: 240px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--superficie);">
+      <div id="vp-paginas" style="border: 1px solid var(--borde-suave); min-height: 240px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--superficie); transition: opacity 0.15s;">
         <p class="sub" style="margin: 0;">Subí el PDF para ver la vista previa.</p>
       </div>
     </div>
@@ -104,7 +105,7 @@
     <div id="resultados-buscador-venta" style="margin-top: 10px;"></div>
     <div id="verificacion-marca" style="display: none; margin-top: 16px; border-top: 1px solid var(--borde-suave); padding-top: 16px;">
       <div style="display: flex; gap: 16px; align-items: center;">
-        <img id="verificacion-imagen" width="76" height="76" style="object-fit: contain; border: 1px solid var(--borde-fina); flex-shrink: 0;">
+        <img id="verificacion-imagen" width="76" height="76" style="object-fit: contain; border: 1px solid var(--borde-fina); flex-shrink: 0; background: #fff; border-radius: 2px;">
         <div style="min-width: 0;">
           <div class="mono" id="verificacion-codigo" style="font-size: 15px; font-weight: 600;"></div>
           <div class="sub" id="verificacion-propietario"></div>
@@ -222,7 +223,7 @@
           var celda = document.createElement('div');
           celda.style.cssText = 'width: 200px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); display: flex; gap: 10px; align-items: center;';
           celda.innerHTML =
-            (m.imagen_url ? '<img src="' + m.imagen_url + '" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">' : '') +
+            (m.imagen_url ? '<img src="' + m.imagen_url + '" width="30" height="30" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">' : '') +
             '<div style="min-width: 0; flex: 1 1 auto;"><div class="mono" style="font-size: 12px;">' + codigo + '</div>' +
             '<div class="sub">' + (m.propietario || '') + '</div></div>' +
             '<input type="hidden" name="marca_codigo" value="' + codigo + '">' +
@@ -244,6 +245,7 @@
     // --- vista previa en vivo (panel izquierdo) ---
     var vpPaginas = document.getElementById('vp-paginas');
     var vpCupo = document.getElementById('vp-cupo');
+    var vpCargando = document.getElementById('vp-cargando');
     var vpError = document.getElementById('vp-error');
     var vpEncabezado = document.getElementById('vp-encabezado');
     var vpVendedor = document.getElementById('vp-vendedor');
@@ -258,6 +260,8 @@
       }
       if (previsualizarEnCurso) { previsualizarPendiente = true; return; }
       previsualizarEnCurso = true;
+      vpCargando.style.display = 'block';
+      vpPaginas.style.opacity = '0.5';
       var datos = new FormData();
       datos.append('csrf_token', document.querySelector('#form-venta input[name=csrf_token]').value);
       if (campoPdf.files[0]) datos.append('pdf_guia', campoPdf.files[0]);
@@ -295,6 +299,8 @@
         .catch(function () { /* la vista previa es una ayuda, no bloquea el flujo */ })
         .finally(function () {
           previsualizarEnCurso = false;
+          vpCargando.style.display = 'none';
+          vpPaginas.style.opacity = '1';
           if (previsualizarPendiente) { previsualizarPendiente = false; refrescarVistaPrevia(); }
         });
     }
@@ -351,7 +357,7 @@
               var fila = document.createElement('div');
               fila.style.cssText = 'display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--borde-fina); cursor: pointer;';
               fila.innerHTML =
-                (m.imagen_url ? '<img src="' + m.imagen_url + '" width="26" height="26" style="object-fit: contain; flex-shrink: 0;">' : '') +
+                (m.imagen_url ? '<img src="' + m.imagen_url + '" width="26" height="26" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">' : '') +
                 '<div style="min-width: 0;"><div class="mono" style="font-size: 12px;">' + m.codigo + '</div>' +
                 '<div class="sub">' + (m.propietario || 'Sin propietario') + (m.numero_guia ? ' · ' + m.numero_guia : '') + '</div></div>';
               fila.addEventListener('click', function () {

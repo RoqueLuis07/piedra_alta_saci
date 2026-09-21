@@ -37,7 +37,7 @@
       <div style="display: flex; flex-wrap: wrap; border: 1px solid var(--borde-fina); border-bottom: 0;">
         {% for m in marcas %}
         <a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="flex: 0 0 auto; width: 112px; border-right: 1px solid var(--borde-fina); border-bottom: 1px solid var(--borde-fina); padding: 14px 8px 12px; text-align: center; overflow: hidden; text-decoration: none; color: inherit;">
-          {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="48" height="48" style="object-fit: contain;">{% endif %}
+          {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="48" height="48" style="object-fit: contain; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">{% endif %}
           <div class="mono sub" style="margin-top: 8px; word-break: break-all; line-height: 1.3;">{{ m.codigo }}</div>
           <span class="estado estado-{{ m.estado }}" style="margin-top: 4px;">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
         </a>

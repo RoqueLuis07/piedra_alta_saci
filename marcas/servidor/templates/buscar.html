@@ -111,7 +111,7 @@
         {% if mostrar_todas or 'imagen' in columnas_visibles %}
         <td>
           {% if m.imagen_url %}
-          <img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; display: block;">
+          <img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; display: block; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">
           {% else %}
           <span class="sub">—</span>
           {% endif %}

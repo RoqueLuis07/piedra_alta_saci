@@ -30,12 +30,13 @@
     <div style="flex: 1 1 440px; min-width: 0;">
       <h2 class="subtitulo">Vista previa en vivo</h2>
       <div id="vp-cupo" class="sub" style="min-height: 16px;"></div>
+      <div id="vp-cargando" class="sub" style="display: none; margin: 2px 0 0;">Actualizando vista previa…</div>
       <div id="vp-encabezado" style="font-size: 12.5px; line-height: 1.7; margin: 8px 0; display: none;">
         <div><span class="etiqueta">VENDEDOR (leído del PDF)</span> <span id="vp-vendedor"></span></div>
         <div><span class="etiqueta">COMPRADOR (leído del PDF)</span> <span id="vp-comprador"></span></div>
       </div>
       <div id="vp-error" class="error" style="display: none;"></div>
-      <div id="vp-paginas" style="border: 1px solid var(--borde-suave); min-height: 240px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--superficie);">
+      <div id="vp-paginas" style="border: 1px solid var(--borde-suave); min-height: 240px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--superficie); transition: opacity 0.15s;">
         <p class="sub" style="margin: 0;">Subí el PDF para ver la vista previa.</p>
       </div>
     </div>
@@ -48,7 +49,7 @@
           {% for m in marcas %}
           <label style="display: flex; align-items: center; gap: 10px; width: 260px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); cursor: pointer;">
             <input type="checkbox" class="check-marca-guia" name="marca_id" value="{{ m.id }}" {% if not ids_elegidas_borrador or m.id in ids_elegidas_borrador %}checked{% endif %} style="width: auto; flex-shrink: 0;">
-            {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; flex-shrink: 0;">{% endif %}
+            {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">{% endif %}
             <div style="min-width: 0;">
               <div class="mono" style="font-size: 12px;">{{ m.codigo }}</div>
               <div class="sub">{{ m.tipo|capitalize if m.tipo else '' }}</div>
@@ -80,6 +81,7 @@
       var notaPdf = document.getElementById('nota-pdf-restaurado-guia');
       var vpPaginas = document.getElementById('vp-paginas');
       var vpCupo = document.getElementById('vp-cupo');
+      var vpCargando = document.getElementById('vp-cargando');
       var vpError = document.getElementById('vp-error');
       var vpEncabezado = document.getElementById('vp-encabezado');
       var vpVendedor = document.getElementById('vp-vendedor');
@@ -112,6 +114,8 @@
         }
         if (previsualizarEnCurso) { previsualizarPendiente = true; return; }
         previsualizarEnCurso = true;
+        vpCargando.style.display = 'block';
+        vpPaginas.style.opacity = '0.5';
         var datos = new FormData();
         datos.append('csrf_token', document.querySelector('#form-guia input[name=csrf_token]').value);
         datos.append('pdf_guia', campoPdf.files[0]);
@@ -146,6 +150,8 @@
           .catch(function () { /* la vista previa es una ayuda, no bloquea el flujo */ })
           .finally(function () {
             previsualizarEnCurso = false;
+            vpCargando.style.display = 'none';
+            vpPaginas.style.opacity = '1';
             if (previsualizarPendiente) { previsualizarPendiente = false; refrescarVistaPrevia(); }
           });
       }

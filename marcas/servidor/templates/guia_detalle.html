@@ -101,7 +101,7 @@
       <h2 class="subtitulo">Marcas de esta guía ({{ marcas|length }})</h2>
       {% for m in marcas %}
       <a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--borde-fina); text-decoration: none; color: inherit;">
-        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="40" height="40" style="object-fit: contain; flex-shrink: 0;">
+        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="40" height="40" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">
         {% else %}<span class="sub" style="width: 40px; text-align: center; flex-shrink: 0;">—</span>{% endif %}
         <div style="min-width: 0;">
           <div class="mono" style="font-size: 12.5px;">{{ m.codigo }}</div>
