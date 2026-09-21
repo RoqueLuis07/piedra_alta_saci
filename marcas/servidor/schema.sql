@@ -148,6 +148,23 @@ alter table marcas add column if not exists activo boolean not null default true
 alter table operaciones add column if not exists activo boolean not null default true;
 alter table propietarios add column if not exists activo boolean not null default true;
 
+-- Filtros guardados y columnas configurables en los listados (Guías,
+-- Ventas, Marcas): por defecto se muestran todas las columnas, así que
+-- nadie ve un cambio hasta que lo configura.
+create table if not exists filtros_guardados (
+  id bigserial primary key,
+  usuario_id uuid not null references usuarios(id) on delete cascade,
+  seccion text not null check (seccion in ('guias', 'ventas', 'marcas')),
+  nombre text not null,
+  parametros jsonb not null default '{}'::jsonb,
+  creado_en timestamptz not null default now()
+);
+
+create index if not exists idx_filtros_guardados_usuario on filtros_guardados(usuario_id, seccion);
+
+-- preferencias.columnas.<seccion> = ["fecha", "numero_guia", ...]
+alter table usuarios add column if not exists preferencias jsonb not null default '{}'::jsonb;
+
 create index if not exists idx_marcas_activo on marcas(activo) where not activo;
 create index if not exists idx_operaciones_activo on operaciones(activo) where not activo;
 create index if not exists idx_propietarios_activo on propietarios(activo) where not activo;

@@ -35,13 +35,56 @@
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
 
-  <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 14px 0 10px; gap: 16px; border-top: 1px solid var(--borde-suave); margin-top: 12px; flex-wrap: wrap;">
-    <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
-      {% if total > resultados|length %}
-      MOSTRANDO {{ resultados|length }} DE {{ total }} ASIENTOS{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %} — REFINÁ LA BÚSQUEDA PARA VER EL RESTO
-      {% else %}
-      {{ total }} ASIENTO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
-      {% endif %}
+  {% set columnas_disponibles = [('imagen', 'MARCA'), ('codigo', 'CÓDIGO'), ('propietario', 'PROPIETARIO'), ('guia', 'N.º DE GUÍA'), ('vence', 'VENCE'), ('estado', 'ESTADO')] %}
+  {% set mostrar_todas = columnas_visibles is none %}
+
+  <div style="display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0 10px; gap: 16px; border-top: 1px solid var(--borde-suave); margin-top: 12px; flex-wrap: wrap;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
+        {% if total > resultados|length %}
+        MOSTRANDO {{ resultados|length }} DE {{ total }} ASIENTOS{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %} — REFINÁ LA BÚSQUEDA PARA VER EL RESTO
+        {% else %}
+        {{ total }} ASIENTO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
+        {% endif %}
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        {% for f in filtros_guardados %}
+        <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--borde-suave); padding: 3px 4px 3px 10px; font-size: 12px;">
+          <a href="{{ url_for('buscar', **f.parametros) }}">{{ f.nombre }}</a>
+          <form method="post" action="{{ url_for('eliminar_filtro_ruta', filtro_id=f.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar este filtro guardado?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="volver" value="{{ request.full_path }}">
+            <button type="submit" style="border: 0; background: none; color: var(--texto-secundario); padding: 0 4px; cursor: pointer; font-size: 13px; min-height: auto;" title="Eliminar filtro">&times;</button>
+          </form>
+        </span>
+        {% endfor %}
+        <details>
+          <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">+ Guardar filtro actual</summary>
+          <form method="post" action="{{ url_for('guardar_filtro_ruta', seccion='marcas') }}" style="display: flex; gap: 6px; margin-top: 6px; align-items: center;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="volver" value="{{ request.full_path }}">
+            <input type="hidden" name="q" value="{{ texto }}">
+            <input type="hidden" name="estado" value="{{ estado }}">
+            <input type="hidden" name="tipo" value="{{ tipo }}">
+            <input type="text" name="nombre" placeholder="Nombre del filtro" required style="font-size: 12px; padding: 4px 6px;">
+            <button type="submit" class="boton" style="min-height: auto; padding: 4px 10px; font-size: 12px;">Guardar</button>
+          </form>
+        </details>
+        <details>
+          <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">Columnas</summary>
+          <form method="post" action="{{ url_for('actualizar_preferencias_columnas_ruta', seccion='marcas') }}" style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; border: 1px solid var(--borde-suave); padding: 10px; font-size: 12px; background: var(--superficie);">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="volver" value="{{ request.full_path }}">
+            {% for clave, etiqueta in columnas_disponibles %}
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" name="columna" value="{{ clave }}" {% if mostrar_todas or clave in columnas_visibles %}checked{% endif %} style="width: auto;">
+              {{ etiqueta }}
+            </label>
+            {% endfor %}
+            <button type="submit" class="boton boton-primario" style="min-height: auto; margin-top: 4px;">Aplicar</button>
+          </form>
+        </details>
+      </div>
     </div>
     <div style="display: flex; gap: 16px; align-items: baseline;">
       {% if perfil.rol == 'administrador' %}
@@ -57,17 +100,15 @@
   <table class="registro">
     <thead>
       <tr>
-        <th>MARCA</th>
-        <th>CÓDIGO</th>
-        <th>PROPIETARIO</th>
-        <th>N.º DE GUÍA</th>
-        <th>VENCE</th>
-        <th>ESTADO</th>
+        {% for clave, etiqueta in columnas_disponibles %}
+        {% if mostrar_todas or clave in columnas_visibles %}<th>{{ etiqueta }}</th>{% endif %}
+        {% endfor %}
       </tr>
     </thead>
     <tbody>
       {% for m in resultados %}
       <tr onclick="window.location='{{ url_for('ver_marca', codigo=m.codigo) }}'">
+        {% if mostrar_todas or 'imagen' in columnas_visibles %}
         <td>
           {% if m.imagen_url %}
           <img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; display: block;">
@@ -75,22 +116,29 @@
           <span class="sub">—</span>
           {% endif %}
         </td>
-        <td class="mono" style="white-space: nowrap;">{{ m.codigo }}</td>
+        {% endif %}
+        {% if mostrar_todas or 'codigo' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ m.codigo }}</td>{% endif %}
+        {% if mostrar_todas or 'propietario' in columnas_visibles %}
         <td>
           <div style="font-weight: 500;">{{ m.propietarios.nombre if m.propietarios else 'Sin identificar' }}</div>
           <div class="sub">{{ m.propietarios.documento if m.propietarios else '' }}</div>
         </td>
+        {% endif %}
+        {% if mostrar_todas or 'guia' in columnas_visibles %}
         <td class="mono" style="white-space: nowrap;">
           <div>{{ m.operaciones.numero_guia if m.operaciones else '—' }}</div>
           <div class="sub">{{ (m.operaciones.fecha or '') if m.operaciones else '' }}</div>
         </td>
-        <td class="mono" style="white-space: nowrap;">{{ m.vence_en or '—' }}</td>
+        {% endif %}
+        {% if mostrar_todas or 'vence' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ m.vence_en or '—' }}</td>{% endif %}
+        {% if mostrar_todas or 'estado' in columnas_visibles %}
         <td>
           <span class="estado estado-{{ m.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
         </td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="6" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados.</td></tr>
+      <tr><td colspan="{{ columnas_visibles|length if not mostrar_todas else 6 }}" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados.</td></tr>
       {% endfor %}
     </tbody>
   </table>

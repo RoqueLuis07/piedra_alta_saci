@@ -50,9 +50,11 @@ from marcas.servidor.consultas import (
     LIMITE_EXPORTAR,
     POR_PAGINA_MARCAS,
     POR_PAGINA_PROPIETARIOS,
+    SECCIONES_FILTRO,
     ErrorResolverCambio,
     actualizar_marca_campos,
     actualizar_operacion_campos,
+    actualizar_preferencias_columnas,
     actualizar_propietario,
     actualizar_usuario_campos,
     borrador_venta_dominante as obtener_borrador_venta_dominante,
@@ -66,14 +68,17 @@ from marcas.servidor.consultas import (
     desglose_marcas,
     dict_a_json,
     eliminar_borrador_venta,
+    eliminar_filtro,
     estadisticas,
     exportar_marcas,
     exportar_operaciones,
     exportar_todo_para_respaldo,
     ficha_marca,
     guardar_borrador_venta,
+    guardar_filtro,
     historial_cambios_resueltos,
     imagen_marca,
+    listar_filtros,
     listar_operaciones_paginado,
     listar_propietarios,
     listar_usuarios,
@@ -92,6 +97,7 @@ from marcas.servidor.consultas import (
     ocultar_operacion,
     ocultar_propietario,
     operaciones_de_propietario,
+    preferencias_columnas,
     proponer_cambio,
     ranking_participantes,
     resolver_cambio_pendiente,
@@ -444,6 +450,8 @@ def crear_app() -> Flask:
             tipo=tipo or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
+            filtros_guardados=listar_filtros(conexion, perfil["id"], "marcas"),
+            columnas_visibles=preferencias_columnas(conexion, perfil["id"], "marcas"),
         )
 
     @app.get("/marcas/<codigo>")
@@ -593,6 +601,8 @@ def crear_app() -> Flask:
             hasta=creada_hasta or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
+            filtros_guardados=listar_filtros(conexion, perfil["id"], "guias"),
+            columnas_visibles=preferencias_columnas(conexion, perfil["id"], "guias"),
         )
 
     @app.get("/ventas")
@@ -624,6 +634,8 @@ def crear_app() -> Flask:
             hasta=creada_hasta or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
+            filtros_guardados=listar_filtros(conexion, perfil["id"], "ventas"),
+            columnas_visibles=preferencias_columnas(conexion, perfil["id"], "ventas"),
         )
 
     @app.get("/exportar")
@@ -735,6 +747,49 @@ def crear_app() -> Flask:
             buffer, as_attachment=True, download_name="marcas.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+    _CAMPOS_FILTRO_POR_SECCION = {
+        "marcas": ("q", "estado", "tipo"),
+        "guias": ("q", "estado", "desde", "hasta"),
+        "ventas": ("q", "estado", "desde", "hasta"),
+    }
+
+    @app.post("/filtros/<seccion>")
+    @requiere_sesion
+    def guardar_filtro_ruta(seccion: str):
+        if seccion not in SECCIONES_FILTRO:
+            return _registro_no_encontrado("Sección de filtros no válida.")
+        volver = request.form.get("volver") or url_for("buscar")
+        nombre = (request.form.get("nombre") or "").strip()
+        if not nombre:
+            return redirect(volver)
+        conexion = conexion_actual()
+        perfil = perfil_actual()
+        campos = _CAMPOS_FILTRO_POR_SECCION[seccion]
+        parametros = {c: request.form.get(c) for c in campos if request.form.get(c)}
+        guardar_filtro(conexion, perfil["id"], seccion, nombre, parametros)
+        return redirect(volver)
+
+    @app.post("/filtros/<int:filtro_id>/eliminar")
+    @requiere_sesion
+    def eliminar_filtro_ruta(filtro_id: int):
+        conexion = conexion_actual()
+        perfil = perfil_actual()
+        eliminar_filtro(conexion, perfil["id"], filtro_id)
+        volver = request.form.get("volver") or url_for("buscar")
+        return redirect(volver)
+
+    @app.post("/preferencias/columnas/<seccion>")
+    @requiere_sesion
+    def actualizar_preferencias_columnas_ruta(seccion: str):
+        if seccion not in SECCIONES_FILTRO:
+            return _registro_no_encontrado("Sección no válida.")
+        conexion = conexion_actual()
+        perfil = perfil_actual()
+        columnas = request.form.getlist("columna")
+        actualizar_preferencias_columnas(conexion, perfil["id"], seccion, columnas)
+        volver = request.form.get("volver") or url_for("buscar")
+        return redirect(volver)
 
     @app.get("/guias/nueva")
     @requiere_sesion

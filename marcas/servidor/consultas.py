@@ -1037,3 +1037,70 @@ def dict_a_json(datos) -> str:
     """``json.dumps`` con las fechas de Postgres ya resueltas -- lo usan
     tanto la descarga manual del Panel como el script de respaldo a GitHub."""
     return json.dumps(datos, ensure_ascii=False, indent=2, default=_json_default)
+
+
+SECCIONES_FILTRO = ("guias", "ventas", "marcas")
+
+
+def guardar_filtro(conexion, usuario_id: str, seccion: str, nombre: str, parametros: dict) -> dict:
+    """Guarda la combinación de filtros activa en una sección de listado,
+    para volver a aplicarla con un click. ``parametros`` son los mismos
+    valores de query string que ya arma el formulario de filtro (q, estado,
+    tipo, desde, hasta según la sección) -- se guardan tal cual."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO filtros_guardados (usuario_id, seccion, nombre, parametros)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id, nombre, parametros, creado_en
+            """,
+            (usuario_id, seccion, nombre, Json(parametros)),
+        )
+        return cur.fetchone()
+
+
+def listar_filtros(conexion, usuario_id: str, seccion: str) -> list[dict]:
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, nombre, parametros, creado_en
+            FROM filtros_guardados
+            WHERE usuario_id = %s AND seccion = %s
+            ORDER BY creado_en DESC
+            """,
+            (usuario_id, seccion),
+        )
+        return cur.fetchall()
+
+
+def eliminar_filtro(conexion, usuario_id: str, filtro_id: int) -> None:
+    """Sólo se puede borrar el filtro propio -- usuario_id siempre viene de
+    la sesión, nunca del formulario, así nadie borra el filtro de otra
+    persona aunque adivine el id."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            "DELETE FROM filtros_guardados WHERE id = %s AND usuario_id = %s",
+            (filtro_id, usuario_id),
+        )
+
+
+def preferencias_columnas(conexion, usuario_id: str, seccion: str) -> list[str] | None:
+    """``None`` si la persona nunca configuró nada todavía -- en ese caso
+    se muestran todas las columnas, no una lista vacía."""
+    with conexion.cursor() as cur:
+        cur.execute("SELECT preferencias FROM usuarios WHERE id = %s", (usuario_id,))
+        fila = cur.fetchone()
+    preferencias = (fila or {}).get("preferencias") or {}
+    return (preferencias.get("columnas") or {}).get(seccion)
+
+
+def actualizar_preferencias_columnas(conexion, usuario_id: str, seccion: str, columnas: list[str]) -> None:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT preferencias FROM usuarios WHERE id = %s FOR UPDATE", (usuario_id,))
+        fila = cur.fetchone()
+        preferencias = (fila or {}).get("preferencias") or {}
+        preferencias.setdefault("columnas", {})[seccion] = columnas
+        cur.execute(
+            "UPDATE usuarios SET preferencias = %s WHERE id = %s",
+            (Json(preferencias), usuario_id),
+        )
