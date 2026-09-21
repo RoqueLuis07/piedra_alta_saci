@@ -174,16 +174,123 @@ def detectar_casillas(pdf: Path | str, pagina: int) -> list[Casilla]:
     return casillas
 
 
+def _agrupar_valores(valores: Iterable[float], tolerancia: float) -> list[float]:
+    """Agrupa valores cercanos (a la tolerancia) y devuelve el promedio de
+    cada grupo. Las líneas divisorias de una misma tabla, en un PDF real, no
+    siempre caen exactamente en el mismo punto entre celdas vecinas -- quedan
+    a 1-2pt de diferencia -- así que compararlas por igualdad exacta pierde
+    coincidencias."""
+    ordenados = sorted(valores)
+    if not ordenados:
+        return []
+    grupos: list[list[float]] = [[ordenados[0]]]
+    for v in ordenados[1:]:
+        if v - grupos[-1][-1] <= tolerancia:
+            grupos[-1].append(v)
+        else:
+            grupos.append([v])
+    return [sum(g) / len(g) for g in grupos]
+
+
+def _grilla_complementarias_por_lineas(
+    pagina: int, objetos, dominante_caja: tuple[float, float, float, float]
+) -> list[Casilla]:
+    """Reconstruye las celdas de Complementarias a partir de las líneas
+    divisorias reales del formulario -- comprobado contra una guía real de
+    SENACSA, el Rubro 2 NO es un único recuadro grande para "Complementarias"
+    subdividido en 2x2 (como se asumía antes, y que sí vale para el PDF
+    sintético de prueba): es una tabla de 2 filas por varias columnas armada
+    con líneas finas, donde la Dominante ocupa una sola celda (arriba a la
+    izquierda) y el resto queda libre para las Complementarias -- normalmente
+    hasta cinco, antes de pasar al Anexo. Devuelve ``[]`` si no encuentra una
+    grilla reconocible, para que quien llama pruebe el modelo anterior."""
+    x0_dom, y0_dom, x1_dom, y1_dom = dominante_caja
+    tolerancia_linea = 3.0
+    tolerancia_agrupar = 4.0
+    alto_dom = y1_dom - y0_dom
+
+    # 1) El borde IZQUIERDO de la columna de la Dominante: la única línea
+    # que sirve de referencia segura para el alto total de la grilla, porque
+    # más a la derecha puede haber otras tablas (Rubro 3, Rubro 4) a una
+    # altura parecida y no hay que confundirlas con esta.
+    tramos_borde_dominante = [
+        (x0, x1, y0, y1)
+        for tipo, (x0, y0, x1, y1) in objetos
+        if tipo == 2 and (x1 - x0) <= tolerancia_linea and (y1 - y0) > alto_dom * 0.5
+        and x0_dom - 20 <= x0 <= x0_dom + 10
+        and y0 >= y0_dom - 3 * alto_dom and y1 <= y1_dom + 30
+    ]
+    if not tramos_borde_dominante:
+        return []
+    x_borde = sum((x0 + x1) / 2 for x0, x1, _, _ in tramos_borde_dominante) / len(tramos_borde_dominante)
+    y_grilla_min = min(y0 for _, _, y0, _ in tramos_borde_dominante)
+    y_grilla_max = max(y1 for _, _, _, y1 in tramos_borde_dominante)
+
+    # 2) Las filas: cualquier línea horizontal que cruce ese borde, dentro
+    # del alto ya encontrado -- así salen el de arriba, el de abajo y
+    # cualquier división intermedia, sin importar si el borde izquierdo
+    # está dibujado como un solo trazo o partido en varios tramos.
+    filas = _agrupar_valores(
+        [
+            (y0 + y1) / 2
+            for tipo, (x0, y0, x1, y1) in objetos
+            if tipo == 2 and (y1 - y0) <= tolerancia_linea
+            and x0 <= x_borde + tolerancia_agrupar and x1 >= x_borde - tolerancia_agrupar
+            and y0 >= y_grilla_min - tolerancia_agrupar and y1 <= y_grilla_max + tolerancia_agrupar
+        ],
+        tolerancia_agrupar,
+    )
+    if len(filas) < 2:
+        return []
+    filas.sort()
+    alto_fila_min = min(b - a for a, b in zip(filas, filas[1:]))
+
+    # 2) Las columnas: cualquier línea vertical, en todo el ancho, que sea
+    # al menos tan alta como una fila entera de ESTA grilla -- eso deja
+    # afuera los bordes internos de tablas vecinas, que son más bajos.
+    columnas = _agrupar_valores(
+        [
+            (x0 + x1) / 2
+            for tipo, (x0, y0, x1, y1) in objetos
+            if tipo == 2 and (x1 - x0) <= tolerancia_linea
+            and (y1 - y0) >= alto_fila_min * 0.8
+            and x0 >= x0_dom - 20
+            and y0 >= filas[0] - tolerancia_agrupar and y1 <= filas[-1] + tolerancia_agrupar
+        ],
+        tolerancia_agrupar,
+    )
+    if len(columnas) < 3:
+        return []
+    columnas.sort()
+
+    celdas = []
+    for fi in range(len(filas) - 1, 0, -1):          # de arriba hacia abajo
+        y_abajo, y_arriba = filas[fi - 1], filas[fi]
+        for ci in range(len(columnas) - 1):
+            x_izq, x_der = columnas[ci], columnas[ci + 1]
+            centro_x, centro_y = (x_izq + x_der) / 2, (y_abajo + y_arriba) / 2
+            es_celda_dominante = (
+                x0_dom - tolerancia_agrupar <= centro_x <= x1_dom + tolerancia_agrupar
+                and y0_dom - tolerancia_agrupar <= centro_y <= y1_dom + tolerancia_agrupar
+            )
+            if es_celda_dominante:
+                continue
+            celdas.append(Casilla(
+                pagina, x_izq, y_abajo, x_der - x_izq, y_arriba - y_abajo,
+                fila=len(filas) - fi, columna=ci + 1,
+            ))
+    return celdas
+
+
 def detectar_rubro2(pdf: Path | str, pagina: int) -> tuple[Casilla | None, list[Casilla]]:
     """Lee la casilla Dominante y las de Complementarias del Rubro 2, en la
     página principal (no el Anexo).
 
-    A diferencia del Anexo, acá las casillas de Complementarias no siempre
-    quedan como cuatro rectángulos propios en el PDF -- en el formulario real
-    de SENACSA es un único recuadro grande sin subdivisiones dibujadas. Por
-    eso, una vez ubicado ese recuadro (a la derecha de la Dominante, a la
-    misma altura), se lo reparte en una grilla de 2x2, que es la proporción
-    que usa el formulario oficial."""
+    Primero intenta reconstruir la grilla real a partir de sus líneas
+    divisorias (:func:`_grilla_complementarias_por_lineas`); si el formulario
+    no trae esas líneas (o vienen de otro layout), se cae al modelo anterior:
+    un único recuadro grande a la derecha de la Dominante, subdividido en una
+    grilla de 2x2."""
     doc = pdfium.PdfDocument(str(pdf))
     try:
         objetos = _objetos(doc[pagina])
@@ -210,28 +317,29 @@ def detectar_rubro2(pdf: Path | str, pagina: int) -> tuple[Casilla | None, list[
         fila=1, columna=1,
     )
 
-    complementaria_caja = next(
-        (
-            (x0, y0, x1, y1) for x0, y0, x1, y1 in cajas
-            if (x0, y0, x1, y1) != dominante_caja
-            and x0 >= dominante_caja[2] - 5
-            and abs(y1 - dominante_caja[3]) < 40
-        ),
-        None,
-    )
-    complementarias: list[Casilla] = []
-    if complementaria_caja is not None:
-        x0, y0, x1, y1 = complementaria_caja
-        columnas, filas = 2, 2
-        ancho_celda, alto_celda = (x1 - x0) / columnas, (y1 - y0) / filas
-        for fi in range(filas):
-            for ci in range(columnas):
-                complementarias.append(
-                    Casilla(
-                        pagina, x0 + ci * ancho_celda, y1 - (fi + 1) * alto_celda,
-                        ancho_celda, alto_celda, fila=fi + 1, columna=ci + 1,
+    complementarias = _grilla_complementarias_por_lineas(pagina, objetos, dominante_caja)
+    if not complementarias:
+        complementaria_caja = next(
+            (
+                (x0, y0, x1, y1) for x0, y0, x1, y1 in cajas
+                if (x0, y0, x1, y1) != dominante_caja
+                and x0 >= dominante_caja[2] - 5
+                and abs(y1 - dominante_caja[3]) < 40
+            ),
+            None,
+        )
+        if complementaria_caja is not None:
+            x0, y0, x1, y1 = complementaria_caja
+            columnas, filas = 2, 2
+            ancho_celda, alto_celda = (x1 - x0) / columnas, (y1 - y0) / filas
+            for fi in range(filas):
+                for ci in range(columnas):
+                    complementarias.append(
+                        Casilla(
+                            pagina, x0 + ci * ancho_celda, y1 - (fi + 1) * alto_celda,
+                            ancho_celda, alto_celda, fila=fi + 1, columna=ci + 1,
+                        )
                     )
-                )
 
     for casilla in [dominante, *complementarias]:
         area_casilla = casilla.ancho * casilla.alto

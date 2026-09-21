@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from generar_guia_demo import generar as generar_guia  # noqa: E402
 
 from marcas.pdf.guia import (  # noqa: E402
-    completar_guia, detectar_casillas, extraer_encabezado, hojas_de_anexo, planificar,
+    completar_guia, completar_venta, detectar_casillas, detectar_rubro2, extraer_encabezado,
+    hojas_de_anexo, paginas_principales, planificar,
 )
 
 pdfium = pytest.importorskip("pypdfium2")
@@ -40,6 +41,18 @@ def marcas(tmp_path_factory):
         cv2.imwrite(str(ruta), img)
         rutas.append(ruta)
     return rutas
+
+
+@pytest.fixture(scope="module")
+def guia_venta(tmp_path_factory):
+    """Guía sintética con el Rubro 2 real -- Dominante en una celda y una
+    grilla de 2 filas x 3 columnas para Complementarias (armada con líneas
+    finas, no un único recuadro) -- además de las hojas de anexo. Reproduce
+    lo que se comprobó contra una guía real de SENACSA, incluyendo el Rubro 3
+    a un costado para probar que el detector no lo confunda con la grilla."""
+    return generar_guia(
+        tmp_path_factory.mktemp("guia_venta") / "guia_venta.pdf", incluir_rubro2=True
+    )
 
 
 def _pagina(pdf, indice, escala=1.0):
@@ -230,3 +243,81 @@ def test_extraer_encabezado_rechaza_un_pdf_que_no_es_una_guia(tmp_path):
     otro = generar_plantilla_captura(tmp_path / "otro.pdf", hojas=1)
     with pytest.raises(ValueError, match="Rubro 2"):
         extraer_encabezado(otro)
+
+
+def test_detecta_rubro2_dominante_y_cinco_complementarias(guia_venta):
+    """Comprobado contra una guía real de SENACSA: el Rubro 2 NO es una
+    Dominante más un único recuadro de 2x2 para Complementarias -- es una
+    grilla de 2 filas x 3 columnas donde la Dominante ocupa una sola celda y
+    las otras CINCO quedan libres para Complementarias, antes de pasar al
+    Anexo. Se prueba en las cuatro copias, no sólo la primera."""
+    principales = paginas_principales(guia_venta)
+    assert len(principales) == 4
+    for i, _copia in principales:
+        dominante, complementarias = detectar_rubro2(guia_venta, i)
+        assert dominante is not None and dominante.ocupada, "la Dominante ya viene puesta en la guía de prueba"
+        assert len(complementarias) == 5
+        assert all(not c.ocupada for c in complementarias)
+
+
+def test_detecta_rubro2_con_dominante_libre(tmp_path_factory):
+    guia_libre = generar_guia(
+        tmp_path_factory.mktemp("guia_libre") / "guia.pdf",
+        incluir_rubro2=True, dominante_ocupada=False,
+    )
+    dominante, complementarias = detectar_rubro2(guia_libre, 0)
+    assert dominante is not None and not dominante.ocupada
+    assert len(complementarias) == 5
+
+
+def test_completar_venta_llena_las_cinco_del_rubro2_antes_del_anexo(guia_venta, marcas, tmp_path):
+    """Bug real encontrado en producción: las marcas complementarias de una
+    Venta se estaban estampando en el Rubro 3 (Especie Bovina) en vez de en
+    la grilla de Complementarias -- quedaban "aceptadas" por el sistema pero
+    invisibles en el PDF final. Con 5 marcas, las cinco deben entrar en el
+    Rubro 2 de las cuatro copias, ninguna al Anexo."""
+    salida = tmp_path / "venta_5.pdf"
+    info = completar_venta(guia_venta, None, marcas, salida)
+    assert info["complementarias_en_rubro2"] == 5
+    assert info["complementarias_en_anexo"] == 0
+    assert sorted(info["paginas_modificadas"]) == sorted(info["paginas_principales"])
+
+
+def test_completar_venta_desborda_la_sexta_marca_al_anexo(guia_venta, marcas, tmp_path):
+    """Regla de negocio explícita: con cinco marcas complementarias alcanza
+    la primera página (se repite en las cuatro copias); recién la SEXTA
+    marca en adelante pasa al Anexo."""
+    seis = [*marcas, marcas[0]]
+    salida = tmp_path / "venta_6.pdf"
+    info = completar_venta(guia_venta, None, seis, salida)
+    assert info["complementarias_en_rubro2"] == 5
+    assert info["complementarias_en_anexo"] == 1
+    assert set(info["paginas_principales"]).issubset(set(info["paginas_modificadas"]))
+    assert len(info["paginas_modificadas"]) > len(info["paginas_principales"])
+
+
+def test_completar_venta_no_pisa_una_dominante_ya_puesta(guia_venta, marcas, tmp_path):
+    """La Dominante de la guía de prueba ya viene puesta -- si se le pasa una
+    imagen de Dominante de todos modos, no se debe reemplazar."""
+    salida = tmp_path / "venta_dominante_ocupada.pdf"
+    info = completar_venta(guia_venta, marcas[0], marcas[1:3], salida)
+    assert info["dominante_completada"] is False
+
+
+def test_completar_venta_no_toca_el_rubro3(guia_venta, marcas, tmp_path):
+    """Regresión directa del bug: el área de Rubro 3 (a la derecha de
+    Complementarias) no debe cambiar ni un píxel al estampar marcas."""
+    salida = tmp_path / "venta_rubro3.pdf"
+    completar_venta(guia_venta, None, marcas, salida)
+    escala = 2.0
+    antes = _pagina(guia_venta, 0, escala=escala)
+    despues = _pagina(salida, 0, escala=escala)
+    # Rubro 3 (ver _rubro2 en generar_guia_demo.py): x 414-596, y 544-732 en
+    # coordenadas PDF (origen abajo-izquierda) -- se convierte a filas/columnas
+    # de la imagen (origen arriba-izquierda) para recortar esa zona.
+    alto_pagina = 1008
+    x0, x1 = round(414 * escala), round(596 * escala)
+    y0, y1 = round((alto_pagina - 732) * escala), round((alto_pagina - 544) * escala)
+    recorte_antes = antes[y0:y1, x0:x1]
+    recorte_despues = despues[y0:y1, x0:x1]
+    assert np.array_equal(recorte_antes, recorte_despues)
