@@ -960,6 +960,13 @@ def crear_app() -> Flask:
         operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion:
             return _registro_no_encontrado("No se encontró esa guía.")
+        if operacion.get("tipo_operacion") == "venta":
+            # Alguien llegó a la URL de imprimir Guía para una Venta (ej. un
+            # link viejo o tipeando la URL a mano, ya que ambas comparten la
+            # misma ficha de detalle) -- la pantalla de Venta es la que sabe
+            # buscar marcas en todo el catálogo, así que se manda para allá
+            # en vez de mostrar una pantalla vacía sin salida.
+            return redirect(url_for("imprimir_venta", operacion_id=operacion_id))
         marcas = marcas_de_operacion(conexion, operacion_id)
         for m in marcas:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
@@ -981,7 +988,7 @@ def crear_app() -> Flask:
     def generar_guia_pdf(operacion_id: int):
         conexion = conexion_actual()
         operacion = obtener_operacion_por_id(conexion, operacion_id)
-        if not operacion:
+        if not operacion or operacion.get("tipo_operacion") == "venta":
             return _registro_no_encontrado("No se encontró esa guía.")
 
         archivo_pdf = request.files.get("pdf_guia")

@@ -551,10 +551,10 @@ def ficha_marca(conexion, codigo: str) -> dict | None:
             operacion = cur.fetchone()
             cur.execute(
                 """
-                SELECT codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png,
+                SELECT id, codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png,
                        (archivo_svg IS NOT NULL) AS archivo_svg, estado
                 FROM marcas
-                WHERE operacion_id = %s
+                WHERE operacion_id = %s AND activo = true
                 ORDER BY tipo, posicion
                 """,
                 (marca["operacion_id"],),
