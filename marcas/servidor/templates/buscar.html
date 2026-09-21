@@ -35,6 +35,13 @@
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
 
+  {% if desglose %}
+  <div class="sub mono" style="margin: 10px 0 0; font-size: 11.5px; letter-spacing: 0.02em;">
+    EN TODO EL REGISTRO: {{ desglose.activa }} AL DÍA · {{ desglose.revisar }} A REVISAR · {{ desglose.baja }} DE BAJA
+    &nbsp;·&nbsp; {{ desglose.dominante }} DOMINANTES · {{ desglose.complementaria }} COMPLEMENTARIAS
+  </div>
+  {% endif %}
+
   {% set columnas_disponibles = [('imagen', 'MARCA'), ('codigo', 'CÓDIGO'), ('propietario', 'PROPIETARIO'), ('guia', 'N.º DE GUÍA'), ('vence', 'VENCE'), ('estado', 'ESTADO')] %}
   {% set mostrar_todas = columnas_visibles is none %}
 

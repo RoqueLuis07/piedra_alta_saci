@@ -13,7 +13,7 @@
 <div class="contenido">
   {% if cambio_pendiente %}
   <div class="aviso-pendiente">
-    Hay una modificación de esta guía esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en }}).
+    Hay una modificación de esta guía esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en|fecha_hora }}).
     Los datos de abajo son los vigentes hasta que se apruebe en <a href="{{ url_for('aprobaciones') }}">Aprobaciones</a>.
   </div>
   {% endif %}
@@ -40,7 +40,7 @@
     {% endif %}
   </div>
   {% if operacion.creado_por_nombre %}
-  <div class="sub mono" style="margin-top: 18px;">CARGADA POR {{ operacion.creado_por_nombre|upper }}{% if operacion.creado_en %} · {{ operacion.creado_en }}{% endif %}</div>
+  <div class="sub mono" style="margin-top: 18px;">CARGADA POR {{ operacion.creado_por_nombre|upper }}{% if operacion.creado_en %} · {{ operacion.creado_en|fecha_hora }}{% endif %}</div>
   {% endif %}
 
   <div style="display: flex; gap: 40px; flex-wrap: wrap; margin-top: 20px;" class="buscar-cols">

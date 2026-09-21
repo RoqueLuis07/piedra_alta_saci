@@ -588,6 +588,12 @@ def desglose_marcas(conexion) -> dict:
     return resultado
 
 
+_MESES_ABREVIADOS = {
+    "01": "Ene", "02": "Feb", "03": "Mar", "04": "Abr", "05": "May", "06": "Jun",
+    "07": "Jul", "08": "Ago", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dic",
+}
+
+
 def resumen_mensual(conexion, meses: int = 12) -> list[dict]:
     """Guías cargadas y animales declarados por mes, según ``creado_en``.
 
@@ -608,7 +614,16 @@ def resumen_mensual(conexion, meses: int = 12) -> list[dict]:
         baldes[clave]["guias"] += 1
         baldes[clave]["animales"] += f.get("cantidad_animales") or 0
     claves = sorted(baldes)[-meses:]
-    return [{"mes": clave, **baldes[clave]} for clave in claves]
+    return [
+        {
+            "mes": clave,
+            # "Set 2026" en vez de "2026-09" -- para leer el gráfico no hace
+            # falta saber que los meses en la base se guardan AAAA-MM.
+            "mes_legible": f"{_MESES_ABREVIADOS.get(clave[5:7], clave[5:7])} {clave[:4]}",
+            **baldes[clave],
+        }
+        for clave in claves
+    ]
 
 
 def ranking_participantes(conexion, limite: int = 8) -> tuple[list[dict], list[dict]]:

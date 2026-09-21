@@ -8,7 +8,7 @@
 <div class="contenido">
   {% if cambio_pendiente %}
   <div class="aviso-pendiente">
-    Hay una modificación de esta marca esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en }}).
+    Hay una modificación de esta marca esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en|fecha_hora }}).
     Los datos de abajo son los vigentes hasta que se resuelva en <a href="{{ url_for('aprobaciones') }}">Aprobaciones</a>.
   </div>
   {% endif %}
@@ -29,7 +29,7 @@
     <span class="estado estado-{{ ficha.marca.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(ficha.marca.estado, ficha.marca.estado) }}</span>
     {% if ficha.marca.creado_por_nombre or ficha.marca.actualizado_por_nombre %}
     <span class="sub mono">
-      {% if ficha.marca.creado_por_nombre %}CARGADA POR {{ ficha.marca.creado_por_nombre|upper }}{% if ficha.marca.creado_en %} · {{ ficha.marca.creado_en }}{% endif %}{% endif %}
+      {% if ficha.marca.creado_por_nombre %}CARGADA POR {{ ficha.marca.creado_por_nombre|upper }}{% if ficha.marca.creado_en %} · {{ ficha.marca.creado_en|fecha_hora }}{% endif %}{% endif %}
       {% if ficha.marca.actualizado_por_nombre and ficha.marca.actualizado_por != ficha.marca.creado_por %} · ÚLTIMA EDICIÓN DE {{ ficha.marca.actualizado_por_nombre|upper }}{% endif %}
     </span>
     {% endif %}

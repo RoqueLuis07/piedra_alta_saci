@@ -23,7 +23,7 @@
   {% set max_animales = (mensual|max(attribute='animales')).animales or 1 %}
   <div style="display: flex; align-items: flex-end; gap: 10px; height: 180px; margin-top: 18px; padding: 0 4px; border-bottom: 1px solid var(--texto);">
     {% for m in mensual %}
-    <div style="flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;" title="{{ m.mes }}: {{ m.guias }} guía(s), {{ m.animales }} animal(es)">
+    <div style="flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%;" title="{{ m.mes_legible }}: {{ m.guias }} guía(s), {{ m.animales }} animal(es)">
       <div class="mono sub" style="font-size: 10px; margin-bottom: 4px;">{{ m.animales }}</div>
       <div style="width: 100%; max-width: 46px; background: var(--verde-oscuro); height: {{ ((m.animales / max_animales) * 150)|round|int }}px; min-height: 2px;"></div>
     </div>
@@ -31,7 +31,7 @@
   </div>
   <div style="display: flex; gap: 10px; padding: 0 4px; margin-top: 6px;">
     {% for m in mensual %}
-    <div class="mono sub" style="flex: 1 1 auto; text-align: center; font-size: 10px;">{{ m.mes }}</div>
+    <div class="mono sub" style="flex: 1 1 auto; text-align: center; font-size: 10px;">{{ m.mes_legible }}</div>
     {% endfor %}
   </div>
   {% else %}

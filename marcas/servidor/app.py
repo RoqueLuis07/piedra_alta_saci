@@ -19,6 +19,7 @@ import zipfile
 import click
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_limiter import Limiter
@@ -132,6 +133,26 @@ def _fecha_sin_tz(valor):
     if isinstance(valor, datetime) and valor.tzinfo is not None:
         return valor.replace(tzinfo=None)
     return valor
+
+
+_ZONA_HORARIA_LOCAL = ZoneInfo("America/Asuncion")
+
+
+def _formatear_fecha_hora(valor):
+    """Fecha y hora en un formato que cualquiera puede leer (DD/MM/AAAA
+    HH:MM, en hora de Paraguay) -- nunca la marca de tiempo cruda que
+    guarda la base (con microsegundos y huso horario UTC), que es jerga de
+    base de datos y no algo pensado para mostrarse en pantalla."""
+    if not valor:
+        return "—"
+    if isinstance(valor, str):
+        try:
+            valor = datetime.fromisoformat(valor)
+        except ValueError:
+            return valor
+    if valor.tzinfo is not None:
+        valor = valor.astimezone(_ZONA_HORARIA_LOCAL)
+    return valor.strftime("%d/%m/%Y %H:%M")
 
 
 def _libro_excel(nombre_hoja: str, encabezados: list[str], filas: list[list]) -> io.BytesIO:
@@ -260,6 +281,8 @@ def crear_app() -> Flask:
     # peticiones falsificadas desde otro sitio (CSRF). Queda disponible en
     # los templates como {{ csrf_token() }}, Flask-WTF lo registra solo.
     CSRFProtect(app)
+
+    app.jinja_env.filters["fecha_hora"] = _formatear_fecha_hora
 
     # Sin esto, el login no tiene freno: alguien podría probar contraseñas
     # sin límite. El almacenamiento en memoria alcanza para un solo proceso;
@@ -452,6 +475,7 @@ def crear_app() -> Flask:
             perfil=perfil,
             filtros_guardados=listar_filtros(conexion, perfil["id"], "marcas"),
             columnas_visibles=preferencias_columnas(conexion, perfil["id"], "marcas"),
+            desglose=desglose_marcas(conexion),
         )
 
     @app.get("/marcas/<codigo>")

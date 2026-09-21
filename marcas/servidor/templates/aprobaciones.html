@@ -20,10 +20,10 @@
   <div style="margin-top: 22px; border: 1px solid var(--texto); background: var(--superficie); padding: 18px;">
     <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;">
       <div>
-        <div class="etiqueta">{{ c.tabla|upper }}</div>
-        <div class="mono" style="font-size: 17px; font-weight: 500; margin-top: 4px;">{{ c.referencia }}</div>
+        <div class="etiqueta">{{ 'Guía / venta' if c.tabla == 'operaciones' else 'Marca' }}</div>
+        <a href="{{ url_for('ver_guia', operacion_id=c.fila_id) if c.tabla == 'operaciones' else url_for('ver_marca', codigo=c.referencia) }}" class="mono" style="font-size: 17px; font-weight: 500; margin-top: 4px; display: block;">{{ c.referencia }} &rarr;</a>
       </div>
-      <div class="mono sub">Propuesto {{ c.propuesto_en }}</div>
+      <div class="mono sub">Propuesto {{ c.propuesto_en|fecha_hora }}</div>
     </div>
 
     <div style="margin-top: 14px; border-top: 1px solid var(--borde-fina); padding-top: 12px;">
@@ -34,11 +34,12 @@
         <div class="campo-valor sub">{{ 'IMAGEN PNG' if campo == 'archivo_png' else 'IMAGEN SVG' }} modificada -- se puede ver el resultado en la ficha de la marca una vez aprobado.</div>
       </div>
       {% else %}
+      {% set anterior = c.valores_anteriores.get(campo) %}
       <div class="campo-fila">
         <div class="campo-etiqueta">{{ campo }}</div>
         <div class="campo-valor">
-          <span class="sub" style="text-decoration: line-through;">{{ c.valores_anteriores.get(campo, '—') }}</span>
-          &rarr; <strong>{{ valor }}</strong>
+          <span class="sub" style="text-decoration: line-through;">{{ anterior if anterior is not none else '(vacío)' }}</span>
+          &rarr; <strong>{{ valor if valor is not none else '(vacío)' }}</strong>
         </div>
       </div>
       {% endif %}
@@ -64,14 +65,14 @@
   <div style="margin-top: 22px; border: 1px solid var(--borde-suave); background: var(--superficie); padding: 18px;">
     <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap;">
       <div>
-        <div class="etiqueta">{{ c.tabla|upper }}</div>
-        <div class="mono" style="font-size: 17px; font-weight: 500; margin-top: 4px;">{{ c.referencia }}</div>
+        <div class="etiqueta">{{ 'Guía / venta' if c.tabla == 'operaciones' else 'Marca' }}</div>
+        <a href="{{ url_for('ver_guia', operacion_id=c.fila_id) if c.tabla == 'operaciones' else url_for('ver_marca', codigo=c.referencia) }}" class="mono" style="font-size: 17px; font-weight: 500; margin-top: 4px; display: block;">{{ c.referencia }} &rarr;</a>
       </div>
       <span class="estado {{ 'estado-activa' if c.estado == 'aprobado' else 'estado-baja' }}">{{ 'APROBADO' if c.estado == 'aprobado' else 'RECHAZADO' }}</span>
     </div>
     <div class="sub mono" style="margin-top: 10px;">
-      PROPUESTO POR {{ (c.propuesto_por_nombre or '—')|upper }} EL {{ c.propuesto_en }}
-      · {{ 'APROBADO' if c.estado == 'aprobado' else 'RECHAZADO' }} POR {{ (c.revisado_por_nombre or '—')|upper }} EL {{ c.revisado_en }}
+      PROPUESTO POR {{ (c.propuesto_por_nombre or '—')|upper }} EL {{ c.propuesto_en|fecha_hora }}
+      · {{ 'APROBADO' if c.estado == 'aprobado' else 'RECHAZADO' }} POR {{ (c.revisado_por_nombre or '—')|upper }} EL {{ c.revisado_en|fecha_hora }}
     </div>
     {% if c.motivo_rechazo %}
     <div class="sub" style="margin-top: 6px;">Motivo: {{ c.motivo_rechazo }}</div>
@@ -79,11 +80,12 @@
     <div style="margin-top: 14px; border-top: 1px solid var(--borde-fina); padding-top: 12px;">
       {% for campo, valor in c.cambios.items() %}
       {% if campo not in ('archivo_png', 'archivo_svg') %}
+      {% set anterior = c.valores_anteriores.get(campo) %}
       <div class="campo-fila">
         <div class="campo-etiqueta">{{ campo }}</div>
         <div class="campo-valor">
-          <span class="sub" style="text-decoration: line-through;">{{ c.valores_anteriores.get(campo, '—') }}</span>
-          &rarr; <strong>{{ valor }}</strong>
+          <span class="sub" style="text-decoration: line-through;">{{ anterior if anterior is not none else '(vacío)' }}</span>
+          &rarr; <strong>{{ valor if valor is not none else '(vacío)' }}</strong>
         </div>
       </div>
       {% endif %}
