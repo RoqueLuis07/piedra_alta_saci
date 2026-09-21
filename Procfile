@@ -1,1 +1,1 @@
-web: gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+web: flask --app wsgi crear-esquema && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
