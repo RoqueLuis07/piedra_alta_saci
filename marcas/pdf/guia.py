@@ -464,6 +464,31 @@ def extraer_encabezado(pdf: Path | str) -> dict:
     return resultado
 
 
+_RE_MONTO_A_PAGAR = re.compile(r"Monto a Pagar\s+([\d.,]+)")
+
+
+def extraer_monto_total(pdf: Path | str) -> int | None:
+    """Lee el "Monto a Pagar" de la Boleta de Pago, en guaraníes -- es el
+    único monto que trae el propio documento oficial de SENACSA (el Rubro 2
+    y el Rubro 7 sólo identifican a las partes, no hay ningún campo de
+    dinero ahí). Comprobado contra ocho guías reales distintas: la Boleta
+    de Pago siempre trae "Monto a Pagar" seguido del número, sin que haga
+    falta reordenar el texto por posición como en :func:`extraer_encabezado`
+    -- acá el propio ``pypdf`` ya los devuelve pegados.
+
+    Devuelve ``None`` si no se encuentra en ninguna página (documento sin
+    Boleta de Pago, o de otro formato) -- nunca inventa un valor."""
+    lector = pypdf.PdfReader(str(pdf))
+    for pagina in lector.pages:
+        texto = pagina.extract_text() or ""
+        coincidencia = _RE_MONTO_A_PAGAR.search(texto)
+        if coincidencia:
+            crudo = coincidencia.group(1).replace(".", "").replace(",", "")
+            if crudo.isdigit():
+                return int(crudo)
+    return None
+
+
 def hojas_de_anexo(pdf: Path | str) -> list[HojaAnexo]:
     """Encuentra las hojas de anexo, con su copia y su orden dentro de la copia."""
     lector = pypdf.PdfReader(str(pdf))

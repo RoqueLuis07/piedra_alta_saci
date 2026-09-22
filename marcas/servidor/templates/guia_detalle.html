@@ -76,6 +76,16 @@
           <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría (original del formulario)</label><input type="text" name="categoria_animales_original" value="{{ operacion.categoria_animales_original or '' }}"></div>
         </div>
 
+        <h2 class="subtitulo" style="margin-top: 24px;">Monto</h2>
+        {% if es_venta %}
+        <p class="sub" style="margin: 0 0 10px;">Se lee automáticamente del PDF de SENACSA (Boleta de Pago) al generar el documento de la venta -- no se carga a mano.</p>
+        <div class="campo-fila"><div class="campo-etiqueta">Monto total (Gs.)</div><div class="campo-valor mono">{{ '{:,}'.format(operacion.monto_total).replace(',', '.') if operacion.monto_total is not none else '— (todavía no se generó el PDF)' }}</div></div>
+        {% else %}
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 200px;"><label>Monto total (Gs.)</label><input type="number" name="monto_total" min="0" step="1" value="{{ operacion.monto_total if operacion.monto_total is not none else '' }}"></div>
+        </div>
+        {% endif %}
+
         <h2 class="subtitulo" style="margin-top: 24px;">Revisión</h2>
         <div class="campo-edicion"><label>Notas de revisar (vacío si está todo bien)</label><textarea name="revisar" rows="2">{{ operacion.revisar or '' }}</textarea></div>
 
@@ -94,6 +104,7 @@
       <div class="campo-fila"><div class="campo-etiqueta">Comprador</div><div class="campo-valor">{{ operacion.comprador_nombre or '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">Cantidad</div><div class="campo-valor mono">{{ operacion.cantidad_animales if operacion.cantidad_animales is not none else '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">Categoría</div><div class="campo-valor">{{ operacion.categoria_animales or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Monto total (Gs.)</div><div class="campo-valor mono">{{ '{:,}'.format(operacion.monto_total).replace(',', '.') if operacion.monto_total is not none else '—' }}</div></div>
       {% endif %}
     </div>
 

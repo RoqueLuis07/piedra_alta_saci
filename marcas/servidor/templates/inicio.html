@@ -9,6 +9,23 @@
     Estado del registro al cierre de la última carga. Los totales corresponden a formularios de origen procesados.
   </p>
 
+  <div style="margin-top: 30px; border: 1px solid var(--texto); padding: 20px 24px;">
+    <div style="font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; margin-bottom: 14px;">Resumen del negocio -- mes en curso</div>
+    <div style="display: flex; gap: 40px; flex-wrap: wrap;">
+      <div style="min-width: 200px;">
+        <div class="sub">Vendido (Gs.)</div>
+        <div style="font-family: 'Source Serif 4', serif; font-size: 36px; font-weight: 600; letter-spacing: -0.02em;">{{ '{:,}'.format(negocio.vendido_mes).replace(',', '.') }}</div>
+        <div class="sub">Histórico: Gs. {{ '{:,}'.format(negocio.vendido_total).replace(',', '.') }} ({{ negocio.cantidad_ventas_con_monto }} venta{{ 's' if negocio.cantidad_ventas_con_monto != 1 else '' }} con monto)</div>
+      </div>
+      <div style="min-width: 200px;">
+        <div class="sub">Comprado (Gs.)</div>
+        <div style="font-family: 'Source Serif 4', serif; font-size: 36px; font-weight: 600; letter-spacing: -0.02em;">{{ '{:,}'.format(negocio.comprado_mes).replace(',', '.') }}</div>
+        <div class="sub">Histórico: Gs. {{ '{:,}'.format(negocio.comprado_total).replace(',', '.') }} ({{ negocio.cantidad_compras_con_monto }} compra{{ 's' if negocio.cantidad_compras_con_monto != 1 else '' }} con monto)</div>
+      </div>
+    </div>
+    <p class="sub" style="margin-top: 14px;">El monto de una venta se completa solo al generar su PDF final (se lee de la Boleta de Pago de SENACSA); el de una compra se carga a mano en la guía. Una operación sin monto todavía no suma acá.</p>
+  </div>
+
   <div style="margin-top: 30px; border-top: 1px solid var(--texto);">
     <div style="display: flex; align-items: baseline; gap: 28px; padding: 22px 0 20px; border-bottom: 1px solid var(--borde-suave); flex-wrap: wrap;">
       <div style="font-family: 'Source Serif 4', serif; font-size: 56px; font-weight: 600; line-height: 0.95; letter-spacing: -0.02em; min-width: 140px;">{{ stats.total }}</div>

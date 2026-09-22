@@ -168,3 +168,10 @@ alter table usuarios add column if not exists preferencias jsonb not null defaul
 create index if not exists idx_marcas_activo on marcas(activo) where not activo;
 create index if not exists idx_operaciones_activo on operaciones(activo) where not activo;
 create index if not exists idx_propietarios_activo on propietarios(activo) where not activo;
+
+-- Monto total en guaraníes: en una Venta se lee solo del "Monto a Pagar" de
+-- la Boleta de Pago del PDF de SENACSA al generar el documento (es el único
+-- valor de dinero que trae el propio documento oficial); en una Guía
+-- (compra) se carga a mano, porque no hay ningún PDF con ese dato todavía
+-- en ese momento del proceso.
+alter table operaciones add column if not exists monto_total bigint;

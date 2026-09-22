@@ -14,6 +14,7 @@ import base64
 import json
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import psycopg2
 from flask import url_for
@@ -42,7 +43,7 @@ CAMPOS_OPERACION_EDITABLES = [
     "vendedor_establecimiento", "vendedor_establecimiento_codigo",
     "comprador_nombre", "comprador_documento", "cantidad_animales",
     "categoria_animales", "categoria_animales_original", "tipo_formulario", "revisar",
-    "tipo_operacion",
+    "tipo_operacion", "monto_total",
 ]
 
 _CAMPOS_IMAGEN = ("archivo_png", "archivo_svg")
@@ -626,6 +627,51 @@ def resumen_mensual(conexion, meses: int = 12) -> list[dict]:
     ]
 
 
+_ZONA_HORARIA_LOCAL = ZoneInfo("America/Asuncion")
+
+
+def resumen_monetario(conexion) -> dict:
+    """Cuánto se vendió y se compró, en guaraníes -- el resumen de negocio que
+    pidieron jefes/contadora/dueña (Hallazgo 1 del informe de UX por perfil).
+
+    Sólo suma operaciones con ``monto_total`` ya cargado: en una Venta se
+    completa solo al generar su PDF final (se lee de la Boleta de Pago de
+    SENACSA), en una Guía/Compra se carga a mano -- así que el total no
+    incluye lo que todavía está en proceso, y por eso también se informa
+    cuántas operaciones de cada tipo tienen monto para poder interpretarlo."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT tipo_operacion, monto_total, creado_en FROM operaciones"
+            " WHERE activo AND monto_total IS NOT NULL"
+        )
+        filas = cur.fetchall()
+    ahora_local = datetime.now(_ZONA_HORARIA_LOCAL)
+    resultado = {
+        "vendido_total": 0, "vendido_mes": 0, "cantidad_ventas_con_monto": 0,
+        "comprado_total": 0, "comprado_mes": 0, "cantidad_compras_con_monto": 0,
+    }
+    for f in filas:
+        monto = f.get("monto_total") or 0
+        creado_en = f.get("creado_en")
+        es_del_mes = False
+        if creado_en:
+            creado_en_local = creado_en.astimezone(_ZONA_HORARIA_LOCAL)
+            es_del_mes = (
+                creado_en_local.year == ahora_local.year and creado_en_local.month == ahora_local.month
+            )
+        if f.get("tipo_operacion") == "venta":
+            resultado["vendido_total"] += monto
+            resultado["cantidad_ventas_con_monto"] += 1
+            if es_del_mes:
+                resultado["vendido_mes"] += monto
+        else:
+            resultado["comprado_total"] += monto
+            resultado["cantidad_compras_con_monto"] += 1
+            if es_del_mes:
+                resultado["comprado_mes"] += monto
+    return resultado
+
+
 def ranking_participantes(conexion, limite: int = 8) -> tuple[list[dict], list[dict]]:
     """Los vendedores y compradores con más animales movidos, según las guías cargadas."""
     with conexion.cursor() as cur:
@@ -816,7 +862,8 @@ def exportar_operaciones(
         cur.execute(
             f"""
             SELECT numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento,
-                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion
+                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion,
+                   monto_total
             FROM operaciones
             {where}
             ORDER BY creado_en DESC

@@ -32,7 +32,9 @@ from openpyxl.utils import get_column_letter
 
 import pypdfium2 as pdfium
 
-from marcas.pdf.guia import analizar_venta, completar_guia, completar_venta, extraer_encabezado
+from marcas.pdf.guia import (
+    analizar_venta, completar_guia, completar_venta, extraer_encabezado, extraer_monto_total,
+)
 from marcas.servidor.auth import (
     cerrar_conexion_actual,
     cerrar_sesion,
@@ -106,6 +108,7 @@ from marcas.servidor.consultas import (
     restaurar_operacion,
     restaurar_propietario,
     resumen_mensual,
+    resumen_monetario,
     subir_imagen_marca,
     ultimos_asientos,
     url_imagen,
@@ -441,6 +444,7 @@ def crear_app() -> Flask:
             activo="inicio",
             perfil=perfil_actual(),
             stats=estadisticas(conexion),
+            negocio=resumen_monetario(conexion),
             asientos=ultimos_asientos(conexion),
             a_revisar=marcas_a_revisar(conexion),
             a_vencer=marcas_por_vencer(conexion),
@@ -723,7 +727,9 @@ def crear_app() -> Flask:
                 o.get("vendedor_documento") or "", o.get("comprador_nombre") or "",
                 o.get("comprador_documento") or "",
                 o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
-                o.get("categoria_animales") or "", o.get("revisar") or "",
+                o.get("categoria_animales") or "",
+                o.get("monto_total") if o.get("monto_total") is not None else "",
+                o.get("revisar") or "",
                 "Sí" if o.get("guia_colisionada") else "No", _fecha_sin_tz(o.get("creado_en")),
             ]
             for o in filas
@@ -731,7 +737,7 @@ def crear_app() -> Flask:
         buffer = _libro_excel(
             "Guías y ventas",
             ["Tipo", "N° de guía", "Fecha", "Vendedor", "Doc. vendedor", "Comprador", "Doc. comprador",
-             "Cantidad", "Categoría", "Revisar", "Colisiona", "Creado en"],
+             "Cantidad", "Categoría", "Monto total (Gs.)", "Revisar", "Colisiona", "Creado en"],
             cuerpo,
         )
         return send_file(
@@ -836,7 +842,7 @@ def crear_app() -> Flask:
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
             valor = request.form.get(campo, "").strip() or None
-            if campo == "cantidad_animales" and valor is not None:
+            if campo in ("cantidad_animales", "monto_total") and valor is not None:
                 try:
                     valor = int(valor)
                 except ValueError:
@@ -858,7 +864,7 @@ def crear_app() -> Flask:
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
             valor = request.form.get(campo, "").strip() or None
-            if campo == "cantidad_animales" and valor is not None:
+            if campo in ("cantidad_animales", "monto_total") and valor is not None:
                 try:
                     valor = int(valor)
                 except ValueError:
@@ -908,7 +914,7 @@ def crear_app() -> Flask:
             if campo not in request.form:
                 continue
             valor = request.form.get(campo, "").strip() or None
-            if campo == "cantidad_animales" and valor is not None:
+            if campo in ("cantidad_animales", "monto_total") and valor is not None:
                 try:
                     valor = int(valor)
                 except ValueError:
@@ -1309,6 +1315,20 @@ def crear_app() -> Flask:
             except Exception as exc:
                 return _error_seguro("No se pudo generar el PDF de la venta.", exc)
             contenido_pdf = salida.read_bytes()
+
+            # El monto de una Venta se lee siempre del propio PDF de SENACSA
+            # (la Boleta de Pago) -- es el único valor de dinero que trae el
+            # documento oficial, nunca se tipea a mano para una venta.
+            try:
+                monto = extraer_monto_total(pdf_entrada)
+            except Exception as exc:
+                print(f"generar_venta_pdf: no se pudo leer el monto de {operacion_id}: {exc}")
+                monto = None
+            if monto is not None:
+                try:
+                    actualizar_operacion_campos(conexion, operacion_id, {"monto_total": monto})
+                except Exception as exc:
+                    print(f"generar_venta_pdf: no se pudo guardar el monto de {operacion_id}: {exc}")
 
         if operacion.get("borrador_venta"):
             try:

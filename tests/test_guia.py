@@ -336,3 +336,37 @@ def test_completar_venta_no_toca_el_rubro3(guia_venta, marcas, tmp_path):
     recorte_antes = antes[y0:y1, x0:x1]
     recorte_despues = despues[y0:y1, x0:x1]
     assert np.array_equal(recorte_antes, recorte_despues)
+
+
+def test_extraer_monto_total_lee_la_boleta_de_pago(tmp_path):
+    """Comprobado contra ocho guías reales de SENACSA: el único monto que
+    trae el documento oficial está en la Boleta de Pago ("Monto a Pagar"),
+    nunca en el Rubro 2 ni en el Rubro 7 -- ahí sólo se identifica a las
+    partes."""
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    from marcas.pdf.guia import extraer_monto_total
+
+    pdf = tmp_path / "boleta.pdf"
+    c = rl_canvas.Canvas(str(pdf), pagesize=(612, 1008))
+    c.drawString(40, 900, "BOLETA DE PAGO - GUIA DE TRASLADO")
+    c.drawString(40, 700, "Monto a Pagar 1.144.000")
+    c.drawString(40, 680, "Son Guaraníes: UN MILLON CIENTO CUARENTA Y CUATRO MIL .")
+    c.save()
+
+    assert extraer_monto_total(pdf) == 1144000
+
+
+def test_extraer_monto_total_ninguno_si_no_hay_boleta(tmp_path):
+    """Nunca inventa un valor: si el documento no trae Boleta de Pago (u
+    otro formato), devuelve None en vez de un monto adivinado."""
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    from marcas.pdf.guia import extraer_monto_total
+
+    pdf = tmp_path / "sin_boleta.pdf"
+    c = rl_canvas.Canvas(str(pdf), pagesize=(612, 1008))
+    c.drawString(40, 900, "GUIA DE TRASLADO Y TRANSFERENCIA DE GANADO")
+    c.save()
+
+    assert extraer_monto_total(pdf) is None

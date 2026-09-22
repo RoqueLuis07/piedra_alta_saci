@@ -44,6 +44,14 @@
       <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría</label><input type="text" name="categoria_animales"></div>
     </div>
 
+    {% if modo != 'venta' %}
+    <h2 class="subtitulo" style="margin-top: 24px;">Monto</h2>
+    <p class="sub" style="margin: 0 0 10px;">Esta guía todavía no tiene un PDF de SENACSA propio -- cargá el monto a mano, según la boleta o el acuerdo de compra.</p>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <div class="campo-edicion" style="flex: 1 1 200px;"><label>Monto total (Gs.)</label><input type="number" name="monto_total" min="0" step="1"></div>
+    </div>
+    {% endif %}
+
     <button type="submit" class="boton boton-primario" style="margin-top: 12px;">{{ 'Crear venta' if modo == 'venta' else 'Crear guía' }}</button>
   </form>
 </div>
