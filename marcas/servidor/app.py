@@ -29,6 +29,7 @@ from flask_wtf.csrf import CSRFError
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from PIL import Image
 
 import pypdfium2 as pdfium
 
@@ -79,6 +80,7 @@ from marcas.servidor.consultas import (
     ficha_marca,
     guardar_borrador_venta,
     guardar_filtro,
+    guardar_respaldo_operacion,
     historial_cambios_resueltos,
     imagen_marca,
     listar_filtros,
@@ -94,6 +96,7 @@ from marcas.servidor.consultas import (
     obtener_marca_por_id,
     obtener_operacion_por_id,
     obtener_propietario,
+    obtener_respaldo_operacion,
     obtener_usuario_por_email,
     obtener_usuario_por_id,
     ocultar_marca,
@@ -261,6 +264,26 @@ def _previsualizar_estampado(conexion, operacion: dict, marcas_elegidas: list[di
             encabezado = None
 
     return {"paginas": paginas_png, "cupo": cupo, "encabezado": encabezado, "error": error}
+
+
+def _preparar_respaldo(archivos) -> tuple[bytes, str]:
+    """Arma el documento de respaldo permanente de una Compra a partir de lo
+    subido en "Nueva guía": si es un único PDF, se guarda tal cual (es el
+    caso de un escaneo ya armado en PDF); si son una o varias imágenes
+    (fotos o páginas escaneadas sueltas), se combinan en un solo PDF de
+    varias páginas, en el orden en que se subieron -- así el respaldo
+    siempre queda como un solo documento, sea cual sea el formato de origen,
+    y se puede ver/descargar igual que cualquier otro PDF de la operación."""
+    if len(archivos) == 1 and (
+        archivos[0].mimetype == "application/pdf" or archivos[0].filename.lower().endswith(".pdf")
+    ):
+        archivo = archivos[0]
+        return archivo.read(), archivo.filename
+
+    imagenes = [Image.open(archivo.stream).convert("RGB") for archivo in archivos]
+    buffer = io.BytesIO()
+    imagenes[0].save(buffer, format="PDF", save_all=True, append_images=imagenes[1:])
+    return buffer.getvalue(), "respaldo.pdf"
 
 
 def crear_app() -> Flask:
@@ -853,6 +876,15 @@ def crear_app() -> Flask:
             operacion_id = crear_operacion(conexion, campos, perfil["id"])
         except Exception as exc:
             return _error_seguro("No se pudo crear la guía.", exc)
+
+        archivos_respaldo = [a for a in request.files.getlist("respaldo") if a and a.filename]
+        if archivos_respaldo:
+            try:
+                contenido, nombre = _preparar_respaldo(archivos_respaldo)
+                guardar_respaldo_operacion(conexion, operacion_id, contenido, nombre)
+            except Exception as exc:
+                print(f"crear_guia: no se pudo guardar el respaldo de {operacion_id}: {exc}")
+
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
 
     @app.post("/ventas/nueva")
@@ -898,6 +930,16 @@ def crear_app() -> Flask:
             cambio_pendiente=cambio_pendiente,
             perfil=perfil_actual(),
         )
+
+    @app.get("/guias/<int:operacion_id>/respaldo.pdf")
+    @requiere_sesion
+    def respaldo_operacion_pdf(operacion_id: int):
+        conexion = conexion_actual()
+        resultado = obtener_respaldo_operacion(conexion, operacion_id)
+        if not resultado:
+            return _registro_no_encontrado("Esta guía no tiene un documento de respaldo cargado.")
+        contenido, nombre = resultado
+        return send_file(io.BytesIO(contenido), download_name=nombre, mimetype="application/pdf")
 
     @app.post("/guias/<int:operacion_id>")
     @requiere_sesion

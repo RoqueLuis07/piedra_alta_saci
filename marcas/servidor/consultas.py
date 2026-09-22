@@ -277,6 +277,29 @@ def crear_operacion(conexion, campos: dict, creado_por: str) -> int:
         return cur.fetchone()["id"]
 
 
+def guardar_respaldo_operacion(conexion, operacion_id: int, contenido: bytes, nombre: str) -> None:
+    """Guarda el documento recibido del vendedor (PDF tal cual, o las fotos ya
+    combinadas en un solo PDF) como respaldo permanente de la operación --
+    a diferencia del borrador de Venta, esto no se borra al generar nada."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            "UPDATE operaciones SET respaldo_pdf = %s, respaldo_pdf_nombre = %s WHERE id = %s",
+            (psycopg2.Binary(contenido), nombre, operacion_id),
+        )
+
+
+def obtener_respaldo_operacion(conexion, operacion_id: int) -> tuple[bytes, str] | None:
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT respaldo_pdf, respaldo_pdf_nombre FROM operaciones WHERE id = %s AND respaldo_pdf IS NOT NULL",
+            (operacion_id,),
+        )
+        fila = cur.fetchone()
+    if not fila:
+        return None
+    return bytes(fila["respaldo_pdf"]), fila["respaldo_pdf_nombre"] or "respaldo.pdf"
+
+
 def crear_marca(conexion, campos: dict, creado_por: str) -> dict:
     """Alta de una marca nueva -- no es una edición, así que se aplica directo.
 

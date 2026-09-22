@@ -175,3 +175,12 @@ create index if not exists idx_propietarios_activo on propietarios(activo) where
 -- (compra) se carga a mano, porque no hay ningún PDF con ese dato todavía
 -- en ese momento del proceso.
 alter table operaciones add column if not exists monto_total bigint;
+
+-- Respaldo permanente del documento que se recibe del vendedor al cargar
+-- una Compra (Guía): el PDF tal cual, o -- si se subieron fotos/escaneos
+-- sueltos -- todas combinadas en un solo PDF de varias páginas. Se guarda
+-- sin modificar (no se estampa ni se completa, a diferencia del PDF de
+-- SENACSA que se sube al generar el documento final) como segundo
+-- comprobante junto a los datos que se cargan a mano en el formulario.
+alter table operaciones add column if not exists respaldo_pdf bytea;
+alter table operaciones add column if not exists respaldo_pdf_nombre text;

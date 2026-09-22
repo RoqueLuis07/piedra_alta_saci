@@ -6,33 +6,30 @@
 {% block meta_encabezado %}<a href="{{ url_for('ventas' if modo == 'venta' else 'guias') }}">&larr; Volver al listado</a>{% endblock %}
 
 {% block contenido %}
+{% if modo == 'venta' %}
 <div class="contenido" style="max-width: 700px;">
   <p style="font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
-    {% if modo == 'venta' %}
     Cargá los datos de la venta según el documento de SENACSA. Después de guardar vas a poder subir ese PDF, asignarle las marcas y generar las cuatro copias desde su propia página.
-    {% else %}
-    Cargá los datos del formulario de origen. Después de guardar vas a poder sumarle las marcas y generar el PDF de guía desde su propia página.
-    {% endif %}
   </p>
 
-  <form method="post" action="{{ url_for('crear_venta' if modo == 'venta' else 'crear_guia') }}" style="margin-top: 20px;">
+  <form method="post" action="{{ url_for('crear_venta') }}" style="margin-top: 20px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <h2 class="subtitulo">Datos de la {{ 'venta' if modo == 'venta' else 'guía' }}</h2>
+    <h2 class="subtitulo">Datos de la venta</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía / orden</label><input type="text" name="numero_guia"></div>
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>Fecha</label><input type="text" name="fecha" placeholder="DD/MM/AAAA"></div>
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>Tipo de formulario</label><input type="text" name="tipo_formulario"></div>
     </div>
 
-    <h2 class="subtitulo" style="margin-top: 24px;">Vendedor{% if modo == 'venta' %} (Piedra Alta){% endif %}</h2>
+    <h2 class="subtitulo" style="margin-top: 24px;">Vendedor (Piedra Alta)</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre" value="{{ 'PIEDRA ALTA S.A. INMOBILIARIA' if modo == 'venta' else '' }}"></div>
-      <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento" value="{{ '80020081' if modo == 'venta' else '' }}"></div>
-      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento" value="{{ 'LA PATRICIA' if modo == 'venta' else '' }}"></div>
-      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo" value="{{ '1706020006' if modo == 'venta' else '' }}"></div>
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre" value="PIEDRA ALTA S.A. INMOBILIARIA"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento" value="80020081"></div>
+      <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento" value="LA PATRICIA"></div>
+      <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo" value="1706020006"></div>
     </div>
 
-    <h2 class="subtitulo" style="margin-top: 24px;">Comprador{% if modo == 'venta' %} (tercero){% endif %}</h2>
+    <h2 class="subtitulo" style="margin-top: 24px;">Comprador (tercero)</h2>
     <div style="display: flex; gap: 16px; flex-wrap: wrap;">
       <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="comprador_nombre"></div>
       <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="comprador_documento"></div>
@@ -44,15 +41,101 @@
       <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría</label><input type="text" name="categoria_animales"></div>
     </div>
 
-    {% if modo != 'venta' %}
-    <h2 class="subtitulo" style="margin-top: 24px;">Monto</h2>
-    <p class="sub" style="margin: 0 0 10px;">Esta guía todavía no tiene un PDF de SENACSA propio -- cargá el monto a mano, según la boleta o el acuerdo de compra.</p>
-    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-      <div class="campo-edicion" style="flex: 1 1 200px;"><label>Monto total (Gs.)</label><input type="number" name="monto_total" min="0" step="1"></div>
-    </div>
-    {% endif %}
-
-    <button type="submit" class="boton boton-primario" style="margin-top: 12px;">{{ 'Crear venta' if modo == 'venta' else 'Crear guía' }}</button>
+    <button type="submit" class="boton boton-primario" style="margin-top: 12px;">Crear venta</button>
   </form>
 </div>
+{% else %}
+<div class="contenido">
+  <p style="font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0; max-width: 78ch;">
+    Subí el PDF o las fotos/escaneos de la guía tal como la recibiste del vendedor -- queda guardada como segundo comprobante, sin modificarse -- y cargá al lado los datos del formulario de origen. Después de guardar vas a poder sumarle las marcas y generar el PDF de guía desde su propia página.
+  </p>
+
+  <form method="post" action="{{ url_for('crear_guia') }}" enctype="multipart/form-data" style="margin-top: 20px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div style="display: flex; gap: 40px; flex-wrap: wrap;" class="buscar-cols">
+      <div style="flex: 1 1 380px; min-width: 0;">
+        <h2 class="subtitulo">Documento recibido (respaldo)</h2>
+        <div class="campo-edicion">
+          <label>PDF o imágenes (una o varias)</label>
+          <input type="file" name="respaldo" id="campo-respaldo" accept="application/pdf,image/*" multiple>
+        </div>
+        <div id="vp-respaldo" style="border: 1px solid var(--borde-fina); max-height: 70vh; overflow-y: auto; padding: 10px; background: #fff;">
+          <p class="sub" id="vp-respaldo-vacio" style="margin: 0;">Todavía no subiste ningún archivo.</p>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 380px; min-width: 0;">
+        <h2 class="subtitulo">Datos de la guía</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>N.º de guía / orden</label><input type="text" name="numero_guia"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>Fecha</label><input type="text" name="fecha" placeholder="DD/MM/AAAA"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>Tipo de formulario</label><input type="text" name="tipo_formulario"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Vendedor</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="vendedor_nombre"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="vendedor_documento"></div>
+          <div class="campo-edicion" style="flex: 1 1 240px;"><label>Establecimiento</label><input type="text" name="vendedor_establecimiento"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>Código de establecimiento</label><input type="text" name="vendedor_establecimiento_codigo"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Comprador</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 240px;"><label>Nombre</label><input type="text" name="comprador_nombre"></div>
+          <div class="campo-edicion" style="flex: 1 1 160px;"><label>CI / RUC</label><input type="text" name="comprador_documento"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Animales</h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 140px;"><label>Cantidad</label><input type="number" name="cantidad_animales"></div>
+          <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría</label><input type="text" name="categoria_animales"></div>
+        </div>
+
+        <h2 class="subtitulo" style="margin-top: 24px;">Monto</h2>
+        <p class="sub" style="margin: 0 0 10px;">Esta guía todavía no tiene un PDF de SENACSA propio -- cargá el monto a mano, según la boleta o el acuerdo de compra.</p>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div class="campo-edicion" style="flex: 1 1 200px;"><label>Monto total (Gs.)</label><input type="number" name="monto_total" min="0" step="1"></div>
+        </div>
+
+        <button type="submit" class="boton boton-primario" style="margin-top: 12px;">Crear guía</button>
+      </div>
+    </div>
+  </form>
+</div>
+<script>
+  (function () {
+    var campo = document.getElementById('campo-respaldo');
+    var contenedor = document.getElementById('vp-respaldo');
+    var vacio = document.getElementById('vp-respaldo-vacio');
+    if (!campo || !contenedor) return;
+    campo.addEventListener('change', function () {
+      contenedor.querySelectorAll('.previa-respaldo-item').forEach(function (nodo) { nodo.remove(); });
+      var archivos = Array.prototype.slice.call(campo.files || []);
+      if (vacio) vacio.style.display = archivos.length ? 'none' : '';
+      archivos.forEach(function (archivo) {
+        var url = URL.createObjectURL(archivo);
+        var item = document.createElement('div');
+        item.className = 'previa-respaldo-item';
+        item.style.marginBottom = '10px';
+        if (archivo.type === 'application/pdf') {
+          var marco = document.createElement('iframe');
+          marco.src = url;
+          marco.style.width = '100%';
+          marco.style.height = '600px';
+          marco.style.border = '1px solid var(--borde-fina)';
+          item.appendChild(marco);
+        } else {
+          var img = document.createElement('img');
+          img.src = url;
+          img.style.width = '100%';
+          img.style.display = 'block';
+          item.appendChild(img);
+        }
+        contenedor.appendChild(item);
+      });
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}
