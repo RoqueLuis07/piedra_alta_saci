@@ -80,6 +80,21 @@ def test_las_casillas_anuladas_cuentan_como_ocupadas(guia):
     assert len(hoja2) == 40, "la X no debe hacer desaparecer la casilla"
 
 
+@pytest.mark.parametrize("anuladas", [0, 1, 5, 39, 40])
+def test_detecta_cualquier_cantidad_de_casillas_anuladas(tmp_path, anuladas):
+    """Comprobado contra guías reales de SENACSA (el mismo formulario trae
+    18 X en unos documentos y 20 en otros -- nunca una cantidad fija): la
+    detección no asume de antemano cuántas casillas van a estar tachadas,
+    las evalúa una por una. Se prueban además los dos extremos -- la hoja
+    sin ninguna X y la hoja completa, sin ninguna casilla libre -- que no
+    aparecieron en ninguna de las guías reales que se usaron para probar."""
+    pdf = generar_guia(tmp_path / f"guia_{anuladas}.pdf", anuladas=anuladas)
+    casillas = detectar_casillas(pdf, 2)  # segunda hoja de anexo: la que trae las anuladas
+    assert len(casillas) == 40, "la cantidad de casillas visibles no cambia, estén o no marcadas"
+    assert sum(c.ocupada for c in casillas) == anuladas
+    assert sum(not c.ocupada for c in casillas) == 40 - anuladas
+
+
 def test_reconoce_las_cuatro_copias(guia):
     hojas = hojas_de_anexo(guia)
     assert len(hojas) == 8
