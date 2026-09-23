@@ -29,7 +29,7 @@ from flask_wtf.csrf import CSRFError
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from PIL import Image
+from PIL import Image, ImageOps
 
 import pypdfium2 as pdfium
 
@@ -113,6 +113,7 @@ from marcas.servidor.consultas import (
     resumen_mensual,
     resumen_monetario,
     subir_imagen_marca,
+    tiene_respaldo_operacion,
     ultimos_asientos,
     url_imagen,
 )
@@ -273,14 +274,27 @@ def _preparar_respaldo(archivos) -> tuple[bytes, str]:
     (fotos o páginas escaneadas sueltas), se combinan en un solo PDF de
     varias páginas, en el orden en que se subieron -- así el respaldo
     siempre queda como un solo documento, sea cual sea el formato de origen,
-    y se puede ver/descargar igual que cualquier otro PDF de la operación."""
-    if len(archivos) == 1 and (
-        archivos[0].mimetype == "application/pdf" or archivos[0].filename.lower().endswith(".pdf")
-    ):
+    y se puede ver/descargar igual que cualquier otro PDF de la operación.
+
+    Deliberadamente no mezcla un PDF con imágenes en la misma carga (¿en qué
+    orden entrarían las páginas del PDF respecto de las fotos?) -- levanta
+    ValueError para que quien llama lo muestre como un error claro, en vez
+    de que ``Image.open`` reviente más abajo con un traceback críptico."""
+    if any(a.mimetype == "application/pdf" or a.filename.lower().endswith(".pdf") for a in archivos):
+        if len(archivos) > 1:
+            raise ValueError("no se puede combinar un PDF con otros archivos en la misma carga")
         archivo = archivos[0]
         return archivo.read(), archivo.filename
 
-    imagenes = [Image.open(archivo.stream).convert("RGB") for archivo in archivos]
+    # exif_transpose: una foto sacada con el celular en vertical trae los
+    # píxeles en horizontal más una etiqueta EXIF de rotación -- el
+    # navegador la respeta al mostrar la vista previa, pero PIL no la
+    # aplica sola al abrir el archivo. Sin esto, el respaldo guardado
+    # quedaría rotado aunque la vista previa que vio el operador estuviera
+    # derecha.
+    imagenes = [
+        ImageOps.exif_transpose(Image.open(archivo.stream)).convert("RGB") for archivo in archivos
+    ]
     buffer = io.BytesIO()
     imagenes[0].save(buffer, format="PDF", save_all=True, append_images=imagenes[1:])
     return buffer.getvalue(), "respaldo.pdf"
@@ -862,6 +876,23 @@ def crear_app() -> Flask:
     def crear_guia():
         conexion = conexion_actual()
         perfil = perfil_actual()
+
+        # Se arma el respaldo ANTES de crear la guía: si el archivo no sirve
+        # (un PDF mezclado con fotos, una imagen dañada que no se puede
+        # abrir), es mejor avisar y no crear nada, a crear una guía "a
+        # medias" sin el respaldo y que nadie se entere.
+        archivos_respaldo = [a for a in request.files.getlist("respaldo") if a and a.filename]
+        respaldo_preparado = None
+        if archivos_respaldo:
+            try:
+                respaldo_preparado = _preparar_respaldo(archivos_respaldo)
+            except Exception as exc:
+                return _error_seguro(
+                    "No se pudo procesar el documento de respaldo -- subí un único PDF, "
+                    "o una o varias fotos/imágenes (no se pueden mezclar ambos tipos).",
+                    exc,
+                )
+
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
             valor = request.form.get(campo, "").strip() or None
@@ -877,10 +908,9 @@ def crear_app() -> Flask:
         except Exception as exc:
             return _error_seguro("No se pudo crear la guía.", exc)
 
-        archivos_respaldo = [a for a in request.files.getlist("respaldo") if a and a.filename]
-        if archivos_respaldo:
+        if respaldo_preparado:
+            contenido, nombre = respaldo_preparado
             try:
-                contenido, nombre = _preparar_respaldo(archivos_respaldo)
                 guardar_respaldo_operacion(conexion, operacion_id, contenido, nombre)
             except Exception as exc:
                 print(f"crear_guia: no se pudo guardar el respaldo de {operacion_id}: {exc}")
@@ -921,6 +951,7 @@ def crear_app() -> Flask:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
         nombres = nombres_usuarios(conexion, [operacion.get("creado_por")])
         operacion["creado_por_nombre"] = nombres.get(str(operacion.get("creado_por")))
+        operacion["tiene_respaldo"] = tiene_respaldo_operacion(conexion, operacion_id)
         cambio_pendiente = cambio_pendiente_de(conexion, "operaciones", operacion_id)
         return render_template(
             "guia_detalle.html",

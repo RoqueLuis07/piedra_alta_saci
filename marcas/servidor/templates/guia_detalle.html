@@ -42,7 +42,7 @@
   {% if operacion.creado_por_nombre %}
   <div class="sub mono" style="margin-top: 18px;">CARGADA POR {{ operacion.creado_por_nombre|upper }}{% if operacion.creado_en %} · {{ operacion.creado_en|fecha_hora }}{% endif %}</div>
   {% endif %}
-  {% if operacion.respaldo_pdf %}
+  {% if operacion.tiene_respaldo %}
   <div class="sub" style="margin-top: 6px;"><a href="{{ url_for('respaldo_operacion_pdf', operacion_id=operacion.id) }}" target="_blank">Ver documento de respaldo (el que se recibió del vendedor) &rarr;</a></div>
   {% endif %}
 

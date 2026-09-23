@@ -279,25 +279,37 @@ def crear_operacion(conexion, campos: dict, creado_por: str) -> int:
 
 def guardar_respaldo_operacion(conexion, operacion_id: int, contenido: bytes, nombre: str) -> None:
     """Guarda el documento recibido del vendedor (PDF tal cual, o las fotos ya
-    combinadas en un solo PDF) como respaldo permanente de la operación --
-    a diferencia del borrador de Venta, esto no se borra al generar nada."""
+    combinadas en un solo PDF) como respaldo permanente de la operación, en
+    su propia tabla -- a diferencia del borrador de Venta, esto no se borra
+    al generar nada, y a diferencia de una columna en "operaciones" no viaja
+    en cada SELECT * de la ficha de la guía (ver comentario en schema.sql)."""
     with conexion.cursor() as cur:
         cur.execute(
-            "UPDATE operaciones SET respaldo_pdf = %s, respaldo_pdf_nombre = %s WHERE id = %s",
-            (psycopg2.Binary(contenido), nombre, operacion_id),
+            """
+            INSERT INTO respaldos_operacion (operacion_id, contenido, nombre)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (operacion_id) DO UPDATE SET contenido = EXCLUDED.contenido, nombre = EXCLUDED.nombre
+            """,
+            (operacion_id, psycopg2.Binary(contenido), nombre),
         )
+
+
+def tiene_respaldo_operacion(conexion, operacion_id: int) -> bool:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT 1 FROM respaldos_operacion WHERE operacion_id = %s", (operacion_id,))
+        return cur.fetchone() is not None
 
 
 def obtener_respaldo_operacion(conexion, operacion_id: int) -> tuple[bytes, str] | None:
     with conexion.cursor() as cur:
         cur.execute(
-            "SELECT respaldo_pdf, respaldo_pdf_nombre FROM operaciones WHERE id = %s AND respaldo_pdf IS NOT NULL",
+            "SELECT contenido, nombre FROM respaldos_operacion WHERE operacion_id = %s",
             (operacion_id,),
         )
         fila = cur.fetchone()
     if not fila:
         return None
-    return bytes(fila["respaldo_pdf"]), fila["respaldo_pdf_nombre"] or "respaldo.pdf"
+    return bytes(fila["contenido"]), fila["nombre"] or "respaldo.pdf"
 
 
 def crear_marca(conexion, campos: dict, creado_por: str) -> dict:

@@ -182,5 +182,36 @@ alter table operaciones add column if not exists monto_total bigint;
 -- sin modificar (no se estampa ni se completa, a diferencia del PDF de
 -- SENACSA que se sube al generar el documento final) como segundo
 -- comprobante junto a los datos que se cargan a mano en el formulario.
-alter table operaciones add column if not exists respaldo_pdf bytea;
-alter table operaciones add column if not exists respaldo_pdf_nombre text;
+--
+-- Tabla aparte (no una columna más en "operaciones"): la ficha de una
+-- guía/venta trae toda la fila de "operaciones" de una sola vez
+-- (SELECT *), así que un archivo de varios MB ahí adentro viajaría en
+-- cada carga de esa página aunque nadie vaya a verlo. Acá sólo se trae
+-- cuando alguien pide efectivamente descargarlo.
+create table if not exists respaldos_operacion (
+  operacion_id bigint primary key references operaciones(id) on delete cascade,
+  contenido bytea not null,
+  nombre text,
+  creado_en timestamptz not null default now()
+);
+
+-- Si esta base ya tenía las columnas de una versión anterior de este mismo
+-- cambio (respaldo_pdf/respaldo_pdf_nombre en "operaciones"), migra lo que
+-- hubiera cargado a la tabla nueva antes de borrarlas -- en una base recién
+-- creada esas columnas no existen y este bloque no hace nada.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'operaciones' and column_name = 'respaldo_pdf'
+  ) then
+    insert into respaldos_operacion (operacion_id, contenido, nombre)
+    select id, respaldo_pdf, respaldo_pdf_nombre
+    from operaciones
+    where respaldo_pdf is not null
+    on conflict (operacion_id) do nothing;
+
+    alter table operaciones drop column respaldo_pdf;
+    alter table operaciones drop column respaldo_pdf_nombre;
+  end if;
+end $$;
