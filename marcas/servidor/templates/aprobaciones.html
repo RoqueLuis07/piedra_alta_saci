@@ -36,7 +36,7 @@
       {% else %}
       {% set anterior = c.valores_anteriores.get(campo) %}
       <div class="campo-fila">
-        <div class="campo-etiqueta">{{ campo }}</div>
+        <div class="campo-etiqueta">{{ campo|etiqueta_campo }}</div>
         <div class="campo-valor">
           <span class="sub" style="text-decoration: line-through;">{{ anterior if anterior is not none else '(vacío)' }}</span>
           &rarr; <strong>{{ valor if valor is not none else '(vacío)' }}</strong>
@@ -82,7 +82,7 @@
       {% if campo not in ('archivo_png', 'archivo_svg') %}
       {% set anterior = c.valores_anteriores.get(campo) %}
       <div class="campo-fila">
-        <div class="campo-etiqueta">{{ campo }}</div>
+        <div class="campo-etiqueta">{{ campo|etiqueta_campo }}</div>
         <div class="campo-valor">
           <span class="sub" style="text-decoration: line-through;">{{ anterior if anterior is not none else '(vacío)' }}</span>
           &rarr; <strong>{{ valor if valor is not none else '(vacío)' }}</strong>

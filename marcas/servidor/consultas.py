@@ -185,7 +185,8 @@ def listar_operaciones_paginado(
         cur.execute(
             f"""
             SELECT id, numero_guia, fecha, vendedor_nombre, comprador_nombre,
-                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion
+                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion,
+                   monto_total
             FROM operaciones
             {where}
             ORDER BY creado_en DESC

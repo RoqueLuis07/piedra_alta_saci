@@ -162,6 +162,31 @@ def _formatear_fecha_hora(valor):
     return valor.strftime("%d/%m/%Y %H:%M")
 
 
+# Nombre de columna -> cómo se llama ese dato en el resto de la interfaz --
+# para que el detalle de un cambio en Aprobaciones diga "Vendedor" en vez
+# de "vendedor_nombre" (jerga de base de datos que no tiene por qué
+# conocer quien sólo entra a aprobar o rechazar un cambio).
+_ETIQUETAS_CAMPO = {
+    "numero_guia": "N.º de guía", "fecha": "Fecha",
+    "vendedor_nombre": "Vendedor", "vendedor_documento": "CI / RUC del vendedor",
+    "vendedor_establecimiento": "Establecimiento del vendedor",
+    "vendedor_establecimiento_codigo": "Código de establecimiento del vendedor",
+    "comprador_nombre": "Comprador", "comprador_documento": "CI / RUC del comprador",
+    "cantidad_animales": "Cantidad de animales", "categoria_animales": "Categoría",
+    "categoria_animales_original": "Categoría (original del formulario)",
+    "tipo_formulario": "Tipo de formulario", "revisar": "Notas de revisar",
+    "tipo_operacion": "Tipo de operación", "monto_total": "Monto total (Gs.)",
+    "codigo": "Código", "tipo": "Tipo", "descripcion": "Descripción",
+    "estado": "Estado", "observaciones": "Observaciones", "vence_en": "Vencimiento",
+    "telefono": "Teléfono", "localidad": "Localidad", "departamento": "Departamento",
+    "establecimiento": "Establecimiento", "establecimiento_codigo": "Código de establecimiento",
+}
+
+
+def _etiqueta_campo(campo: str) -> str:
+    return _ETIQUETAS_CAMPO.get(campo, campo)
+
+
 def _libro_excel(nombre_hoja: str, encabezados: list[str], filas: list[list]) -> io.BytesIO:
     """Arma un .xlsx prolijo para presentar como informe -- encabezado en
     negrita con fondo verde, congelado arriba, columnas con ancho ajustado
@@ -267,6 +292,22 @@ def _previsualizar_estampado(conexion, operacion: dict, marcas_elegidas: list[di
     return {"paginas": paginas_png, "cupo": cupo, "encabezado": encabezado, "error": error}
 
 
+_CAMPOS_MINIMOS_GUIA = ("numero_guia", "vendedor_nombre", "comprador_nombre", "cantidad_animales")
+# "vendedor_nombre" no cuenta para una Venta: el formulario lo precarga
+# siempre con los datos fijos de Piedra Alta (es quien vende), así que
+# viene con algo cargado aunque la persona no haya tocado nada -- no sirve
+# como señal de que el formulario tiene información real.
+_CAMPOS_MINIMOS_VENTA = ("numero_guia", "comprador_nombre", "cantidad_animales")
+
+
+def _operacion_vacia(campos: dict, minimos: tuple[str, ...] = _CAMPOS_MINIMOS_GUIA) -> bool:
+    """True si ninguno de los campos que realmente identifican una guía o
+    venta tiene algo cargado -- antes se podía crear un registro real
+    presionando "Guardar" sin llenar nada (encontrado en la ronda de QA),
+    dejando una guía o venta fantasma en la base sin que nadie se entere."""
+    return all(not campos.get(c) for c in minimos)
+
+
 def _preparar_respaldo(archivos) -> tuple[bytes, str]:
     """Arma el documento de respaldo permanente de una Compra a partir de lo
     subido en "Nueva guía": si es un único PDF, se guarda tal cual (es el
@@ -323,6 +364,7 @@ def crear_app() -> Flask:
     CSRFProtect(app)
 
     app.jinja_env.filters["fecha_hora"] = _formatear_fecha_hora
+    app.jinja_env.filters["etiqueta_campo"] = _etiqueta_campo
 
     # Sin esto, el login no tiene freno: alguien podría probar contraseñas
     # sin límite. El almacenamiento en memoria alcanza para un solo proceso;
@@ -877,6 +919,22 @@ def crear_app() -> Flask:
         conexion = conexion_actual()
         perfil = perfil_actual()
 
+        campos = {}
+        for campo in CAMPOS_OPERACION_EDITABLES:
+            valor = request.form.get(campo, "").strip() or None
+            if campo in ("cantidad_animales", "monto_total") and valor is not None:
+                try:
+                    valor = int(valor)
+                except ValueError:
+                    valor = None
+            campos[campo] = valor
+        campos["tipo_operacion"] = "compra"
+        if _operacion_vacia(campos):
+            return _error_seguro(
+                "Completá al menos el número de guía, el vendedor o la cantidad de animales antes de guardar.",
+                ValueError("formulario vacío"),
+            )
+
         # Se arma el respaldo ANTES de crear la guía: si el archivo no sirve
         # (un PDF mezclado con fotos, una imagen dañada que no se puede
         # abrir), es mejor avisar y no crear nada, a crear una guía "a
@@ -893,16 +951,6 @@ def crear_app() -> Flask:
                     exc,
                 )
 
-        campos = {}
-        for campo in CAMPOS_OPERACION_EDITABLES:
-            valor = request.form.get(campo, "").strip() or None
-            if campo in ("cantidad_animales", "monto_total") and valor is not None:
-                try:
-                    valor = int(valor)
-                except ValueError:
-                    valor = None
-            campos[campo] = valor
-        campos["tipo_operacion"] = "compra"
         try:
             operacion_id = crear_operacion(conexion, campos, perfil["id"])
         except Exception as exc:
@@ -933,6 +981,11 @@ def crear_app() -> Flask:
                     valor = None
             campos[campo] = valor
         campos["tipo_operacion"] = "venta"
+        if _operacion_vacia(campos, _CAMPOS_MINIMOS_VENTA):
+            return _error_seguro(
+                "Completá al menos el número de guía, el comprador o la cantidad de animales antes de guardar.",
+                ValueError("formulario vacío"),
+            )
         try:
             operacion_id = crear_operacion(conexion, campos, perfil["id"])
         except Exception as exc:
@@ -1040,8 +1093,15 @@ def crear_app() -> Flask:
         descripcion = request.form.get("descripcion", "").strip() or None
         # Con "multiple" en el campo de archivo se puede cargar de una vez
         # todo un grupo de marcas complementarias (una por imagen); sin
-        # ninguna imagen se agrega una sola marca en blanco, como antes.
+        # ninguna imagen se agrega una sola marca con sólo la descripción
+        # (para completar la imagen más tarde) -- nunca ambas cosas vacías.
         archivos = [a for a in request.files.getlist("imagen") if a and a.filename]
+
+        if not archivos and not descripcion:
+            return _error_seguro(
+                "Subí una imagen (o dibujá la marca a mano) o escribí al menos una descripción antes de agregar.",
+                ValueError("marca vacía"),
+            )
 
         try:
             for archivo in archivos or [None]:
@@ -1125,7 +1185,12 @@ def crear_app() -> Flask:
             try:
                 completar_guia(pdf_entrada, rutas_imagenes, salida)
             except Exception as exc:
-                return _error_seguro("No se pudo generar el PDF.", exc)
+                # completar_guia ya levanta mensajes propios pensados para
+                # mostrarse (son los mismos que ya se ven, sin filtrar, en
+                # la vista previa en vivo) -- mostrar ese detalle en vez del
+                # genérico evita que haya que volver atrás a adivinar qué
+                # pasó, cuando la propia app ya lo sabía.
+                return _error_seguro(str(exc) or "No se pudo generar el PDF.", exc)
             contenido_pdf = salida.read_bytes()
 
         if operacion.get("borrador_venta"):
@@ -1386,7 +1451,12 @@ def crear_app() -> Flask:
             try:
                 completar_venta(pdf_entrada, imagen_dominante, rutas_complementarias, salida)
             except Exception as exc:
-                return _error_seguro("No se pudo generar el PDF de la venta.", exc)
+                # Mismo criterio que en generar_guia_pdf: completar_venta ya
+                # levanta mensajes propios pensados para mostrarse (son los
+                # mismos que ya se ven, sin filtrar, en la vista previa en
+                # vivo), así que mostrar ese detalle es más útil que el
+                # genérico.
+                return _error_seguro(str(exc) or "No se pudo generar el PDF de la venta.", exc)
             contenido_pdf = salida.read_bytes()
 
             # El monto de una Venta se lee siempre del propio PDF de SENACSA

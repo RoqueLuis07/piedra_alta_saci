@@ -8,7 +8,7 @@
   <p style="font-size: 13px; line-height: 1.6; color: var(--texto-secundario); max-width: 62ch; margin: 20px 0 16px;">
     Escribí un código de marca, el nombre de un propietario o un número de guía y presioná Buscar. Hacé click en un resultado para ver su ficha completa.
   </p>
-  <form method="get" action="{{ url_for('buscar') }}" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px;">
+  <form method="get" action="{{ url_for('buscar') }}" id="form-filtro-marcas" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px;">
     <div style="flex: 1 1 320px; min-width: 0;">
       <span class="etiqueta" style="display: block; margin-bottom: 6px;">CÓDIGO, PROPIETARIO, N.º DE GUÍA</span>
       <div style="display: flex; gap: 0;">
@@ -67,15 +67,23 @@
         {% endfor %}
         <details>
           <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">+ Guardar filtro actual</summary>
-          <form method="post" action="{{ url_for('guardar_filtro_ruta', seccion='marcas') }}" style="display: flex; gap: 6px; margin-top: 6px; align-items: center;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="volver" value="{{ request.full_path }}">
-            <input type="hidden" name="q" value="{{ texto }}">
-            <input type="hidden" name="estado" value="{{ estado }}">
-            <input type="hidden" name="tipo" value="{{ tipo }}">
-            <input type="text" name="nombre" placeholder="Nombre del filtro" required style="font-size: 12px; padding: 4px 6px;">
-            <button type="submit" class="boton" style="min-height: auto; padding: 4px 10px; font-size: 12px;">Guardar</button>
-          </form>
+          <!--
+            A propósito NO es un <form> aparte: si alguien escribe en el
+            buscador de arriba pero no aprieta "Filtrar" antes de guardar,
+            un formulario separado con sus propios campos ocultos guardaría
+            esos campos vacíos (el valor con el que se renderizó la página),
+            no lo que la persona acaba de tipear -- y el filtro guardado
+            quedaría vacío sin que nadie se entere. Por eso el nombre y el
+            botón están asociados al MISMO <form id="form-filtro-marcas">
+            de arriba vía el atributo "form": al enviarse, viajan los
+            valores que estén en pantalla en ese momento, sean cuales sean.
+          -->
+          <div style="display: flex; gap: 6px; margin-top: 6px; align-items: center;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" form="form-filtro-marcas">
+            <input type="hidden" name="volver" value="{{ request.full_path }}" form="form-filtro-marcas">
+            <input type="text" name="nombre" form="form-filtro-marcas" placeholder="Nombre del filtro" required style="font-size: 12px; padding: 4px 6px;">
+            <button type="submit" form="form-filtro-marcas" formmethod="post" formaction="{{ url_for('guardar_filtro_ruta', seccion='marcas') }}" class="boton" style="min-height: auto; padding: 4px 10px; font-size: 12px;">Guardar</button>
+          </div>
         </details>
         <details>
           <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">Columnas</summary>

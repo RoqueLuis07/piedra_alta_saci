@@ -16,7 +16,7 @@
   {% if borrador %}
   <div style="margin-top: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--borde-suave); padding: 12px 16px; background: var(--tabla-hover);">
     <p class="sub" style="margin: 0;">
-      Tenés un borrador guardado{% if borrador.guardado_en %} el {{ borrador.guardado_en[:16].replace('T', ' ') }}{% endif %} -- se restableció abajo.
+      Tenés un borrador guardado{% if borrador.guardado_en %} el {{ borrador.guardado_en|fecha_hora }}{% endif %} -- se restableció abajo.
     </p>
     <form method="post" action="{{ url_for('descartar_borrador_venta_ruta', operacion_id=operacion.id) }}" style="margin-left: auto;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
