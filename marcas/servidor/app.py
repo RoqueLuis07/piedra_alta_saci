@@ -1112,6 +1112,15 @@ def crear_app() -> Flask:
                     extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
                     subir_imagen_marca(conexion, nueva["id"], archivo.read(), extension)
         except Exception as exc:
+            # Si falla la imagen N de un lote de varias, este except ya
+            # evitaba que el error se propagara -- pero eso significaba
+            # que Flask, al no ver ninguna excepción llegar hasta el
+            # final de la request, hacía commit igual al cerrar la
+            # conexión: las marcas creadas ANTES del fallo quedaban
+            # guardadas de verdad, pero sin su imagen (así quedó M-00009
+            # en producción). El rollback explícito hace que sea todo el
+            # lote o nada -- nunca una marca a medias por el fallo de otra.
+            conexion.rollback()
             return _error_seguro("No se pudo agregar la marca.", exc)
 
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
@@ -1170,16 +1179,27 @@ def crear_app() -> Flask:
             archivo_pdf.save(pdf_entrada)
 
             rutas_imagenes = []
+            sin_imagen = []
             for m in marcas:
                 contenido = imagen_marca(conexion, m["id"], "png")
                 if not contenido:
+                    # Mismo criterio que en generar_venta_pdf: antes se
+                    # saltaba en silencio, y si alguna otra marca sí tenía
+                    # imagen el PDF se generaba igual sin avisar que esta
+                    # quedó afuera.
+                    sin_imagen.append(m["codigo"])
                     continue
                 destino = tmp_path / f"{m['codigo']}.png"
                 destino.write_bytes(contenido)
                 rutas_imagenes.append(destino)
 
-            if not rutas_imagenes:
-                return "Ninguna de las marcas seleccionadas tiene una imagen disponible.", 400
+            if sin_imagen:
+                return (
+                    f"{'La marca' if len(sin_imagen) == 1 else 'Las marcas'} "
+                    f"{', '.join(sin_imagen)} todavía no {'tiene' if len(sin_imagen) == 1 else 'tienen'} "
+                    "una imagen cargada -- subí la imagen antes de generar el PDF, o quitá esa marca de la lista.",
+                    400,
+                )
 
             salida = tmp_path / "salida.pdf"
             try:
@@ -1435,17 +1455,32 @@ def crear_app() -> Flask:
                 archivo_dominante.save(imagen_dominante)
 
             rutas_complementarias = []
+            sin_imagen = []
             for codigo in codigos_elegidos:
                 marca = por_codigo[codigo]
                 contenido = imagen_marca(conexion, marca["id"], "png")
                 if not contenido:
+                    # Antes esto se saltaba en silencio con un "continue":
+                    # si al menos UNA de las marcas elegidas sí tenía
+                    # imagen, el PDF se generaba igual, "exitosamente",
+                    # sin estampar la que no la tenía y sin avisar a
+                    # nadie -- quien lo generaba creía que la guía de
+                    # traslado estaba completa cuando en realidad le
+                    # faltaba una marca. Ahora se bloquea toda la
+                    # generación y se nombra cuál marca falta.
+                    sin_imagen.append(codigo)
                     continue
                 destino = tmp_path / f"{codigo}.png"
                 destino.write_bytes(contenido)
                 rutas_complementarias.append(destino)
 
-            if not rutas_complementarias:
-                return _error_seguro("Ninguna de las marcas elegidas tiene una imagen PNG disponible.", "sin imágenes")
+            if sin_imagen:
+                return _error_seguro(
+                    f"{'La marca' if len(sin_imagen) == 1 else 'Las marcas'} "
+                    f"{', '.join(sin_imagen)} todavía no {'tiene' if len(sin_imagen) == 1 else 'tienen'} "
+                    "una imagen cargada -- subí la imagen antes de generar el PDF, o quitá esa marca de la lista.",
+                    "marca sin imagen",
+                )
 
             salida = tmp_path / "salida.pdf"
             try:

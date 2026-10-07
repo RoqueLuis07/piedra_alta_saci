@@ -84,9 +84,10 @@
         <div id="seleccionadas-venta" style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--borde-suave);">
           <p class="sub" style="padding: 14px;" id="seleccionadas-vacio">Todavía no estampaste ninguna marca complementaria.</p>
         </div>
+        <div id="aviso-marcas-sin-imagen" class="aviso-pendiente" style="display: none; margin-top: 10px;"></div>
 
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 20px;">
-          <button type="submit" class="boton boton-primario">Generar PDF de la venta</button>
+          <button type="submit" class="boton boton-primario" id="boton-generar-pdf-venta">Generar PDF de la venta</button>
           <button type="submit" formaction="{{ url_for('guardar_borrador_venta_ruta', operacion_id=operacion.id) }}" formnovalidate class="boton">Guardar borrador</button>
           <p class="sub" style="margin: 0;">Guardá el avance para continuar más tarde, desde cualquier computadora.</p>
         </div>
@@ -112,6 +113,7 @@
           <div class="sub" id="verificacion-detalle"></div>
         </div>
       </div>
+      <div id="verificacion-sin-imagen" class="aviso-pendiente" style="display: none;">Esta marca todavía no tiene una imagen cargada -- no se puede estampar hasta que se le suba una.</div>
       <button type="button" class="boton boton-primario" id="confirmar-estampar" style="margin-top: 16px;">Estampar esta marca</button>
     </div>
   </div>
@@ -197,6 +199,8 @@
 
     var seleccionadas = document.getElementById('seleccionadas-venta');
     var vacio = document.getElementById('seleccionadas-vacio');
+    var avisoSinImagen = document.getElementById('aviso-marcas-sin-imagen');
+    var botonGenerarPdf = document.getElementById('boton-generar-pdf-venta');
     var elegidas = {};  // codigo -> datos
     (function restaurarElegidas() {
       var local = {};
@@ -215,17 +219,23 @@
     function renderSeleccionadas() {
       seleccionadas.innerHTML = '';
       var codigos = Object.keys(elegidas);
+      var sinImagen = codigos.filter(function (c) { return !elegidas[c].imagen_url; });
       if (!codigos.length) {
         seleccionadas.appendChild(vacio);
       } else {
         codigos.forEach(function (codigo) {
           var m = elegidas[codigo];
+          var faltaImagen = !m.imagen_url;
           var celda = document.createElement('div');
-          celda.style.cssText = 'width: 200px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); display: flex; gap: 10px; align-items: center;';
+          celda.style.cssText = 'width: 200px; padding: 10px 14px; border-bottom: 1px solid var(--borde-suave); border-right: 1px solid var(--borde-suave); display: flex; gap: 10px; align-items: center;' +
+            (faltaImagen ? ' background: var(--aviso-fondo);' : '');
           celda.innerHTML =
             (m.imagen_url ? '<img src="' + m.imagen_url + '" width="30" height="30" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">' : '') +
             '<div style="min-width: 0; flex: 1 1 auto;"><div class="mono" style="font-size: 12px;">' + codigo + '</div>' +
-            '<div class="sub">' + (m.propietario || '') + '</div></div>' +
+            (faltaImagen
+              ? '<div class="sub" style="color: var(--aviso-texto);">Sin imagen -- no se va a dibujar</div>'
+              : '<div class="sub">' + (m.propietario || '') + '</div>') +
+            '</div>' +
             '<input type="hidden" name="marca_codigo" value="' + codigo + '">' +
             '<button type="button" class="boton" data-quitar="' + codigo + '" style="min-height: auto; padding: 4px 8px; font-size: 11px;">Quitar</button>';
           seleccionadas.appendChild(celda);
@@ -238,6 +248,23 @@
             refrescarVistaPrevia();
           });
         });
+      }
+      // La marca sin imagen ya se bloquea en el servidor al generar el PDF
+      // (ver generar_venta_pdf), pero avisar acá, antes de siquiera apretar
+      // el botón, evita el viaje al servidor para enterarse de lo mismo --
+      // y es exactamente el cambio que pedía el informe: que la fila diga
+      // de entrada si realmente se va a dibujar, no recién en el PDF final.
+      if (sinImagen.length) {
+        avisoSinImagen.style.display = 'block';
+        avisoSinImagen.textContent = (sinImagen.length === 1 ? 'Esta venta tiene 1 marca' : 'Esta venta tiene ' + sinImagen.length + ' marcas') +
+          ' que no se va' + (sinImagen.length === 1 ? ' ' : 'n ') + 'a dibujar en el PDF (' + sinImagen.join(', ') + '). ' +
+          'Sacala' + (sinImagen.length === 1 ? '' : 's') + ' de la lista o cargale' + (sinImagen.length === 1 ? '' : 's') + ' una imagen antes de generar el documento.';
+        botonGenerarPdf.disabled = true;
+        botonGenerarPdf.title = 'Hay marcas sin imagen en la lista -- no se puede generar el PDF hasta resolverlo.';
+      } else {
+        avisoSinImagen.style.display = 'none';
+        botonGenerarPdf.disabled = false;
+        botonGenerarPdf.removeAttribute('title');
       }
       refrescarVistaPrevia();
     }
@@ -318,6 +345,7 @@
     var verificacionCodigo = document.getElementById('verificacion-codigo');
     var verificacionPropietario = document.getElementById('verificacion-propietario');
     var verificacionDetalle = document.getElementById('verificacion-detalle');
+    var verificacionSinImagen = document.getElementById('verificacion-sin-imagen');
     var confirmarEstampar = document.getElementById('confirmar-estampar');
     var marcaAVerificar = null;
 
@@ -332,7 +360,7 @@
     modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
 
     confirmarEstampar.addEventListener('click', function () {
-      if (!marcaAVerificar) return;
+      if (!marcaAVerificar || !marcaAVerificar.imagen_url) return;
       elegidas[marcaAVerificar.codigo] = marcaAVerificar;
       guardarElegidas();
       renderSeleccionadas();
@@ -354,12 +382,25 @@
               resultados.innerHTML = '<div class="sub" style="padding: 10px;">Sin resultados.</div>';
             }
             filas.forEach(function (m) {
+              var faltaImagen = !m.imagen_url;
               var fila = document.createElement('div');
-              fila.style.cssText = 'display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--borde-fina); cursor: pointer;';
+              fila.style.cssText = 'display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--borde-fina); cursor: pointer;' +
+                (faltaImagen ? ' background: var(--aviso-fondo);' : '');
               fila.innerHTML =
-                (m.imagen_url ? '<img src="' + m.imagen_url + '" width="26" height="26" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">' : '') +
-                '<div style="min-width: 0;"><div class="mono" style="font-size: 12px;">' + m.codigo + '</div>' +
-                '<div class="sub">' + (m.propietario || 'Sin propietario') + (m.numero_guia ? ' · ' + m.numero_guia : '') + '</div></div>';
+                (m.imagen_url
+                  ? '<img src="' + m.imagen_url + '" width="26" height="26" style="object-fit: contain; flex-shrink: 0; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">'
+                  : '<span class="mono" style="width: 26px; height: 26px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--aviso-texto); color: var(--aviso-texto);">&times;</span>') +
+                '<div style="min-width: 0; flex: 1 1 auto;"><div class="mono" style="font-size: 12px;">' + m.codigo + '</div>' +
+                (faltaImagen
+                  ? '<div class="sub" style="color: var(--aviso-texto);">Sin imagen cargada -- no se puede estampar todavía</div>'
+                  : '<div class="sub">' + (m.propietario || 'Sin propietario') + (m.numero_guia ? ' · ' + m.numero_guia : '') + '</div>') +
+                '</div>' +
+                (faltaImagen ? '<a href="#" target="_blank" style="font-size: 11.5px; flex-shrink: 0;">Cargar imagen</a>' : '');
+              if (faltaImagen) {
+                var linkCargar = fila.querySelector('a');
+                linkCargar.setAttribute('href', '/marcas/' + encodeURIComponent(m.codigo));
+                linkCargar.addEventListener('click', function (e) { e.stopPropagation(); });
+              }
               fila.addEventListener('click', function () {
                 marcaAVerificar = m;
                 verificacionImagen.src = m.imagen_url || '';
@@ -367,6 +408,8 @@
                 verificacionCodigo.textContent = m.codigo;
                 verificacionPropietario.textContent = m.propietario || 'Sin propietario';
                 verificacionDetalle.textContent = [m.tipo, m.estado, m.numero_guia].filter(Boolean).join(' · ');
+                verificacionSinImagen.style.display = faltaImagen ? 'block' : 'none';
+                confirmarEstampar.disabled = faltaImagen;
                 verificacion.style.display = 'block';
               });
               resultados.appendChild(fila);
