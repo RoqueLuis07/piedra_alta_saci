@@ -296,3 +296,26 @@ def test_revision_rechaza_pedidos_invalidos(cliente):
     assert cliente.post(url, json={"accion": "deshacer", "estado": "inventado", "activo": True}).status_code == 400
     assert cliente.post("/marcas/99999999/revision", json={"accion": "aprobar"}).status_code == 404
     assert _situacion(marca_id) == ("revisar", True)
+
+
+def test_marca_del_catalogo_como_dominante_queda_archivada_con_su_papel(cliente, tmp_path):
+    operacion_id = _crear_guia(cliente, "ARCH-0006")
+    marca_id = _agregar_marca(cliente, operacion_id, con_imagen=True)
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE marcas SET tipo = 'dominante' WHERE id = %s RETURNING codigo", (marca_id,))
+        codigo = cur.fetchone()["codigo"]
+    conexion.commit()
+    db.devolver_conexion(conexion)
+
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0006", incluir_rubro2=True, dominante_ocupada=False).read_bytes()
+    datos = _pedido(pdf, catalogo=[codigo], extra={"operacion_id": str(operacion_id)})
+    datos["dominante"] = json.dumps({"t": "cat", "codigo": codigo})
+    r = cliente.post("/emitir/generar", data=datos, content_type="multipart/form-data")
+    assert r.status_code == 200, r.get_data(as_text=True)[:300]
+    roles = _conteo(
+        "SELECT count(*) AS n FROM documentos_emitidos d, jsonb_array_elements(d.marcas) m "
+        "WHERE d.operacion_id = %s AND m->>'tipo' = 'dominante'", operacion_id)
+    assert roles == 1  # sólo la que se estampó como dominante; la otra va de complementaria

@@ -208,7 +208,9 @@ def registrar(app) -> None:
                         # catálogo (oculta) salvo que se haya pedido guardarla.
                         actualizar_marca_campos(conexion, nueva["id"], {"activo": False})
                     item["marca"] = {**nueva, "tipo": tipo, "descripcion": "Dibujada al emitir el PDF"}
-                marcas_documento.append({**item["marca"], "tipo": item["marca"].get("tipo") or tipo})
+                # "tipo" en el documento es el papel con el que se estampó (una marca
+                # del catálogo catalogada como dominante puede ir de complementaria).
+                marcas_documento.append({**item["marca"], "tipo": tipo})
         except _PedidoInvalido as exc:
             conexion.rollback()
             return jsonify({"error": str(exc)}), 400

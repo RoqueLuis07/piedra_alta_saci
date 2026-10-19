@@ -166,6 +166,7 @@
     var nota = $("nota-dominante");
     var sinLugar = !estado.cupo.dominante_libre;
     $("btn-dominante").disabled = sinLugar;
+    $("btn-catalogo-dom").disabled = sinLugar;
     nota.textContent = sinLugar
       ? "El PDF ya trae la dominante dibujada, así que no se toca."
       : "Si el PDF no la trae, dibujala en el cuadro de abajo y tocá «Usar como dominante».";
@@ -296,7 +297,13 @@
 
   // ---------- catálogo ----------
   var modal = $("modal-catalogo"), buscador = $("buscador"), resultados = $("resultados"), espera = null;
-  $("btn-catalogo").addEventListener("click", function () { modal.style.display = "flex"; buscador.value = ""; resultados.textContent = ""; buscador.focus(); });
+  var comoDominante = false;
+  function abrirCatalogo(dominante) {
+    comoDominante = dominante;
+    modal.style.display = "flex"; buscador.value = ""; resultados.textContent = ""; buscador.focus();
+  }
+  $("btn-catalogo").addEventListener("click", function () { abrirCatalogo(false); });
+  $("btn-catalogo-dom").addEventListener("click", function () { abrirCatalogo(true); });
   $("cerrar-catalogo").addEventListener("click", function () { modal.style.display = "none"; });
   modal.addEventListener("click", function (e) { if (e.target === modal) modal.style.display = "none"; });
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") modal.style.display = "none"; });
@@ -322,7 +329,8 @@
             b.appendChild(sub);
             if (!m.imagen_url) b.disabled = true;
             b.addEventListener("click", function () {
-              if (!estado.items.some(function (i) { return i.codigo === m.codigo; })) estado.items.push(itemCatalogo(m));
+              if (comoDominante) estado.dominante = itemCatalogo(m);
+              else if (!estado.items.some(function (i) { return i.codigo === m.codigo; })) estado.items.push(itemCatalogo(m));
               modal.style.display = "none";
               cambio();
             });
