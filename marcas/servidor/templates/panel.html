@@ -7,7 +7,7 @@
 {% block contenido %}
 <div class="contenido">
   <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
-    Rol y estado de cada persona con acceso al sistema. Un Administrador que edita una marca u operación ya cargada no aplica el cambio directo: otro Operador o Administrador tiene que confirmarlo desde Aprobaciones.
+    Rol y estado de cada persona con acceso al sistema. Administradores y Operadores pueden editar directamente; Consulta es sólo lectura.
   </p>
 
   {% if error %}<div class="error">{{ error }}</div>{% endif %}

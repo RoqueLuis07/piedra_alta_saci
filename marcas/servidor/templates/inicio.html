@@ -9,23 +9,6 @@
     Estado del registro al cierre de la última carga. Los totales corresponden a formularios de origen procesados.
   </p>
 
-  <div style="margin-top: 30px; border: 1px solid var(--texto); padding: 20px 24px;">
-    <div style="font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; margin-bottom: 14px;">Resumen del negocio -- mes en curso</div>
-    <div style="display: flex; gap: 40px; flex-wrap: wrap;">
-      <div style="min-width: 200px;">
-        <div class="sub">Vendido (Gs.)</div>
-        <div style="font-family: 'Source Serif 4', serif; font-size: 36px; font-weight: 600; letter-spacing: -0.02em;">{{ '{:,}'.format(negocio.vendido_mes).replace(',', '.') }}</div>
-        <div class="sub">Histórico: Gs. {{ '{:,}'.format(negocio.vendido_total).replace(',', '.') }} ({{ negocio.cantidad_ventas_con_monto }} venta{{ 's' if negocio.cantidad_ventas_con_monto != 1 else '' }} con monto)</div>
-      </div>
-      <div style="min-width: 200px;">
-        <div class="sub">Comprado (Gs.)</div>
-        <div style="font-family: 'Source Serif 4', serif; font-size: 36px; font-weight: 600; letter-spacing: -0.02em;">{{ '{:,}'.format(negocio.comprado_mes).replace(',', '.') }}</div>
-        <div class="sub">Histórico: Gs. {{ '{:,}'.format(negocio.comprado_total).replace(',', '.') }} ({{ negocio.cantidad_compras_con_monto }} compra{{ 's' if negocio.cantidad_compras_con_monto != 1 else '' }} con monto)</div>
-      </div>
-    </div>
-    <p class="sub" style="margin-top: 14px;">El monto de una venta se completa solo al generar su PDF final (se lee de la Boleta de Pago de SENACSA); el de una compra se carga a mano en la guía. Una operación sin monto todavía no suma acá.</p>
-  </div>
-
   <div style="margin-top: 30px; border-top: 1px solid var(--texto);">
     <div style="display: flex; align-items: baseline; gap: 28px; padding: 22px 0 20px; border-bottom: 1px solid var(--borde-suave); flex-wrap: wrap;">
       <div style="font-family: 'Source Serif 4', serif; font-size: 56px; font-weight: 600; line-height: 0.95; letter-spacing: -0.02em; min-width: 140px;">{{ stats.total }}</div>
@@ -41,28 +24,7 @@
         <div class="sub" style="max-width: 54ch;">Marcas que el sistema marcó con algún motivo para revisar antes de darlas por buenas.</div>
       </div>
     </div>
-    <div style="display: flex; align-items: baseline; gap: 28px; padding: 22px 0 20px; border-bottom: 1px solid var(--borde-suave); flex-wrap: wrap;">
-      <div style="font-family: 'Source Serif 4', serif; font-size: 56px; font-weight: 600; line-height: 0.95; letter-spacing: -0.02em; min-width: 140px;">{{ stats.pendientes }}</div>
-      <div style="flex: 1 1 260px; min-width: 0;">
-        <div style="font-size: 15px; font-weight: 600;">Cambios pendientes de aprobación</div>
-        <div class="sub" style="max-width: 54ch;">Modificaciones propuestas que esperan que alguien más las confirme.</div>
-      </div>
-      <div><a href="{{ url_for('aprobaciones') }}">Ver cola &rarr;</a></div>
-    </div>
   </div>
-
-  {% if a_vencer %}
-  <div style="margin-top: 30px; border-left: 3px solid var(--dorado); background: var(--aviso-fondo); padding: 16px 20px;">
-    <div style="font-family: 'Source Serif 4', serif; font-size: 15px; font-weight: 600; color: var(--aviso-texto);">Marcas por vencer (próximos 90 días)</div>
-    <div style="display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 10px;">
-      {% for m in a_vencer %}
-      <a class="mono" style="font-size: 12.5px; color: var(--aviso-texto);" href="{{ url_for('ver_marca', codigo=m.codigo) }}">
-        {{ m.codigo }} — {{ m.propietarios.nombre if m.propietarios else 'sin propietario' }} · vence {{ m.vence_en }}
-      </a>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
 
   <div style="margin-top: 40px; display: flex; gap: 0; align-items: stretch; flex-wrap: wrap;" class="buscar-cols">
     <section style="flex: 1 1 420px; min-width: 0; padding-right: 32px;">

@@ -34,7 +34,7 @@ from PIL import Image, ImageOps
 import pypdfium2 as pdfium
 
 from marcas.pdf.guia import (
-    analizar_venta, completar_guia, completar_venta, extraer_encabezado, extraer_monto_total,
+    analizar_venta, completar_guia, completar_venta, extraer_encabezado,
 )
 from marcas.servidor.auth import (
     cerrar_conexion_actual,
@@ -54,36 +54,27 @@ from marcas.servidor.consultas import (
     LIMITE_EXPORTAR,
     POR_PAGINA_MARCAS,
     POR_PAGINA_PROPIETARIOS,
-    SECCIONES_FILTRO,
-    ErrorResolverCambio,
     actualizar_marca_campos,
     actualizar_operacion_campos,
-    actualizar_preferencias_columnas,
     actualizar_propietario,
     actualizar_usuario_campos,
     borrador_venta_dominante as obtener_borrador_venta_dominante,
     borrador_venta_pdf as obtener_borrador_venta_pdf,
     buscar_marcas,
-    cambio_pendiente_de,
-    cambios_pendientes_detalle,
     crear_marca,
     crear_operacion,
     crear_usuario,
     desglose_marcas,
+    estadisticas,
     dict_a_json,
     eliminar_borrador_venta,
-    eliminar_filtro,
-    estadisticas,
     exportar_marcas,
     exportar_operaciones,
     exportar_todo_para_respaldo,
     ficha_marca,
     guardar_borrador_venta,
-    guardar_filtro,
     guardar_respaldo_operacion,
-    historial_cambios_resueltos,
     imagen_marca,
-    listar_filtros,
     listar_operaciones_paginado,
     listar_propietarios,
     listar_usuarios,
@@ -91,7 +82,6 @@ from marcas.servidor.consultas import (
     marcas_de_operacion,
     marcas_de_propietario,
     marcas_por_codigos,
-    marcas_por_vencer,
     nombres_usuarios,
     obtener_marca_por_id,
     obtener_operacion_por_id,
@@ -103,15 +93,9 @@ from marcas.servidor.consultas import (
     ocultar_operacion,
     ocultar_propietario,
     operaciones_de_propietario,
-    preferencias_columnas,
-    proponer_cambio,
-    ranking_participantes,
-    resolver_cambio_pendiente,
     restaurar_marca,
     restaurar_operacion,
     restaurar_propietario,
-    resumen_mensual,
-    resumen_monetario,
     subir_imagen_marca,
     tiene_respaldo_operacion,
     ultimos_asientos,
@@ -175,7 +159,7 @@ _ETIQUETAS_CAMPO = {
     "cantidad_animales": "Cantidad de animales", "categoria_animales": "Categoría",
     "categoria_animales_original": "Categoría (original del formulario)",
     "tipo_formulario": "Tipo de formulario", "revisar": "Notas de revisar",
-    "tipo_operacion": "Tipo de operación", "monto_total": "Monto total (Gs.)",
+    "tipo_operacion": "Tipo de operación",
     "codigo": "Código", "tipo": "Tipo", "descripcion": "Descripción",
     "estado": "Estado", "observaciones": "Observaciones", "vence_en": "Vencimiento",
     "telefono": "Teléfono", "localidad": "Localidad", "departamento": "Departamento",
@@ -500,19 +484,6 @@ def crear_app() -> Flask:
             mensaje="Probaste acceder directo a una dirección pensada para un formulario. Usá los botones y enlaces del sitio en vez de escribir la URL a mano.",
         ), 405
 
-    @app.context_processor
-    def inyectar_pendientes():
-        perfil = perfil_actual()
-        if not perfil or perfil.get("rol") not in ("administrador", "operador"):
-            return {}
-        try:
-            conexion = conexion_actual()
-            with conexion.cursor() as cur:
-                cur.execute("SELECT count(*) AS total FROM cambios_pendientes WHERE estado = 'pendiente'")
-                n = cur.fetchone()["total"]
-        except Exception:
-            n = 0
-        return {"pendientes_nav": n}
 
     @app.get("/")
     @requiere_sesion
@@ -523,10 +494,8 @@ def crear_app() -> Flask:
             activo="inicio",
             perfil=perfil_actual(),
             stats=estadisticas(conexion),
-            negocio=resumen_monetario(conexion),
             asientos=ultimos_asientos(conexion),
             a_revisar=marcas_a_revisar(conexion),
-            a_vencer=marcas_por_vencer(conexion),
         )
 
     @app.get("/buscar")
@@ -556,8 +525,6 @@ def crear_app() -> Flask:
             tipo=tipo or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
-            filtros_guardados=listar_filtros(conexion, perfil["id"], "marcas"),
-            columnas_visibles=preferencias_columnas(conexion, perfil["id"], "marcas"),
             desglose=desglose_marcas(conexion),
         )
 
@@ -576,12 +543,10 @@ def crear_app() -> Flask:
         )
         ficha["marca"]["creado_por_nombre"] = nombres.get(str(ficha["marca"].get("creado_por")))
         ficha["marca"]["actualizado_por_nombre"] = nombres.get(str(ficha["marca"].get("actualizado_por")))
-        cambio_pendiente = cambio_pendiente_de(conexion, "marcas", ficha["marca"]["id"])
         return render_template(
             "marca_detalle.html",
             activo="buscar",
             ficha=ficha,
-            cambio_pendiente=cambio_pendiente,
             perfil=perfil_actual(),
         )
 
@@ -590,7 +555,6 @@ def crear_app() -> Flask:
     @requiere_rol("administrador", "operador")
     def editar_marca(marca_id: int):
         conexion = conexion_actual()
-        perfil = perfil_actual()
         marca_actual = obtener_marca_por_id(conexion, marca_id)
         if not marca_actual:
             return _registro_no_encontrado("No se encontró esa marca.")
@@ -628,19 +592,11 @@ def crear_app() -> Flask:
         codigo_para_volver = marca_actual["codigo"]
         if cambios or archivos_subidos:
             try:
-                if perfil["rol"] == "operador":
-                    for extension, contenido in archivos_subidos.items():
-                        subir_imagen_marca(conexion, marca_id, contenido, extension)
-                    if cambios:
-                        actualizar_marca_campos(conexion, marca_id, cambios)
-                    codigo_para_volver = cambios.get("codigo", codigo_para_volver)
-                else:  # administrador -- pasa por modificación supervisada
-                    valores_anteriores = {k: marca_actual.get(k) for k in cambios}
-                    for extension, contenido in archivos_subidos.items():
-                        campo = f"archivo_{extension}"
-                        cambios[campo] = base64.b64encode(contenido).decode("ascii")
-                        valores_anteriores[campo] = None  # no se arrastra la imagen vieja completa a la cola
-                    proponer_cambio(conexion, "marcas", marca_id, cambios, valores_anteriores, perfil["id"])
+                for extension, contenido in archivos_subidos.items():
+                    subir_imagen_marca(conexion, marca_id, contenido, extension)
+                if cambios:
+                    actualizar_marca_campos(conexion, marca_id, cambios)
+                codigo_para_volver = cambios.get("codigo", codigo_para_volver)
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_marca", codigo=codigo_para_volver))
@@ -708,8 +664,6 @@ def crear_app() -> Flask:
             hasta=creada_hasta or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
-            filtros_guardados=listar_filtros(conexion, perfil["id"], "guias"),
-            columnas_visibles=preferencias_columnas(conexion, perfil["id"], "guias"),
         )
 
     @app.get("/ventas")
@@ -741,8 +695,6 @@ def crear_app() -> Flask:
             hasta=creada_hasta or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
-            filtros_guardados=listar_filtros(conexion, perfil["id"], "ventas"),
-            columnas_visibles=preferencias_columnas(conexion, perfil["id"], "ventas"),
         )
 
     @app.get("/exportar")
@@ -807,7 +759,6 @@ def crear_app() -> Flask:
                 o.get("comprador_documento") or "",
                 o.get("cantidad_animales") if o.get("cantidad_animales") is not None else "",
                 o.get("categoria_animales") or "",
-                o.get("monto_total") if o.get("monto_total") is not None else "",
                 o.get("revisar") or "",
                 "Sí" if o.get("guia_colisionada") else "No", _fecha_sin_tz(o.get("creado_en")),
             ]
@@ -816,7 +767,7 @@ def crear_app() -> Flask:
         buffer = _libro_excel(
             "Guías y ventas",
             ["Tipo", "N° de guía", "Fecha", "Vendedor", "Doc. vendedor", "Comprador", "Doc. comprador",
-             "Cantidad", "Categoría", "Monto total (Gs.)", "Revisar", "Colisiona", "Creado en"],
+             "Cantidad", "Categoría", "Revisar", "Colisiona", "Creado en"],
             cuerpo,
         )
         return send_file(
@@ -857,49 +808,6 @@ def crear_app() -> Flask:
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    _CAMPOS_FILTRO_POR_SECCION = {
-        "marcas": ("q", "estado", "tipo"),
-        "guias": ("q", "estado", "desde", "hasta"),
-        "ventas": ("q", "estado", "desde", "hasta"),
-    }
-
-    @app.post("/filtros/<seccion>")
-    @requiere_sesion
-    def guardar_filtro_ruta(seccion: str):
-        if seccion not in SECCIONES_FILTRO:
-            return _registro_no_encontrado("Sección de filtros no válida.")
-        volver = request.form.get("volver") or url_for("buscar")
-        nombre = (request.form.get("nombre") or "").strip()
-        if not nombre:
-            return redirect(volver)
-        conexion = conexion_actual()
-        perfil = perfil_actual()
-        campos = _CAMPOS_FILTRO_POR_SECCION[seccion]
-        parametros = {c: request.form.get(c) for c in campos if request.form.get(c)}
-        guardar_filtro(conexion, perfil["id"], seccion, nombre, parametros)
-        return redirect(volver)
-
-    @app.post("/filtros/<int:filtro_id>/eliminar")
-    @requiere_sesion
-    def eliminar_filtro_ruta(filtro_id: int):
-        conexion = conexion_actual()
-        perfil = perfil_actual()
-        eliminar_filtro(conexion, perfil["id"], filtro_id)
-        volver = request.form.get("volver") or url_for("buscar")
-        return redirect(volver)
-
-    @app.post("/preferencias/columnas/<seccion>")
-    @requiere_sesion
-    def actualizar_preferencias_columnas_ruta(seccion: str):
-        if seccion not in SECCIONES_FILTRO:
-            return _registro_no_encontrado("Sección no válida.")
-        conexion = conexion_actual()
-        perfil = perfil_actual()
-        columnas = request.form.getlist("columna")
-        actualizar_preferencias_columnas(conexion, perfil["id"], seccion, columnas)
-        volver = request.form.get("volver") or url_for("buscar")
-        return redirect(volver)
-
     @app.get("/guias/nueva")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
@@ -922,7 +830,7 @@ def crear_app() -> Flask:
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
             valor = request.form.get(campo, "").strip() or None
-            if campo in ("cantidad_animales", "monto_total") and valor is not None:
+            if campo in ("cantidad_animales",) and valor is not None:
                 try:
                     valor = int(valor)
                 except ValueError:
@@ -974,7 +882,7 @@ def crear_app() -> Flask:
         campos = {}
         for campo in CAMPOS_OPERACION_EDITABLES:
             valor = request.form.get(campo, "").strip() or None
-            if campo in ("cantidad_animales", "monto_total") and valor is not None:
+            if campo in ("cantidad_animales",) and valor is not None:
                 try:
                     valor = int(valor)
                 except ValueError:
@@ -1005,13 +913,11 @@ def crear_app() -> Flask:
         nombres = nombres_usuarios(conexion, [operacion.get("creado_por")])
         operacion["creado_por_nombre"] = nombres.get(str(operacion.get("creado_por")))
         operacion["tiene_respaldo"] = tiene_respaldo_operacion(conexion, operacion_id)
-        cambio_pendiente = cambio_pendiente_de(conexion, "operaciones", operacion_id)
         return render_template(
             "guia_detalle.html",
             activo="ventas" if operacion.get("tipo_operacion") == "venta" else "guias",
             operacion=operacion,
             marcas=marcas,
-            cambio_pendiente=cambio_pendiente,
             perfil=perfil_actual(),
         )
 
@@ -1030,7 +936,6 @@ def crear_app() -> Flask:
     @requiere_rol("administrador", "operador")
     def editar_guia(operacion_id: int):
         conexion = conexion_actual()
-        perfil = perfil_actual()
         operacion_actual = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion_actual:
             return _registro_no_encontrado("No se encontró esa guía.")
@@ -1040,7 +945,7 @@ def crear_app() -> Flask:
             if campo not in request.form:
                 continue
             valor = request.form.get(campo, "").strip() or None
-            if campo in ("cantidad_animales", "monto_total") and valor is not None:
+            if campo in ("cantidad_animales",) and valor is not None:
                 try:
                     valor = int(valor)
                 except ValueError:
@@ -1050,11 +955,7 @@ def crear_app() -> Flask:
 
         if cambios:
             try:
-                if perfil["rol"] == "operador":
-                    actualizar_operacion_campos(conexion, operacion_id, cambios)
-                else:  # administrador -- pasa por modificación supervisada
-                    valores_anteriores = {k: operacion_actual.get(k) for k in cambios}
-                    proponer_cambio(conexion, "operaciones", operacion_id, cambios, valores_anteriores, perfil["id"])
+                actualizar_operacion_campos(conexion, operacion_id, cambios)
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
@@ -1494,20 +1395,6 @@ def crear_app() -> Flask:
                 return _error_seguro(str(exc) or "No se pudo generar el PDF de la venta.", exc)
             contenido_pdf = salida.read_bytes()
 
-            # El monto de una Venta se lee siempre del propio PDF de SENACSA
-            # (la Boleta de Pago) -- es el único valor de dinero que trae el
-            # documento oficial, nunca se tipea a mano para una venta.
-            try:
-                monto = extraer_monto_total(pdf_entrada)
-            except Exception as exc:
-                print(f"generar_venta_pdf: no se pudo leer el monto de {operacion_id}: {exc}")
-                monto = None
-            if monto is not None:
-                try:
-                    actualizar_operacion_campos(conexion, operacion_id, {"monto_total": monto})
-                except Exception as exc:
-                    print(f"generar_venta_pdf: no se pudo guardar el monto de {operacion_id}: {exc}")
-
         if operacion.get("borrador_venta"):
             try:
                 eliminar_borrador_venta(conexion, operacion_id)
@@ -1654,54 +1541,6 @@ def crear_app() -> Flask:
         restaurar_propietario(conexion, propietario_id)
         return redirect(url_for("ver_propietario", propietario_id=propietario_id))
 
-    @app.get("/estadisticas")
-    @requiere_sesion
-    def estadisticas_vista():
-        conexion = conexion_actual()
-        top_vendedores, top_compradores = ranking_participantes(conexion)
-        return render_template(
-            "estadisticas.html",
-            activo="estadisticas",
-            desglose=desglose_marcas(conexion),
-            mensual=resumen_mensual(conexion),
-            top_vendedores=top_vendedores,
-            top_compradores=top_compradores,
-            perfil=perfil_actual(),
-        )
-
-    @app.get("/aprobaciones")
-    @requiere_sesion
-    @requiere_rol("administrador", "operador")
-    def aprobaciones():
-        conexion = conexion_actual()
-        vista = request.args.get("vista") or "pendientes"
-        return render_template(
-            "aprobaciones.html",
-            activo="aprobaciones",
-            vista=vista,
-            cambios=cambios_pendientes_detalle(conexion) if vista == "pendientes" else [],
-            historial=historial_cambios_resueltos(conexion) if vista == "historial" else [],
-            perfil=perfil_actual(),
-        )
-
-    @app.post("/aprobaciones/<int:cambio_id>")
-    @requiere_sesion
-    @requiere_rol("administrador", "operador")
-    def resolver_cambio(cambio_id: int):
-        conexion = conexion_actual()
-        perfil = perfil_actual()
-        decision = request.form.get("decision")
-        motivo = request.form.get("motivo") or None
-        try:
-            resolver_cambio_pendiente(conexion, cambio_id, decision, perfil["id"], motivo)
-        except ErrorResolverCambio as exc:
-            print(f"No se pudo resolver el cambio {cambio_id}: {exc}")
-            return render_template(
-                "error_simple.html", titulo="No se pudo resolver el cambio", mensaje=str(exc)
-            ), 400
-        except Exception as exc:
-            return _error_seguro("No se pudo resolver el cambio.", exc)
-        return redirect(url_for("aprobaciones"))
 
     @app.get("/panel")
     @requiere_sesion

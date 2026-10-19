@@ -12,9 +12,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections import defaultdict
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime
 
 import psycopg2
 from flask import url_for
@@ -43,15 +41,10 @@ CAMPOS_OPERACION_EDITABLES = [
     "vendedor_establecimiento", "vendedor_establecimiento_codigo",
     "comprador_nombre", "comprador_documento", "cantidad_animales",
     "categoria_animales", "categoria_animales_original", "tipo_formulario", "revisar",
-    "tipo_operacion", "monto_total",
+    "tipo_operacion",
 ]
 
 _CAMPOS_IMAGEN = ("archivo_png", "archivo_svg")
-
-
-class ErrorResolverCambio(Exception):
-    """Mensaje pensado para mostrarse tal cual a quien aprueba/rechaza -- nunca
-    nombres de columna ni detalle interno sin filtrar."""
 
 
 def _anidar_relacion(fila: dict, id_campo: str, prefijo: str, alias: str, campos: list[str]) -> None:
@@ -185,8 +178,7 @@ def listar_operaciones_paginado(
         cur.execute(
             f"""
             SELECT id, numero_guia, fecha, vendedor_nombre, comprador_nombre,
-                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion,
-                   monto_total
+                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion
             FROM operaciones
             {where}
             ORDER BY creado_en DESC
@@ -398,65 +390,6 @@ def restaurar_operacion(conexion, operacion_id: int) -> None:
         cur.execute("UPDATE operaciones SET activo = true WHERE id = %s", (operacion_id,))
 
 
-def proponer_cambio(
-    conexion, tabla: str, fila_id: int, cambios: dict, valores_anteriores: dict, propuesto_por: str
-) -> None:
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO cambios_pendientes (tabla, fila_id, cambios, valores_anteriores, propuesto_por, estado)
-            VALUES (%s, %s, %s, %s, %s, 'pendiente')
-            """,
-            (tabla, fila_id, Json(cambios), Json(valores_anteriores), propuesto_por),
-        )
-
-
-def resolver_cambio_pendiente(
-    conexion, cambio_id: int, decision: str, revisado_por: str, motivo: str | None = None
-) -> None:
-    """Aprueba o rechaza un cambio en cola -- la regla de fondo (quien
-    propone no puede aprobar) vive acá, en código versionado, en vez de en
-    una función guardada sólo dentro de la base."""
-    if decision not in ("aprobado", "rechazado"):
-        raise ErrorResolverCambio("Decisión inválida.")
-    with conexion.cursor() as cur:
-        cur.execute("SELECT * FROM cambios_pendientes WHERE id = %s FOR UPDATE", (cambio_id,))
-        cambio = cur.fetchone()
-        if not cambio:
-            raise ErrorResolverCambio("Ese cambio ya no existe.")
-        if cambio["estado"] != "pendiente":
-            raise ErrorResolverCambio("Ese cambio ya fue resuelto.")
-        if str(cambio["propuesto_por"]) == str(revisado_por):
-            raise ErrorResolverCambio("Quien propone el cambio no puede aprobarlo.")
-        if cambio["tabla"] not in ("marcas", "operaciones"):
-            raise ErrorResolverCambio("No se pudo resolver el cambio.")
-
-        if decision == "aprobado":
-            permitidos = CAMPOS_MARCA_EDITABLES if cambio["tabla"] == "marcas" else CAMPOS_OPERACION_EDITABLES
-            cambios_aplicar = {}
-            for campo, valor in cambio["cambios"].items():
-                if campo not in permitidos:
-                    continue  # defensa en profundidad: nunca aplicar una columna fuera de la lista blanca
-                if campo in _CAMPOS_IMAGEN and valor is not None:
-                    valor = psycopg2.Binary(base64.b64decode(valor))
-                cambios_aplicar[campo] = valor
-            if cambios_aplicar:
-                columnas = ", ".join(f"{c} = %({c})s" for c in cambios_aplicar)
-                cur.execute(
-                    f"UPDATE {cambio['tabla']} SET {columnas} WHERE id = %(_id)s",
-                    {**cambios_aplicar, "_id": cambio["fila_id"]},
-                )
-
-        cur.execute(
-            """
-            UPDATE cambios_pendientes
-            SET estado = %s, revisado_por = %s, revisado_en = now(), motivo_rechazo = %s
-            WHERE id = %s
-            """,
-            (decision, revisado_por, motivo, cambio_id),
-        )
-
-
 def nombres_usuarios(conexion, ids) -> dict[str, str]:
     """Resuelve id de usuario -> nombre, para mostrar quién cargó o tocó un registro."""
     ids_validos = list({i for i in ids if i})
@@ -467,27 +400,6 @@ def nombres_usuarios(conexion, ids) -> dict[str, str]:
         # sin él, Postgres no sabe compararlo contra la columna uuid.
         cur.execute("SELECT id, nombre FROM usuarios WHERE id = ANY(%s::uuid[])", (ids_validos,))
         return {str(f["id"]): f["nombre"] for f in cur.fetchall()}
-
-
-def cambio_pendiente_de(conexion, tabla: str, fila_id: int) -> dict | None:
-    """Si esta fila ya tiene una modificación esperando aprobación, la trae.
-
-    No hay ninguna restricción que impida dos propuestas pendientes sobre la
-    misma fila (dos Administradores podrían proponer cada uno la suya) --
-    se trae la más reciente con ``LIMIT 1`` en vez de asumir que siempre hay
-    como mucho una.
-    """
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            SELECT * FROM cambios_pendientes
-            WHERE tabla = %s AND fila_id = %s AND estado = 'pendiente'
-            ORDER BY propuesto_en DESC
-            LIMIT 1
-            """,
-            (tabla, fila_id),
-        )
-        return cur.fetchone()
 
 
 def guardar_borrador_venta(
@@ -607,9 +519,7 @@ def estadisticas(conexion) -> dict:
         total = cur.fetchone()["total"]
         cur.execute("SELECT count(*) AS total FROM marcas WHERE estado = 'revisar'")
         a_revisar = cur.fetchone()["total"]
-        cur.execute("SELECT count(*) AS total FROM cambios_pendientes WHERE estado = 'pendiente'")
-        pendientes = cur.fetchone()["total"]
-    return {"total": total, "a_revisar": a_revisar, "pendientes": pendientes}
+    return {"total": total, "a_revisar": a_revisar}
 
 
 def desglose_marcas(conexion) -> dict:
@@ -623,136 +533,6 @@ def desglose_marcas(conexion) -> dict:
             cur.execute("SELECT count(*) AS total FROM marcas WHERE tipo = %s", (tipo,))
             resultado[tipo] = cur.fetchone()["total"]
     return resultado
-
-
-_MESES_ABREVIADOS = {
-    "01": "Ene", "02": "Feb", "03": "Mar", "04": "Abr", "05": "May", "06": "Jun",
-    "07": "Jul", "08": "Ago", "09": "Sep", "10": "Oct", "11": "Nov", "12": "Dic",
-}
-
-
-def resumen_mensual(conexion, meses: int = 12) -> list[dict]:
-    """Guías cargadas y animales declarados por mes, según ``creado_en``.
-
-    Se calcula sobre cuándo se cargó cada guía al sistema (dato real y
-    siempre presente), no sobre el campo de texto libre ``fecha`` del
-    formulario de origen -- ese llegó vacío o en formatos dispares en la
-    mayoría de las guías migradas, así que no sirve para armar una serie de
-    tiempo confiable."""
-    with conexion.cursor() as cur:
-        cur.execute("SELECT creado_en, cantidad_animales FROM operaciones")
-        filas = cur.fetchall()
-    baldes: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
-    for f in filas:
-        marca_tiempo = f.get("creado_en")
-        if not marca_tiempo:
-            continue
-        clave = marca_tiempo.isoformat()[:7]  # 'AAAA-MM'
-        baldes[clave]["guias"] += 1
-        baldes[clave]["animales"] += f.get("cantidad_animales") or 0
-    claves = sorted(baldes)[-meses:]
-    return [
-        {
-            "mes": clave,
-            # "Set 2026" en vez de "2026-09" -- para leer el gráfico no hace
-            # falta saber que los meses en la base se guardan AAAA-MM.
-            "mes_legible": f"{_MESES_ABREVIADOS.get(clave[5:7], clave[5:7])} {clave[:4]}",
-            **baldes[clave],
-        }
-        for clave in claves
-    ]
-
-
-_ZONA_HORARIA_LOCAL = ZoneInfo("America/Asuncion")
-
-
-def resumen_monetario(conexion) -> dict:
-    """Cuánto se vendió y se compró, en guaraníes -- el resumen de negocio que
-    pidieron jefes/contadora/dueña (Hallazgo 1 del informe de UX por perfil).
-
-    Sólo suma operaciones con ``monto_total`` ya cargado: en una Venta se
-    completa solo al generar su PDF final (se lee de la Boleta de Pago de
-    SENACSA), en una Guía/Compra se carga a mano -- así que el total no
-    incluye lo que todavía está en proceso, y por eso también se informa
-    cuántas operaciones de cada tipo tienen monto para poder interpretarlo."""
-    with conexion.cursor() as cur:
-        cur.execute(
-            "SELECT tipo_operacion, monto_total, creado_en FROM operaciones"
-            " WHERE activo AND monto_total IS NOT NULL"
-        )
-        filas = cur.fetchall()
-    ahora_local = datetime.now(_ZONA_HORARIA_LOCAL)
-    resultado = {
-        "vendido_total": 0, "vendido_mes": 0, "cantidad_ventas_con_monto": 0,
-        "comprado_total": 0, "comprado_mes": 0, "cantidad_compras_con_monto": 0,
-    }
-    for f in filas:
-        monto = f.get("monto_total") or 0
-        creado_en = f.get("creado_en")
-        es_del_mes = False
-        if creado_en:
-            creado_en_local = creado_en.astimezone(_ZONA_HORARIA_LOCAL)
-            es_del_mes = (
-                creado_en_local.year == ahora_local.year and creado_en_local.month == ahora_local.month
-            )
-        if f.get("tipo_operacion") == "venta":
-            resultado["vendido_total"] += monto
-            resultado["cantidad_ventas_con_monto"] += 1
-            if es_del_mes:
-                resultado["vendido_mes"] += monto
-        else:
-            resultado["comprado_total"] += monto
-            resultado["cantidad_compras_con_monto"] += 1
-            if es_del_mes:
-                resultado["comprado_mes"] += monto
-    return resultado
-
-
-def ranking_participantes(conexion, limite: int = 8) -> tuple[list[dict], list[dict]]:
-    """Los vendedores y compradores con más animales movidos, según las guías cargadas."""
-    with conexion.cursor() as cur:
-        cur.execute("SELECT vendedor_nombre, comprador_nombre, cantidad_animales FROM operaciones")
-        filas = cur.fetchall()
-    vendedores: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
-    compradores: dict[str, dict] = defaultdict(lambda: {"guias": 0, "animales": 0})
-    for f in filas:
-        cantidad = f.get("cantidad_animales") or 0
-        if f.get("vendedor_nombre"):
-            v = vendedores[f["vendedor_nombre"]]
-            v["guias"] += 1
-            v["animales"] += cantidad
-        if f.get("comprador_nombre"):
-            c = compradores[f["comprador_nombre"]]
-            c["guias"] += 1
-            c["animales"] += cantidad
-    top_vendedores = sorted(vendedores.items(), key=lambda kv: kv[1]["animales"], reverse=True)[:limite]
-    top_compradores = sorted(compradores.items(), key=lambda kv: kv[1]["animales"], reverse=True)[:limite]
-    return (
-        [{"nombre": n, **d} for n, d in top_vendedores],
-        [{"nombre": n, **d} for n, d in top_compradores],
-    )
-
-
-def marcas_por_vencer(conexion, dias: int = 90, limite: int = 10) -> list[dict]:
-    """Marcas activas con vencimiento cargado dentro de los próximos ``dias`` días
-    (incluye las ya vencidas), para alertar la renovación a tiempo."""
-    limite_fecha = date.today() + timedelta(days=dias)
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            SELECT m.codigo, m.vence_en, m.propietario_id, p.nombre AS propietario_nombre
-            FROM marcas m
-            LEFT JOIN propietarios p ON p.id = m.propietario_id
-            WHERE m.vence_en IS NOT NULL AND m.vence_en <= %s AND m.estado != 'baja'
-            ORDER BY m.vence_en
-            LIMIT %s
-            """,
-            (limite_fecha, limite),
-        )
-        filas = cur.fetchall()
-    for f in filas:
-        _anidar_relacion(f, "propietario_id", "propietario", "propietarios", ["nombre"])
-    return filas
 
 
 def listar_propietarios(
@@ -898,8 +678,7 @@ def exportar_operaciones(
         cur.execute(
             f"""
             SELECT numero_guia, fecha, vendedor_nombre, vendedor_documento, comprador_nombre, comprador_documento,
-                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion,
-                   monto_total
+                   cantidad_animales, categoria_animales, revisar, guia_colisionada, creado_en, tipo_operacion
             FROM operaciones
             {where}
             ORDER BY creado_en DESC
@@ -987,58 +766,6 @@ def marcas_a_revisar(conexion, limite: int = 6) -> list[dict]:
             (limite,),
         )
         return cur.fetchall()
-
-
-def _completar_referencias_cambios(conexion, cambios: list[dict]) -> list[dict]:
-    with conexion.cursor() as cur:
-        for c in cambios:
-            c["referencia"] = c["fila_id"]
-            if c["tabla"] == "marcas":
-                cur.execute("SELECT codigo FROM marcas WHERE id = %s", (c["fila_id"],))
-                fila = cur.fetchone()
-                if fila:
-                    c["referencia"] = fila["codigo"]
-            elif c["tabla"] == "operaciones":
-                cur.execute("SELECT numero_guia FROM operaciones WHERE id = %s", (c["fila_id"],))
-                fila = cur.fetchone()
-                if fila:
-                    c["referencia"] = fila["numero_guia"] or c["fila_id"]
-    return cambios
-
-
-def cambios_pendientes_detalle(conexion) -> list[dict]:
-    """Los cambios en cola de aprobación, con el código de la marca/operación."""
-    with conexion.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM cambios_pendientes WHERE estado = 'pendiente' ORDER BY propuesto_en"
-        )
-        cambios = cur.fetchall()
-    return _completar_referencias_cambios(conexion, cambios)
-
-
-def historial_cambios_resueltos(conexion, limite: int = 200) -> list[dict]:
-    """La bitácora completa: cambios ya aprobados o rechazados, más recientes primero."""
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            SELECT * FROM cambios_pendientes
-            WHERE estado != 'pendiente'
-            ORDER BY revisado_en DESC
-            LIMIT %s
-            """,
-            (limite,),
-        )
-        cambios = cur.fetchall()
-    cambios = _completar_referencias_cambios(conexion, cambios)
-    nombres_ids: set[str] = set()
-    for c in cambios:
-        nombres_ids.add(c.get("propuesto_por"))
-        nombres_ids.add(c.get("revisado_por"))
-    nombres = nombres_usuarios(conexion, nombres_ids)
-    for c in cambios:
-        c["propuesto_por_nombre"] = nombres.get(str(c.get("propuesto_por")))
-        c["revisado_por_nombre"] = nombres.get(str(c.get("revisado_por")))
-    return cambios
 
 
 def listar_usuarios(conexion) -> list[dict]:
@@ -1135,70 +862,3 @@ def dict_a_json(datos) -> str:
     """``json.dumps`` con las fechas de Postgres ya resueltas -- lo usan
     tanto la descarga manual del Panel como el script de respaldo a GitHub."""
     return json.dumps(datos, ensure_ascii=False, indent=2, default=_json_default)
-
-
-SECCIONES_FILTRO = ("guias", "ventas", "marcas")
-
-
-def guardar_filtro(conexion, usuario_id: str, seccion: str, nombre: str, parametros: dict) -> dict:
-    """Guarda la combinación de filtros activa en una sección de listado,
-    para volver a aplicarla con un click. ``parametros`` son los mismos
-    valores de query string que ya arma el formulario de filtro (q, estado,
-    tipo, desde, hasta según la sección) -- se guardan tal cual."""
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO filtros_guardados (usuario_id, seccion, nombre, parametros)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id, nombre, parametros, creado_en
-            """,
-            (usuario_id, seccion, nombre, Json(parametros)),
-        )
-        return cur.fetchone()
-
-
-def listar_filtros(conexion, usuario_id: str, seccion: str) -> list[dict]:
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, nombre, parametros, creado_en
-            FROM filtros_guardados
-            WHERE usuario_id = %s AND seccion = %s
-            ORDER BY creado_en DESC
-            """,
-            (usuario_id, seccion),
-        )
-        return cur.fetchall()
-
-
-def eliminar_filtro(conexion, usuario_id: str, filtro_id: int) -> None:
-    """Sólo se puede borrar el filtro propio -- usuario_id siempre viene de
-    la sesión, nunca del formulario, así nadie borra el filtro de otra
-    persona aunque adivine el id."""
-    with conexion.cursor() as cur:
-        cur.execute(
-            "DELETE FROM filtros_guardados WHERE id = %s AND usuario_id = %s",
-            (filtro_id, usuario_id),
-        )
-
-
-def preferencias_columnas(conexion, usuario_id: str, seccion: str) -> list[str] | None:
-    """``None`` si la persona nunca configuró nada todavía -- en ese caso
-    se muestran todas las columnas, no una lista vacía."""
-    with conexion.cursor() as cur:
-        cur.execute("SELECT preferencias FROM usuarios WHERE id = %s", (usuario_id,))
-        fila = cur.fetchone()
-    preferencias = (fila or {}).get("preferencias") or {}
-    return (preferencias.get("columnas") or {}).get(seccion)
-
-
-def actualizar_preferencias_columnas(conexion, usuario_id: str, seccion: str, columnas: list[str]) -> None:
-    with conexion.cursor() as cur:
-        cur.execute("SELECT preferencias FROM usuarios WHERE id = %s FOR UPDATE", (usuario_id,))
-        fila = cur.fetchone()
-        preferencias = (fila or {}).get("preferencias") or {}
-        preferencias.setdefault("columnas", {})[seccion] = columnas
-        cur.execute(
-            "UPDATE usuarios SET preferencias = %s WHERE id = %s",
-            (Json(preferencias), usuario_id),
-        )

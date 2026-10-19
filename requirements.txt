@@ -1,7 +1,5 @@
 # Dependencias de Python
 numpy>=1.26
-# segmentación y limpieza de imágenes
-opencv-python-headless>=4.9
 # lectura de formatos varios
 pillow>=10.2
 # generación de los PDF
@@ -30,3 +28,6 @@ requests>=2.31
 # Dependencia del sistema (no se instala con pip):
 #   potrace  ->  sudo apt install potrace  /  brew install potrace
 #   Sólo hace falta para generar los SVG; sin ella el pipeline igual da los PNG.
+
+# zonas horarias (en Windows no vienen con el sistema)
+tzdata>=2024.1

@@ -217,17 +217,6 @@
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg></span>
         <span class="nav-texto">Propietarios</span>
       </a>
-      <a class="nav-item {{ 'activo' if activo == 'estadisticas' }}" href="{{ url_for('estadisticas_vista') }}" title="Estadísticas">
-        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M11 20V4M18 20v-7"/></svg></span>
-        <span class="nav-texto">Estadísticas</span>
-      </a>
-      {% if perfil and perfil.rol in ('operador', 'administrador') %}
-      <a class="nav-item {{ 'activo' if activo == 'aprobaciones' }}" href="{{ url_for('aprobaciones') }}" title="Aprobaciones">
-        <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg></span>
-        <span class="nav-texto" style="flex: 1;">Aprobaciones</span>
-        {% if pendientes_nav %}<span class="nav-badge mono">{{ pendientes_nav }}</span>{% endif %}
-      </a>
-      {% endif %}
       {% if perfil and perfil.rol == 'administrador' %}
       <a class="nav-item {{ 'activo' if activo == 'panel' }}" href="{{ url_for('panel') }}" title="Usuarios">
         <span class="nav-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.3"/><path d="M15.8 14.3c2.3.5 4.2 2.6 4.2 5.7"/></svg></span>
