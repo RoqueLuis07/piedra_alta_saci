@@ -392,3 +392,30 @@ def test_respaldo_incluye_los_datos_del_archivo_sin_los_pdf(cliente):
     assert datos["documentos_emitidos"]
     primero = datos["documentos_emitidos"][0]
     assert "contenido" not in primero and primero["bytes_pdf"] > 1000
+
+
+def test_marca_oculta_solo_se_reutiliza_en_su_propia_operacion(cliente, tmp_path):
+    from marcas.servidor import db
+
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0008", incluir_rubro2=True).read_bytes()
+    extra = {"tipo_operacion": "compra", "numero_guia": "ARCH-0008", "vendedor_nombre": "V", "comprador_nombre": "C"}
+    r = cliente.post("/emitir/generar", data=_pedido(pdf, dibujos=2, extra=extra), content_type="multipart/form-data")
+    assert r.status_code == 200
+    # de las 2 dibujadas, sólo la primera se guardó en el catálogo; la otra quedó oculta
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT m.codigo, m.operacion_id FROM marcas m JOIN operaciones o ON o.id = m.operacion_id "
+            "WHERE o.numero_guia = 'ARCH-0008' AND NOT m.activo")
+        oculta = cur.fetchone()
+    db.devolver_conexion(conexion)
+
+    # en otra operación: rechazada
+    r = cliente.post("/emitir/generar", data=_pedido(pdf, catalogo=[oculta["codigo"]], extra={**extra, "numero_guia": "ARCH-0009"}),
+                     content_type="multipart/form-data")
+    assert r.status_code == 400 and "oculta" in r.get_json()["error"]
+    # en su propia operación: permitida, y la pantalla la precarga
+    r = cliente.post("/emitir/generar", data=_pedido(pdf, catalogo=[oculta["codigo"]], extra={"operacion_id": str(oculta["operacion_id"])}),
+                     content_type="multipart/form-data")
+    assert r.status_code == 200
+    assert oculta["codigo"] in cliente.get(f"/emitir?operacion={oculta['operacion_id']}").get_data(as_text=True)

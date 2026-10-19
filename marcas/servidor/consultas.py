@@ -205,13 +205,16 @@ def obtener_operacion_por_id(conexion, operacion_id: int) -> dict | None:
         return cur.fetchone()
 
 
-def marcas_de_operacion(conexion, operacion_id: int) -> list[dict]:
+def marcas_de_operacion(conexion, operacion_id: int, incluir_ocultas: bool = False) -> list[dict]:
+    """Las marcas de una operación. ``incluir_ocultas``: también las que se
+    dibujaron al emitir un PDF y no se guardaron en el catálogo (están ocultas
+    ahí, pero siguen siendo de esta operación)."""
     with conexion.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT id, codigo, tipo, descripcion, posicion, (archivo_png IS NOT NULL) AS archivo_png, estado
             FROM marcas
-            WHERE operacion_id = %s AND activo = true
+            WHERE operacion_id = %s {'' if incluir_ocultas else 'AND activo = true'}
             ORDER BY tipo, posicion
             """,
             (operacion_id,),
@@ -252,6 +255,7 @@ def marcas_por_codigos(conexion, codigos: list[str]) -> dict[str, dict]:
         cur.execute(
             """
             SELECT m.id, m.codigo, m.tipo, m.descripcion, m.estado, m.propietario_id,
+                   m.activo, m.operacion_id,
                    (m.archivo_png IS NOT NULL) AS archivo_png,
                    p.nombre AS propietario_nombre
             FROM marcas m

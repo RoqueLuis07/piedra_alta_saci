@@ -53,7 +53,7 @@ def _json_pedido(nombre: str, por_defecto):
         raise _PedidoInvalido("El pedido llegó mal formado. Recargá la página y volvé a intentar.")
 
 
-def _resolver_marca(conexion, spec: dict) -> dict:
+def _resolver_marca(conexion, spec: dict, operacion_id: int | None = None) -> dict:
     """Una marca del pedido: del catálogo (por código) o dibujada/subida en
     esta sesión. Devuelve {'bytes', 'marca' (dict o None), 'guardar'}."""
     tipo = spec.get("t")
@@ -62,6 +62,10 @@ def _resolver_marca(conexion, spec: dict) -> dict:
         marca = marcas_por_codigos(conexion, [codigo]).get(codigo)
         if not marca:
             raise _PedidoInvalido(f"No se encontró la marca {codigo} en el catálogo.")
+        if not marca.get("activo") and marca.get("operacion_id") != operacion_id:
+            # Una marca oculta no se ofrece en el catálogo; sólo puede volver a
+            # usarse en la operación a la que pertenece.
+            raise _PedidoInvalido(f"La marca {codigo} está oculta del catálogo -- elegí otra.")
         if marca.get("estado") == "baja":
             raise _PedidoInvalido(
                 f"La marca {codigo} está dada de baja (no es una marca válida) -- elegí otra."
@@ -90,9 +94,10 @@ def _leer_pedido(conexion) -> tuple[bytes, dict | None, list[dict]]:
     orden = _json_pedido("orden", [])
     if not isinstance(orden, list) or len(orden) > MAX_MARCAS:
         raise _PedidoInvalido(f"Se pueden estampar hasta {MAX_MARCAS} marcas por documento.")
+    operacion_id = request.form.get("operacion_id", type=int)
     dominante_spec = _json_pedido("dominante", None)
-    dominante = _resolver_marca(conexion, dominante_spec) if dominante_spec else None
-    complementarias = [_resolver_marca(conexion, spec) for spec in orden]
+    dominante = _resolver_marca(conexion, dominante_spec, operacion_id) if dominante_spec else None
+    complementarias = [_resolver_marca(conexion, spec, operacion_id) for spec in orden]
     return pdf_bytes, dominante, complementarias
 
 
@@ -143,8 +148,8 @@ def registrar(app) -> None:
         if operacion_id:
             operacion = obtener_operacion_por_id(conexion, operacion_id)
             if operacion:
-                for m in marcas_de_operacion(conexion, operacion_id):
-                    if m.get("tipo") == "dominante":
+                for m in marcas_de_operacion(conexion, operacion_id, incluir_ocultas=True):
+                    if m.get("tipo") == "dominante" or m.get("estado") == "baja":
                         continue
                     marcas_previas.append({
                         "codigo": m["codigo"], "descripcion": m.get("descripcion"),
