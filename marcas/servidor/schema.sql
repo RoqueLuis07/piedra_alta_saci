@@ -215,3 +215,25 @@ begin
     alter table operaciones drop column respaldo_pdf_nombre;
   end if;
 end $$;
+
+-- Archivo de documentos emitidos: cada vez que se genera el PDF final de una
+-- Guía o de una Venta, queda guardada una copia exacta junto con la fecha y
+-- una "foto" de todos los datos de la operación y de las marcas estampadas en
+-- ese momento (así el archivo sigue siendo fiel aunque después se edite la
+-- operación). Tabla aparte: el PDF pesa y no debe viajar en cada SELECT * de
+-- "operaciones". Nunca se borra.
+create table if not exists documentos_emitidos (
+  id bigserial primary key,
+  operacion_id bigint not null references operaciones(id),
+  tipo text not null check (tipo in ('guia', 'venta')),
+  numero_guia text,
+  emitido_en timestamptz not null default now(),
+  emitido_por uuid references usuarios(id),
+  datos jsonb not null default '{}'::jsonb,
+  marcas jsonb not null default '[]'::jsonb,
+  nombre text not null,
+  contenido bytea not null
+);
+
+create index if not exists idx_documentos_emitidos_fecha on documentos_emitidos(emitido_en desc);
+create index if not exists idx_documentos_emitidos_operacion on documentos_emitidos(operacion_id);

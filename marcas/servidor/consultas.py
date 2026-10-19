@@ -200,7 +200,7 @@ def marcas_de_operacion(conexion, operacion_id: int) -> list[dict]:
     with conexion.cursor() as cur:
         cur.execute(
             """
-            SELECT id, codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png, estado
+            SELECT id, codigo, tipo, descripcion, posicion, (archivo_png IS NOT NULL) AS archivo_png, estado
             FROM marcas
             WHERE operacion_id = %s AND activo = true
             ORDER BY tipo, posicion
@@ -242,7 +242,7 @@ def marcas_por_codigos(conexion, codigos: list[str]) -> dict[str, dict]:
     with conexion.cursor() as cur:
         cur.execute(
             """
-            SELECT m.id, m.codigo, m.tipo, m.estado, m.propietario_id,
+            SELECT m.id, m.codigo, m.tipo, m.descripcion, m.estado, m.propietario_id,
                    (m.archivo_png IS NOT NULL) AS archivo_png,
                    p.nombre AS propietario_nombre
             FROM marcas m
@@ -862,3 +862,112 @@ def dict_a_json(datos) -> str:
     """``json.dumps`` con las fechas de Postgres ya resueltas -- lo usan
     tanto la descarga manual del Panel como el script de respaldo a GitHub."""
     return json.dumps(datos, ensure_ascii=False, indent=2, default=_json_default)
+
+
+# --- Archivo de documentos emitidos -----------------------------------------
+
+POR_PAGINA_ARCHIVO = 30
+
+_CAMPOS_DATOS_ARCHIVO = (
+    "numero_guia", "fecha", "tipo_operacion", "vendedor_nombre", "vendedor_documento",
+    "vendedor_establecimiento", "vendedor_establecimiento_codigo", "comprador_nombre",
+    "comprador_documento", "cantidad_animales", "categoria_animales",
+    "categoria_animales_original", "tipo_formulario", "revisar",
+)
+
+
+def guardar_documento_emitido(
+    conexion, operacion: dict, tipo: str, marcas: list[dict], contenido: bytes, nombre: str,
+    emitido_por: str | None,
+) -> int:
+    """Guarda el PDF final tal cual salió, con una foto de los datos de la
+    operación y de las marcas estampadas en ese momento."""
+    datos = {campo: operacion.get(campo) for campo in _CAMPOS_DATOS_ARCHIVO}
+    resumen_marcas = [
+        {
+            "codigo": m.get("codigo"), "tipo": m.get("tipo"), "descripcion": m.get("descripcion"),
+            "propietario": (m.get("propietarios") or {}).get("nombre"),
+        }
+        for m in marcas
+    ]
+
+    def _json(valor):
+        return Json(valor, dumps=lambda o: json.dumps(o, ensure_ascii=False, default=str))
+
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO documentos_emitidos
+                (operacion_id, tipo, numero_guia, emitido_por, datos, marcas, nombre, contenido)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (operacion["id"], tipo, operacion.get("numero_guia"), emitido_por,
+             _json(datos), _json(resumen_marcas), nombre, psycopg2.Binary(contenido)),
+        )
+        return cur.fetchone()["id"]
+
+
+def listar_documentos_emitidos(
+    conexion, texto: str | None = None, tipo: str | None = None,
+    desde: str | None = None, hasta: str | None = None, pagina: int = 1,
+) -> tuple[list[dict], int]:
+    condiciones: list[str] = []
+    parametros: dict = {}
+    if tipo in ("guia", "venta"):
+        condiciones.append("d.tipo = %(tipo)s")
+        parametros["tipo"] = tipo
+    if texto:
+        condiciones.append(
+            "(d.numero_guia ILIKE %(patron)s OR d.datos->>'vendedor_nombre' ILIKE %(patron)s "
+            "OR d.datos->>'comprador_nombre' ILIKE %(patron)s OR d.nombre ILIKE %(patron)s)"
+        )
+        parametros["patron"] = f"%{texto}%"
+    if desde:
+        condiciones.append("d.emitido_en >= %(desde)s::date")
+        parametros["desde"] = desde
+    if hasta:
+        condiciones.append("d.emitido_en < (%(hasta)s::date + 1)")
+        parametros["hasta"] = hasta
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+    parametros["limite"] = POR_PAGINA_ARCHIVO
+    parametros["desde_fila"] = max(0, pagina - 1) * POR_PAGINA_ARCHIVO
+    with conexion.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS total FROM documentos_emitidos d {where}", parametros)
+        total = cur.fetchone()["total"]
+        cur.execute(
+            f"""
+            SELECT d.id, d.operacion_id, d.tipo, d.numero_guia, d.emitido_en, d.nombre, d.datos,
+                   jsonb_array_length(d.marcas) AS cantidad_marcas, u.nombre AS emitido_por_nombre
+            FROM documentos_emitidos d
+            LEFT JOIN usuarios u ON u.id = d.emitido_por
+            {where}
+            ORDER BY d.emitido_en DESC, d.id DESC
+            LIMIT %(limite)s OFFSET %(desde_fila)s
+            """,
+            parametros,
+        )
+        return cur.fetchall(), total
+
+
+def obtener_documento_emitido(conexion, documento_id: int) -> dict | None:
+    """Ficha completa SIN el contenido del PDF."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT d.id, d.operacion_id, d.tipo, d.numero_guia, d.emitido_en, d.nombre,
+                   d.datos, d.marcas, u.nombre AS emitido_por_nombre
+            FROM documentos_emitidos d
+            LEFT JOIN usuarios u ON u.id = d.emitido_por
+            WHERE d.id = %s
+            """,
+            (documento_id,),
+        )
+        return cur.fetchone()
+
+
+def contenido_documento_emitido(conexion, documento_id: int) -> tuple[bytes, str] | None:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT contenido, nombre FROM documentos_emitidos WHERE id = %s", (documento_id,))
+        fila = cur.fetchone()
+    return (bytes(fila["contenido"]), fila["nombre"]) if fila else None

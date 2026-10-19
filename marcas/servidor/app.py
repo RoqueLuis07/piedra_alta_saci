@@ -52,6 +52,7 @@ from marcas.servidor.consultas import (
     CAMPOS_OPERACION_EDITABLES,
     CAMPOS_PROPIETARIO_EDITABLES,
     LIMITE_EXPORTAR,
+    POR_PAGINA_ARCHIVO,
     POR_PAGINA_MARCAS,
     POR_PAGINA_PROPIETARIOS,
     actualizar_marca_campos,
@@ -63,6 +64,7 @@ from marcas.servidor.consultas import (
     buscar_marcas,
     crear_marca,
     crear_operacion,
+    contenido_documento_emitido,
     crear_usuario,
     desglose_marcas,
     estadisticas,
@@ -73,8 +75,10 @@ from marcas.servidor.consultas import (
     exportar_todo_para_respaldo,
     ficha_marca,
     guardar_borrador_venta,
+    guardar_documento_emitido,
     guardar_respaldo_operacion,
     imagen_marca,
+    listar_documentos_emitidos,
     listar_operaciones_paginado,
     listar_propietarios,
     listar_usuarios,
@@ -83,6 +87,7 @@ from marcas.servidor.consultas import (
     marcas_de_propietario,
     marcas_por_codigos,
     nombres_usuarios,
+    obtener_documento_emitido,
     obtener_marca_por_id,
     obtener_operacion_por_id,
     obtener_propietario,
@@ -323,6 +328,57 @@ def _preparar_respaldo(archivos) -> tuple[bytes, str]:
     buffer = io.BytesIO()
     imagenes[0].save(buffer, format="PDF", save_all=True, append_images=imagenes[1:])
     return buffer.getvalue(), "respaldo.pdf"
+
+
+def _preparar_imagenes(conexion, marcas: list[dict], carpeta: Path) -> tuple[list[Path], list[str]]:
+    """Escribe en ``carpeta`` el PNG de cada marca elegida. Devuelve las rutas
+    y los códigos de las marcas que todavía no tienen imagen cargada."""
+    rutas: list[Path] = []
+    sin_imagen: list[str] = []
+    for m in marcas:
+        contenido = imagen_marca(conexion, m["id"], "png")
+        if not contenido:
+            sin_imagen.append(m["codigo"])
+            continue
+        destino = carpeta / f"{m['codigo']}.png"
+        destino.write_bytes(contenido)
+        rutas.append(destino)
+    return rutas, sin_imagen
+
+
+def _mensaje_sin_imagen(sin_imagen: list[str]) -> str:
+    """Una marca sin imagen bloquea TODA la generación (antes se salteaba en
+    silencio y el PDF salía "exitoso" sin esa marca)."""
+    uno = len(sin_imagen) == 1
+    return (
+        f"{'La marca' if uno else 'Las marcas'} {', '.join(sin_imagen)} todavía no "
+        f"{'tiene' if uno else 'tienen'} una imagen cargada -- subí la imagen antes de "
+        "generar el PDF, o quitá esa marca de la lista."
+    )
+
+
+def _entregar_documento(conexion, operacion: dict, tipo: str, marcas: list[dict], contenido_pdf: bytes):
+    """Cola común de generar guía / generar venta: archiva el PDF (fecha +
+    datos de la operación + marcas), limpia el borrador y lo manda a descargar.
+    Si no se puede archivar, no se entrega: así nunca sale un documento que no
+    quede guardado."""
+    prefijo = "venta" if tipo == "venta" else "guia"
+    nombre = f"{prefijo}_{operacion.get('numero_guia') or operacion['id']}.pdf"
+    perfil = perfil_actual()
+    try:
+        guardar_documento_emitido(
+            conexion, operacion, tipo, marcas, contenido_pdf, nombre, perfil["id"] if perfil else None
+        )
+    except Exception as exc:
+        return _error_seguro("No se pudo guardar el documento en el archivo, así que no se generó.", exc)
+    if operacion.get("borrador_venta"):
+        try:
+            eliminar_borrador_venta(conexion, operacion["id"])
+        except Exception as exc:
+            print(f"_entregar_documento: no se pudo limpiar el borrador de {operacion['id']}: {exc}")
+    return send_file(
+        io.BytesIO(contenido_pdf), as_attachment=True, download_name=nombre, mimetype="application/pdf",
+    )
 
 
 def crear_app() -> Flask:
@@ -1079,28 +1135,9 @@ def crear_app() -> Flask:
             pdf_entrada = tmp_path / "entrada.pdf"
             archivo_pdf.save(pdf_entrada)
 
-            rutas_imagenes = []
-            sin_imagen = []
-            for m in marcas:
-                contenido = imagen_marca(conexion, m["id"], "png")
-                if not contenido:
-                    # Mismo criterio que en generar_venta_pdf: antes se
-                    # saltaba en silencio, y si alguna otra marca sí tenía
-                    # imagen el PDF se generaba igual sin avisar que esta
-                    # quedó afuera.
-                    sin_imagen.append(m["codigo"])
-                    continue
-                destino = tmp_path / f"{m['codigo']}.png"
-                destino.write_bytes(contenido)
-                rutas_imagenes.append(destino)
-
+            rutas_imagenes, sin_imagen = _preparar_imagenes(conexion, marcas, tmp_path)
             if sin_imagen:
-                return (
-                    f"{'La marca' if len(sin_imagen) == 1 else 'Las marcas'} "
-                    f"{', '.join(sin_imagen)} todavía no {'tiene' if len(sin_imagen) == 1 else 'tienen'} "
-                    "una imagen cargada -- subí la imagen antes de generar el PDF, o quitá esa marca de la lista.",
-                    400,
-                )
+                return _mensaje_sin_imagen(sin_imagen), 400
 
             salida = tmp_path / "salida.pdf"
             try:
@@ -1114,19 +1151,7 @@ def crear_app() -> Flask:
                 return _error_seguro(str(exc) or "No se pudo generar el PDF.", exc)
             contenido_pdf = salida.read_bytes()
 
-        if operacion.get("borrador_venta"):
-            try:
-                eliminar_borrador_venta(conexion, operacion_id)
-            except Exception as exc:
-                print(f"generar_guia_pdf: no se pudo limpiar el borrador de {operacion_id}: {exc}")
-
-        nombre_descarga = f"guia_{operacion.get('numero_guia') or operacion_id}.pdf"
-        return send_file(
-            io.BytesIO(contenido_pdf),
-            as_attachment=True,
-            download_name=nombre_descarga,
-            mimetype="application/pdf",
-        )
+        return _entregar_documento(conexion, operacion, "guia", marcas, contenido_pdf)
 
     @app.post("/guias/<int:operacion_id>/borrador")
     @requiere_sesion
@@ -1344,6 +1369,8 @@ def crear_app() -> Flask:
         if faltantes:
             return _error_seguro(f"No se encontró la marca {faltantes[0]} en el catálogo.", "código inexistente")
 
+        marcas_elegidas = [por_codigo[c] for c in codigos_elegidos]
+
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             pdf_entrada = tmp_path / "entrada.pdf"
@@ -1355,33 +1382,9 @@ def crear_app() -> Flask:
                 imagen_dominante = tmp_path / "dominante.png"
                 archivo_dominante.save(imagen_dominante)
 
-            rutas_complementarias = []
-            sin_imagen = []
-            for codigo in codigos_elegidos:
-                marca = por_codigo[codigo]
-                contenido = imagen_marca(conexion, marca["id"], "png")
-                if not contenido:
-                    # Antes esto se saltaba en silencio con un "continue":
-                    # si al menos UNA de las marcas elegidas sí tenía
-                    # imagen, el PDF se generaba igual, "exitosamente",
-                    # sin estampar la que no la tenía y sin avisar a
-                    # nadie -- quien lo generaba creía que la guía de
-                    # traslado estaba completa cuando en realidad le
-                    # faltaba una marca. Ahora se bloquea toda la
-                    # generación y se nombra cuál marca falta.
-                    sin_imagen.append(codigo)
-                    continue
-                destino = tmp_path / f"{codigo}.png"
-                destino.write_bytes(contenido)
-                rutas_complementarias.append(destino)
-
+            rutas_complementarias, sin_imagen = _preparar_imagenes(conexion, marcas_elegidas, tmp_path)
             if sin_imagen:
-                return _error_seguro(
-                    f"{'La marca' if len(sin_imagen) == 1 else 'Las marcas'} "
-                    f"{', '.join(sin_imagen)} todavía no {'tiene' if len(sin_imagen) == 1 else 'tienen'} "
-                    "una imagen cargada -- subí la imagen antes de generar el PDF, o quitá esa marca de la lista.",
-                    "marca sin imagen",
-                )
+                return _error_seguro(_mensaje_sin_imagen(sin_imagen), "marca sin imagen")
 
             salida = tmp_path / "salida.pdf"
             try:
@@ -1395,19 +1398,7 @@ def crear_app() -> Flask:
                 return _error_seguro(str(exc) or "No se pudo generar el PDF de la venta.", exc)
             contenido_pdf = salida.read_bytes()
 
-        if operacion.get("borrador_venta"):
-            try:
-                eliminar_borrador_venta(conexion, operacion_id)
-            except Exception as exc:
-                print(f"generar_venta_pdf: no se pudo limpiar el borrador de {operacion_id}: {exc}")
-
-        nombre_descarga = f"venta_{operacion.get('numero_guia') or operacion_id}.pdf"
-        return send_file(
-            io.BytesIO(contenido_pdf),
-            as_attachment=True,
-            download_name=nombre_descarga,
-            mimetype="application/pdf",
-        )
+        return _entregar_documento(conexion, operacion, "venta", marcas_elegidas, contenido_pdf)
 
     @app.post("/ventas/<int:operacion_id>/previsualizar")
     @requiere_sesion
@@ -1455,6 +1446,57 @@ def crear_app() -> Flask:
             print(f"previsualizar_venta: {exc}")
             return jsonify({"error": "No se pudo generar la vista previa."}), 400
         return jsonify(resultado)
+
+    @app.get("/archivo")
+    @requiere_sesion
+    def archivo():
+        conexion = conexion_actual()
+        texto = request.args.get("q") or None
+        tipo = request.args.get("tipo") or None
+        desde = request.args.get("desde") or None
+        hasta = request.args.get("hasta") or None
+        pagina = max(1, request.args.get("pagina", 1, type=int))
+        try:
+            documentos, total = listar_documentos_emitidos(conexion, texto, tipo, desde, hasta, pagina)
+        except Exception as exc:
+            return _error_seguro("No se pudo cargar el archivo.", exc)
+        return render_template(
+            "archivo.html",
+            activo="archivo",
+            documentos=documentos,
+            total=total,
+            pagina=pagina,
+            por_pagina=POR_PAGINA_ARCHIVO,
+            texto=texto or "",
+            tipo=tipo or "",
+            desde=desde or "",
+            hasta=hasta or "",
+            perfil=perfil_actual(),
+        )
+
+    @app.get("/archivo/<int:documento_id>")
+    @requiere_sesion
+    def ver_documento(documento_id: int):
+        conexion = conexion_actual()
+        documento = obtener_documento_emitido(conexion, documento_id)
+        if not documento:
+            return _registro_no_encontrado("No se encontró ese documento.")
+        return render_template(
+            "archivo_detalle.html", activo="archivo", documento=documento, perfil=perfil_actual(),
+        )
+
+    @app.get("/archivo/<int:documento_id>/pdf")
+    @requiere_sesion
+    def documento_pdf(documento_id: int):
+        conexion = conexion_actual()
+        resultado = contenido_documento_emitido(conexion, documento_id)
+        if not resultado:
+            return _registro_no_encontrado("No se encontró ese documento.")
+        contenido, nombre = resultado
+        descargar = request.args.get("descargar") == "1"
+        return send_file(
+            io.BytesIO(contenido), mimetype="application/pdf", download_name=nombre, as_attachment=descargar,
+        )
 
     @app.get("/propietarios")
     @requiere_sesion
