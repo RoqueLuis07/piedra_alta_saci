@@ -4,6 +4,9 @@
 - Cada PNG se reduce a ``--lado`` px (512 por defecto: alcanza de sobra para
   estampar y pesa ~4 veces menos que el original de 1024).
 - Es idempotente: una marca cuyo archivo de origen ya está cargado se saltea.
+- Guarda de a ``--lote`` marcas (250): si se corta, lo ya cargado queda y al
+  volver a correrlo sigue donde quedó.
+- ``--en-seco`` hace todo (lee, valida, reduce) pero NO escribe en la base.
 - No crea guías, operaciones ni propietarios: el catálogo no trae esos datos.
 - Las marcas sospechosas entran en estado ``revisar``; el resto, ``activa``.
 
@@ -46,7 +49,7 @@ def _ajustar(imagen: Image.Image, lado: int) -> Image.Image:
 
 
 def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite: int | None = None,
-           informar=print) -> dict:
+           informar=print, lote: int = 250, escribir: bool = True) -> dict:
     with open(csv_ruta, encoding="utf-8", newline="") as f:
         filas = list(csv.DictReader(f))
     if limite:
@@ -75,30 +78,34 @@ def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite:
                 cuentas["danadas"].append(origen)
                 continue
             sospechosa = fila.get("sospechosa_calidad") == "si"
-            cur.execute(
-                """
-                INSERT INTO marcas (tipo, descripcion, origen_archivo, archivo_png, sospechosa_calidad,
-                                    motivo_calidad, estado, observaciones, borde_limpiado)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true)
-                """,
-                (
-                    TIPOS.get(fila.get("dominante_o_complementaria")),
-                    f"Escaneo {fila['carpeta_escaneo']} · {fila['archivo_origen']}",
-                    origen,
-                    psycopg2.Binary(reducido),
-                    sospechosa,
-                    fila.get("motivo_calidad") or None,
-                    "revisar" if sospechosa else "activa",
-                    f"Formato: {fila['formato_detectado']}",
-                ),
-            )
+            if escribir:
+                cur.execute(
+                    """
+                    INSERT INTO marcas (tipo, descripcion, origen_archivo, archivo_png, sospechosa_calidad,
+                                        motivo_calidad, estado, observaciones, borde_limpiado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true)
+                    """,
+                    (
+                        TIPOS.get(fila.get("dominante_o_complementaria")),
+                        f"Escaneo {fila['carpeta_escaneo']} · {fila['archivo_origen']}",
+                        origen,
+                        psycopg2.Binary(reducido),
+                        sospechosa,
+                        fila.get("motivo_calidad") or None,
+                        "revisar" if sospechosa else "activa",
+                        f"Formato: {fila['formato_detectado']}",
+                    ),
+                )
             cuentas["cargadas"] += 1
             cuentas["revisar"] += sospechosa
             cuentas["bytes_antes"] += len(original)
             cuentas["bytes_despues"] += len(reducido)
+            if escribir and cuentas["cargadas"] % lote == 0:
+                conexion.commit()          # lo ya cargado queda aunque después se corte
             if i % 250 == 0:
                 informar(f"  {i}/{len(filas)}…")
-    conexion.commit()
+    if escribir:
+        conexion.commit()
     return cuentas
 
 
@@ -108,6 +115,8 @@ def main() -> int:
     ap.add_argument("--pngs", required=True, type=Path)
     ap.add_argument("--lado", type=int, default=512)
     ap.add_argument("--limite", type=int, default=None, help="sólo las primeras N filas (para probar)")
+    ap.add_argument("--lote", type=int, default=250, help="cada cuántas marcas se confirma en la base")
+    ap.add_argument("--en-seco", action="store_true", help="validar y contar sin escribir nada en la base")
     args = ap.parse_args()
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -117,11 +126,11 @@ def main() -> int:
 
     conexion = psycopg2.connect(url, cursor_factory=RealDictCursor)
     try:
-        c = cargar(conexion, args.csv, args.pngs, args.lado, args.limite)
+        c = cargar(conexion, args.csv, args.pngs, args.lado, args.limite, lote=args.lote, escribir=not args.en_seco)
     finally:
         conexion.close()
     print(
-        f"Cargadas {c['cargadas']} (a revisar: {c['revisar']}) · ya estaban {c['ya_estaban']} · "
+        f"{'[EN SECO, no se escribió nada] ' if args.en_seco else ''}Cargadas {c['cargadas']} (a revisar: {c['revisar']}) · ya estaban {c['ya_estaban']} · "
         f"sin PNG {c['sin_png']} · dañadas {c['danadas']} · {c['bytes_antes'] / 1e6:.0f} MB -> {c['bytes_despues'] / 1e6:.0f} MB"
     )
     return 0

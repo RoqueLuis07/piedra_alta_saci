@@ -65,7 +65,13 @@ def test_cargar_es_idempotente_y_marca_sospechosas(tmp_path):
             w.writeheader()
             w.writerows(filas)
 
-        primera = cargar(conexion, ruta_csv, pngs, 512, informar=lambda *_: None)
+        seco = cargar(conexion, ruta_csv, pngs, 512, informar=lambda *_: None, escribir=False)
+        assert seco["cargadas"] == 3                      # lo que cargaría...
+        with conexion.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM marcas")
+            assert cur.fetchone()["n"] == 0               # ...pero no escribió nada
+
+        primera = cargar(conexion, ruta_csv, pngs, 512, informar=lambda *_: None, lote=2)
         assert (primera["cargadas"], primera["revisar"], primera["sin_png"]) == (3, 1, 1)
         assert primera["danadas"] == ["rota.png"]
         assert primera["bytes_despues"] < primera["bytes_antes"]

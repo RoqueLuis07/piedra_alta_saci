@@ -48,7 +48,7 @@ cambiaron, y las 37 páginas (incluida cada guía y cada marca) respondieron sin
    Documentos / Administración**.
 2. Emitir un PDF de prueba con una guía real y mirar que aparezca en **Documentos → Archivo**.
 3. Ocultar las operaciones de prueba (`PRUEBA-QA-*`, `QA-*`) desde su ficha (se ocultan, no se borran).
-4. **Cargar el catálogo** (2972 marcas, ~140 MB con PNG de 512 px):
+4. **Cargar el catálogo** (2972 marcas, ~140 MB con PNG de 512 px) — procedimiento completo en [carga_catalogo_produccion.md](carga_catalogo_produccion.md):
    - La base de Railway **no tiene acceso público** (no hay TCP proxy). Hay dos caminos:
      a) crear un TCP proxy **temporal** al Postgres, correr el script desde tu computadora y
         **borrar el proxy al terminar**; b) subir las imágenes a un lugar al que Railway tenga acceso
