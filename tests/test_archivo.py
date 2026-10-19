@@ -356,3 +356,39 @@ def test_revision_filtra_por_motivo_y_decide_en_lote(cliente):
     assert cliente.post("/revision/lote", json={"accion": "baja", "ids": ["1; DROP TABLE marcas"]}).status_code == 400
     assert cliente.post("/revision/lote", json={"accion": "restaurar", "items": [{"id": 1, "estado": "x", "activo": True}]}).status_code == 400
     assert cliente.post("/revision/lote", json={"accion": "ocultar", "ids": [1]}).status_code == 400
+
+
+def test_emitir_no_duplica_la_operacion_ni_deja_estampar_una_marca_de_baja(cliente, tmp_path):
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0007", incluir_rubro2=True).read_bytes()
+    extra = {"tipo_operacion": "compra", "numero_guia": "ARCH-0007", "vendedor_nombre": "V", "comprador_nombre": "C"}
+    for _ in range(2):  # emitir dos veces la misma guía
+        r = cliente.post("/emitir/generar", data=_pedido(pdf, dibujos=1, extra=extra), content_type="multipart/form-data")
+        assert r.status_code == 200
+    assert _conteo("SELECT count(*) AS n FROM operaciones WHERE numero_guia = %s", "ARCH-0007") == 1
+    assert _conteo("SELECT count(*) AS n FROM documentos_emitidos WHERE numero_guia = %s", "ARCH-0007") == 2
+
+    _, codigo = _marca_con_estado("baja")
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("UPDATE marcas SET archivo_png = %s WHERE codigo = %s", (_png_marca(), codigo))
+    conexion.commit()
+    db.devolver_conexion(conexion)
+    r = cliente.post("/emitir/generar", data=_pedido(pdf, catalogo=[codigo], extra=extra), content_type="multipart/form-data")
+    assert r.status_code == 400 and "baja" in r.get_json()["error"]
+    assert cliente.get(f"/marcas/buscar.json?q={codigo}").get_json() == []  # el buscador tampoco la ofrece
+
+
+def test_respaldo_incluye_los_datos_del_archivo_sin_los_pdf(cliente):
+    from marcas.servidor import db
+    from marcas.servidor.consultas import exportar_todo_para_respaldo
+
+    conexion = db.obtener_conexion()
+    try:
+        datos = exportar_todo_para_respaldo(conexion)
+    finally:
+        db.devolver_conexion(conexion)
+    assert datos["documentos_emitidos"]
+    primero = datos["documentos_emitidos"][0]
+    assert "contenido" not in primero and primero["bytes_pdf"] > 1000

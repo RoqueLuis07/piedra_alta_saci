@@ -75,6 +75,7 @@ def buscar_marcas(
     tipo: str | None = None,
     incluir_ocultos: bool = False,
     motivo: str | None = None,
+    sin_baja: bool = False,
 ) -> tuple[list[dict], int]:
     """Los resultados de la página pedida y el total real de coincidencias.
 
@@ -91,6 +92,8 @@ def buscar_marcas(
     if tipo in ("dominante", "complementaria"):
         condiciones.append("m.tipo = %(tipo)s")
         parametros["tipo"] = tipo
+    if sin_baja:
+        condiciones.append("m.estado <> 'baja'")
     if motivo:
         # prefijo exacto del motivo de calidad (p. ej. "no_es_marca:anulacion")
         condiciones.append("m.motivo_calidad LIKE %(motivo)s")
@@ -735,6 +738,14 @@ def exportar_todo_para_respaldo(conexion) -> dict:
         marcas = cur.fetchall()
         cur.execute("SELECT * FROM cambios_pendientes ORDER BY id")
         cambios_pendientes = cur.fetchall()
+        # Archivo de documentos emitidos: sólo los datos (fecha, operación,
+        # marcas, peso). Los PDF no van a este respaldo -- pesan MB cada uno --
+        # y quedan en la propia base de Railway.
+        cur.execute(
+            "SELECT id, operacion_id, tipo, numero_guia, emitido_en, emitido_por, nombre, datos, marcas, "
+            "length(contenido) AS bytes_pdf FROM documentos_emitidos ORDER BY id"
+        )
+        documentos_emitidos = cur.fetchall()
 
     for m in marcas:
         for campo in _CAMPOS_BYTEA_MARCAS:
@@ -751,6 +762,7 @@ def exportar_todo_para_respaldo(conexion) -> dict:
         "operaciones": operaciones,
         "marcas": marcas,
         "cambios_pendientes": cambios_pendientes,
+        "documentos_emitidos": documentos_emitidos,
     }
 
 

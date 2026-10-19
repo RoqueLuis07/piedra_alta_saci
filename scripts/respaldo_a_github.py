@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from marcas.servidor.consultas import dict_a_json, exportar_todo_para_respaldo
 from marcas.servidor.db import devolver_conexion, obtener_conexion
 
-TAMANO_LOTE_MARCAS = 200
+TAMANO_LOTE_MARCAS = 100   # con ~3000 marcas de 512 px, cada lote queda en ~6 MB
 GITHUB_API = "https://api.github.com"
 
 

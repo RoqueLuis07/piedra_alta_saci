@@ -178,7 +178,7 @@ def registrar(app) -> None:
         lo que se vende ya está cargado de antes."""
         conexion = conexion_actual()
         texto = request.args.get("q") or None
-        resultados, total = buscar_marcas(conexion, texto, pagina=1, por_pagina=15)
+        resultados, total = buscar_marcas(conexion, texto, pagina=1, por_pagina=15, sin_baja=True)
         return jsonify([
             {
                 "codigo": m["codigo"],

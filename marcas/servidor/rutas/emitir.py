@@ -62,6 +62,10 @@ def _resolver_marca(conexion, spec: dict) -> dict:
         marca = marcas_por_codigos(conexion, [codigo]).get(codigo)
         if not marca:
             raise _PedidoInvalido(f"No se encontró la marca {codigo} en el catálogo.")
+        if marca.get("estado") == "baja":
+            raise _PedidoInvalido(
+                f"La marca {codigo} está dada de baja (no es una marca válida) -- elegí otra."
+            )
         contenido = imagen_marca(conexion, marca["id"], "png")
         if not contenido:
             raise _PedidoInvalido(
@@ -105,6 +109,17 @@ def _operacion_para_emitir(conexion, perfil: dict) -> dict:
     tipo = request.form.get("tipo_operacion")
     if tipo not in ("compra", "venta"):
         raise _PedidoInvalido("Elegí si es una Compra o una Venta.")
+    numero = request.form.get("numero_guia", "").strip()
+    if numero:
+        # Una guía de SENACSA tiene un número único: si ya se cargó, el nuevo PDF
+        # se archiva en esa misma operación en vez de duplicarla.
+        with conexion.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM operaciones WHERE numero_guia = %s AND tipo_operacion = %s AND activo "
+                "ORDER BY id LIMIT 1", (numero, tipo))
+            fila = cur.fetchone()
+        if fila:
+            return obtener_operacion_por_id(conexion, fila["id"])
     campos: dict = {"tipo_operacion": tipo, "fecha": date.today().strftime("%d/%m/%Y")}
     for campo in ("numero_guia", "vendedor_nombre", "comprador_nombre"):
         campos[campo] = request.form.get(campo, "").strip() or None

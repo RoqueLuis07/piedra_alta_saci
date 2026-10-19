@@ -332,7 +332,7 @@
             }
             var cod = document.createElement("div"); cod.className = "cod"; cod.textContent = m.codigo; b.appendChild(cod);
             var sub = document.createElement("div"); sub.className = "sub";
-            sub.textContent = m.imagen_url ? (m.propietario || "") : "Sin imagen";
+            sub.textContent = !m.imagen_url ? "Sin imagen" : (m.estado === "revisar" ? "En revisión" : (m.propietario || ""));
             b.appendChild(sub);
             if (!m.imagen_url) b.disabled = true;
             b.addEventListener("click", function () {
