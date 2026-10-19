@@ -319,3 +319,40 @@ def test_marca_del_catalogo_como_dominante_queda_archivada_con_su_papel(cliente,
         "SELECT count(*) AS n FROM documentos_emitidos d, jsonb_array_elements(d.marcas) m "
         "WHERE d.operacion_id = %s AND m->>'tipo' = 'dominante'", operacion_id)
     assert roles == 1  # sólo la que se estampó como dominante; la otra va de complementaria
+
+
+def test_revision_filtra_por_motivo_y_decide_en_lote(cliente):
+    from marcas.servidor import db
+
+    ids = []
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        for motivo in ("no_es_marca:anulacion (95 % recta)", "no_es_marca:anulacion (88 % recta)", "no_es_marca:texto_o_sello (5 letras)"):
+            cur.execute(
+                "INSERT INTO marcas (tipo, estado, motivo_calidad, sospechosa_calidad) "
+                "VALUES ('complementaria', 'revisar', %s, true) RETURNING id, codigo", (motivo,))
+            ids.append(cur.fetchone())
+    conexion.commit()
+    db.devolver_conexion(conexion)
+
+    pagina = cliente.get("/revision?motivo=no_es_marca:anulacion").get_data(as_text=True)
+    assert ids[0]["codigo"] in pagina and ids[1]["codigo"] in pagina and ids[2]["codigo"] not in pagina
+    assert "No es marca: anulacion" in cliente.get("/revision").get_data(as_text=True)  # opciones de motivo
+
+    lote_ids = [ids[0]["id"], ids[1]["id"]]
+    r = cliente.post("/revision/lote", json={"accion": "baja", "ids": lote_ids})
+    assert r.status_code == 200 and r.get_json()["cantidad"] == 2
+    assert _situacion(lote_ids[0]) == ("baja", True) and _situacion(lote_ids[1]) == ("baja", True)
+    assert _situacion(ids[2]["id"]) == ("revisar", True)  # las demás no se tocan
+
+    anteriores = r.get_json()["anteriores"]
+    assert {a["estado"] for a in anteriores} == {"revisar"}
+    r = cliente.post("/revision/lote", json={"accion": "restaurar", "items": anteriores})
+    assert r.status_code == 200
+    assert _situacion(lote_ids[0]) == ("revisar", True) and _situacion(lote_ids[1]) == ("revisar", True)
+
+    # pedidos inválidos
+    assert cliente.post("/revision/lote", json={"accion": "baja", "ids": []}).status_code == 400
+    assert cliente.post("/revision/lote", json={"accion": "baja", "ids": ["1; DROP TABLE marcas"]}).status_code == 400
+    assert cliente.post("/revision/lote", json={"accion": "restaurar", "items": [{"id": 1, "estado": "x", "activo": True}]}).status_code == 400
+    assert cliente.post("/revision/lote", json={"accion": "ocultar", "ids": [1]}).status_code == 400

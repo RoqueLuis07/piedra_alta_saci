@@ -74,6 +74,7 @@ def buscar_marcas(
     estado: str | None = None,
     tipo: str | None = None,
     incluir_ocultos: bool = False,
+    motivo: str | None = None,
 ) -> tuple[list[dict], int]:
     """Los resultados de la página pedida y el total real de coincidencias.
 
@@ -90,6 +91,10 @@ def buscar_marcas(
     if tipo in ("dominante", "complementaria"):
         condiciones.append("m.tipo = %(tipo)s")
         parametros["tipo"] = tipo
+    if motivo:
+        # prefijo exacto del motivo de calidad (p. ej. "no_es_marca:anulacion")
+        condiciones.append("m.motivo_calidad LIKE %(motivo)s")
+        parametros["motivo"] = motivo.replace("%", "").replace("_", r"\_") + "%"
     if texto:
         parametros["patron"] = f"%{texto}%"
         condiciones.append(
@@ -900,3 +905,42 @@ def contar_pendientes_revision(conexion) -> int:
     with conexion.cursor() as cur:
         cur.execute("SELECT count(*) AS n FROM marcas WHERE estado = 'revisar' AND activo")
         return cur.fetchone()["n"]
+
+
+def motivos_pendientes(conexion) -> list[dict]:
+    """Cuántas marcas por revisar hay por cada motivo (para filtrar la pantalla de
+    Revisión): el motivo sin el detalle entre paréntesis."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT split_part(motivo_calidad, ' (', 1) AS motivo, count(*) AS n
+            FROM marcas
+            WHERE estado = 'revisar' AND activo AND motivo_calidad IS NOT NULL
+            GROUP BY 1 ORDER BY n DESC
+            """
+        )
+        return cur.fetchall()
+
+
+def cambiar_revision_lote(conexion, ids: list[int], estado: str, usuario_id: str | None) -> list[dict]:
+    """Aplica el mismo estado a varias marcas. Devuelve cómo estaban antes
+    ([{id, estado, activo}]) para poder deshacer todo el lote de una vez."""
+    if not ids:
+        return []
+    with conexion.cursor() as cur:
+        cur.execute("SELECT id, estado, activo FROM marcas WHERE id = ANY(%s) FOR UPDATE", (ids,))
+        antes = cur.fetchall()
+        cur.execute(
+            "UPDATE marcas SET estado = %s, actualizado_por = %s WHERE id = ANY(%s)",
+            (estado, usuario_id, [a["id"] for a in antes]),
+        )
+    return [{"id": a["id"], "estado": a["estado"], "activo": a["activo"]} for a in antes]
+
+
+def restaurar_revision_lote(conexion, items: list[dict], usuario_id: str | None) -> None:
+    with conexion.cursor() as cur:
+        for item in items:
+            cur.execute(
+                "UPDATE marcas SET estado = %s, activo = %s, actualizado_por = %s WHERE id = %s",
+                (item["estado"], item["activo"], usuario_id, item["id"]),
+            )

@@ -42,8 +42,8 @@
 
   <div class="modos">
     <div class="segmento" role="tablist">
-      <a href="{{ url_for('revision', ver='pendientes', tipo=tipo or None, q=texto or None) }}" class="{{ 'activo' if ver == 'pendientes' }}">Por revisar <span class="cuenta" id="cuenta-pendientes">{{ pendientes }}</span></a>
-      <a href="{{ url_for('revision', ver='todas', tipo=tipo or None, q=texto or None) }}" class="{{ 'activo' if ver == 'todas' }}">Todas las marcas</a>
+      <a href="{{ url_for('revision', ver='pendientes', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'pendientes' }}">Por revisar <span class="cuenta" id="cuenta-pendientes">{{ pendientes }}</span></a>
+      <a href="{{ url_for('revision', ver='todas', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'todas' }}">Todas las marcas</a>
     </div>
     <form method="get" action="{{ url_for('revision') }}" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
       <input type="hidden" name="ver" value="{{ ver }}">
@@ -51,14 +51,28 @@
         <select name="tipo"><option value="">Todos</option>
           <option value="dominante" {% if tipo == 'dominante' %}selected{% endif %}>Dominante</option>
           <option value="complementaria" {% if tipo == 'complementaria' %}selected{% endif %}>Complementaria</option></select></div>
+      {% if motivos %}
+      <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">MOTIVO</span>
+        <select name="motivo" style="max-width: 260px;"><option value="">Todos ({{ pendientes }})</option>
+          {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }} ({{ m.n }})</option>{% endfor %}
+        </select></div>
+      {% endif %}
       <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">CÓDIGO</span>
         <input type="text" name="q" value="{{ texto }}" placeholder="M-00337" style="width: 140px;"></div>
       <button type="submit" class="boton" style="min-height: 38px; padding: 8px 14px;">Filtrar</button>
     </form>
   </div>
 
-  <div class="mono" style="font-size: 11px; color: var(--texto-secundario); margin-bottom: 12px;">
-    {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% endif %} · MOSTRANDO {{ marcas|length }}
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;">
+    <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
+      {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% endif %}{% if motivo %} · {{ motivo|replace('no_es_marca:', '')|replace('_', ' ')|upper }}{% endif %} · MOSTRANDO <span id="visibles">{{ marcas|length }}</span>
+    </div>
+    {% if marcas %}
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button type="button" class="boton" id="lote-aprobar" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">✓ Aprobar las visibles</button>
+      <button type="button" class="boton" id="lote-baja" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">Dar de baja las visibles</button>
+    </div>
+    {% endif %}
   </div>
 
   <div class="rev-grilla" id="grilla">
@@ -71,7 +85,7 @@
         <div class="cod"><a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="text-decoration: none;">{{ m.codigo }}</a>
           <span class="estado estado-{{ m.estado }}" data-etiqueta-estado>{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span></div>
         <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.descripcion %} · {{ m.descripcion }}{% endif %}</div>
-        {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('_', ' ') }}</div>{% endif %}
+        {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }}</div>{% endif %}
       </div>
       <div class="rev-acciones">
         <button type="button" class="ok" data-accion="aprobar" {% if m.estado == 'activa' %}disabled{% endif %}>✓ Aprobar</button>
@@ -93,8 +107,8 @@
 <div class="paginado">
   <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
   <div class="enlaces">
-    {% if pagina > 1 %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, pagina=pagina - 1) }}">&larr; Anteriores</a>{% else %}<span class="boton-inactivo">&larr; Anteriores</span>{% endif %}
-    {% if pagina * por_pagina < total %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, pagina=pagina + 1) }}">Siguientes &rarr;</a>{% else %}<span class="boton-inactivo">Siguientes &rarr;</span>{% endif %}
+    {% if pagina > 1 %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, pagina=pagina - 1) }}">&larr; Anteriores</a>{% else %}<span class="boton-inactivo">&larr; Anteriores</span>{% endif %}
+    {% if pagina * por_pagina < total %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, pagina=pagina + 1) }}">Siguientes &rarr;</a>{% else %}<span class="boton-inactivo">Siguientes &rarr;</span>{% endif %}
   </div>
 </div>
 
@@ -131,14 +145,13 @@
   function actualizarVista(tarjeta, estado, activo) {
     pintar(tarjeta, estado, activo);
     tarjeta.style.display = saleDeLaLista(estado, activo) ? 'none' : '';
-    var visibles = document.querySelectorAll('.rev-tarjeta:not([style*="display: none"])').length;
-    document.getElementById('fin-pagina').style.display = visibles ? 'none' : 'block';
+    contarVisibles();
   }
   function mostrarAviso(texto) {
     document.getElementById('aviso-texto').textContent = texto;
     aviso.style.display = 'flex';
     clearTimeout(temporizador);
-    temporizador = setTimeout(function () { aviso.style.display = 'none'; ultimo = null; }, 9000);
+    temporizador = setTimeout(function () { aviso.style.display = 'none'; ultimo = null; ultimoLote = null; }, 12000);
   }
 
   document.getElementById('grilla').addEventListener('click', function (e) {
@@ -168,6 +181,18 @@
     });
   });
   document.getElementById('btn-deshacer').addEventListener('click', function () {
+    if (ultimoLote) {
+      var lotePrevio = ultimoLote; ultimoLote = null;
+      pedirLote({ accion: 'restaurar', items: lotePrevio.anteriores }).then(function (r) {
+        var previo = {};
+        lotePrevio.anteriores.forEach(function (a) { previo[a.id] = a; });
+        lotePrevio.tarjetas.forEach(function (t) { var a = previo[t.dataset.id]; if (a) actualizarVista(t, a.estado, a.activo); });
+        document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+        contarVisibles();
+        mostrarAviso('Se deshizo el cambio de ' + r.cantidad + ' marcas.');
+      }).catch(function (err) { mostrarAviso('No se pudo deshacer: ' + err.message); });
+      return;
+    }
     if (!ultimo) return;
     var u = ultimo; ultimo = null;
     enviar(u.tarjeta.dataset.id, { accion: 'deshacer', estado: u.antes.estado, activo: u.antes.activo }).then(function (r) {
@@ -176,6 +201,38 @@
       mostrarAviso('Se deshizo el cambio en ' + r.codigo + '.');
     }).catch(function (err) { mostrarAviso('No se pudo deshacer: ' + err.message); });
   });
+  function visibles() { return [].slice.call(document.querySelectorAll('.rev-tarjeta')).filter(function (t) { return t.style.display !== 'none'; }); }
+  function contarVisibles() {
+    var n = visibles().length;
+    document.getElementById('visibles').textContent = n;
+    document.getElementById('fin-pagina').style.display = n ? 'none' : 'block';
+  }
+  var ultimoLote = null;
+  function pedirLote(cuerpo) {
+    return fetch({{ url_for('revision_lote') | tojson }}, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Error'); return j; }); });
+  }
+  function lote(accion) {
+    var tarjetas = visibles();
+    if (!tarjetas.length) return;
+    var texto = accion === 'baja' ? 'Dar de baja' : 'Aprobar';
+    if (!window.confirm('¿' + texto + ' las ' + tarjetas.length + ' marcas que ves en pantalla? Podés deshacerlo enseguida.')) return;
+    var ids = tarjetas.map(function (t) { return parseInt(t.dataset.id, 10); });
+    pedirLote({ accion: accion, ids: ids }).then(function (r) {
+      var estado = accion === 'baja' ? 'baja' : 'activa';
+      tarjetas.forEach(function (t) { actualizarVista(t, estado, true); });
+      document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+      ultimoLote = { tarjetas: tarjetas, anteriores: r.anteriores };
+      ultimo = null;
+      contarVisibles();
+      mostrarAviso(r.cantidad + (accion === 'baja' ? ' marcas dadas de baja.' : ' marcas aprobadas.'));
+    }).catch(function (err) { mostrarAviso('No se pudo: ' + err.message); });
+  }
+  var botonLoteA = document.getElementById('lote-aprobar'), botonLoteB = document.getElementById('lote-baja');
+  if (botonLoteA) botonLoteA.addEventListener('click', function () { lote('aprobar'); });
+  if (botonLoteB) botonLoteB.addEventListener('click', function () { lote('baja'); });
   document.getElementById('visor').addEventListener('click', function () { this.style.display = 'none'; });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') document.getElementById('visor').style.display = 'none'; });
 })();

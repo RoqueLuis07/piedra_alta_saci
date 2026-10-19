@@ -8,8 +8,11 @@ from flask import jsonify, render_template, request
 from marcas.servidor.auth import conexion_actual, perfil_actual, requiere_rol, requiere_sesion
 from marcas.servidor.consultas import (
     buscar_marcas,
+    cambiar_revision_lote,
     cambiar_revision_marca,
     contar_pendientes_revision,
+    motivos_pendientes,
+    restaurar_revision_lote,
     url_imagen,
 )
 
@@ -26,16 +29,19 @@ def registrar(app) -> None:
         ver = "todas" if request.args.get("ver") == "todas" else "pendientes"
         tipo = request.args.get("tipo") or None
         texto = request.args.get("q") or None
+        motivo = request.args.get("motivo") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
         marcas, total = buscar_marcas(
             conexion, texto, pagina=pagina, por_pagina=POR_PAGINA_REVISION,
             estado="revisar" if ver == "pendientes" else None, tipo=tipo,
+            motivo=motivo,
         )
         for m in marcas:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
         return render_template(
             "revision.html", activo="buscar", perfil=perfil_actual(), marcas=marcas, total=total,
             pagina=pagina, por_pagina=POR_PAGINA_REVISION, ver=ver, tipo=tipo or "", texto=texto or "",
+            motivo=motivo or "", motivos=motivos_pendientes(conexion),
             pendientes=contar_pendientes_revision(conexion),
         )
 
@@ -78,3 +84,40 @@ def registrar(app) -> None:
             return jsonify({"error": "No se encontró esa marca."}), 404
         resultado["pendientes"] = contar_pendientes_revision(conexion)
         return jsonify(resultado)
+
+    @app.post("/revision/lote")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def revision_lote():
+        """{accion: aprobar | baja, ids: [...]} o {accion: restaurar, items: [{id, estado, activo}]}.
+        Pensado para decidir de una vez todas las marcas visibles; siempre se puede deshacer."""
+        perfil = perfil_actual()
+        datos = request.get_json(silent=True) or {}
+        accion = datos.get("accion")
+        conexion = conexion_actual()
+        try:
+            if accion in ("aprobar", "baja"):
+                ids = datos.get("ids")
+                if not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, int) for i in ids):
+                    return jsonify({"error": "Pedido inválido."}), 400
+                anteriores = cambiar_revision_lote(conexion, ids, "activa" if accion == "aprobar" else "baja", perfil["id"])
+                respuesta = {"cantidad": len(anteriores), "anteriores": anteriores}
+            elif accion == "restaurar":
+                items = datos.get("items")
+                valido = isinstance(items, list) and 0 < len(items) <= 500 and all(
+                    isinstance(i, dict) and isinstance(i.get("id"), int) and i.get("estado") in _ESTADOS
+                    and isinstance(i.get("activo"), bool) and (i["activo"] or perfil["rol"] == "administrador")
+                    for i in items
+                )
+                if not valido:
+                    return jsonify({"error": "Pedido inválido."}), 400
+                restaurar_revision_lote(conexion, items, perfil["id"])
+                respuesta = {"cantidad": len(items)}
+            else:
+                return jsonify({"error": "Acción no válida."}), 400
+        except Exception as exc:
+            conexion.rollback()
+            print(f"revision_lote: {exc}")
+            return jsonify({"error": "No se pudo guardar el cambio."}), 500
+        respuesta["pendientes"] = contar_pendientes_revision(conexion)
+        return jsonify(respuesta)
