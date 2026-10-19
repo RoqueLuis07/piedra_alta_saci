@@ -6,6 +6,7 @@ generar el PDF -> queda guardado y se puede ver/descargar desde /archivo.
 """
 
 import io
+import json
 import re
 import sys
 from pathlib import Path
@@ -103,14 +104,40 @@ def _agregar_marca(cliente, operacion_id: int, con_imagen: bool) -> int:
         db.devolver_conexion(conexion)
 
 
-def test_generar_guia_queda_archivada(cliente, tmp_path):
-    operacion_id = _crear_guia(cliente, "ARCH-0001")
-    marca_id = _agregar_marca(cliente, operacion_id, con_imagen=True)
-    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0001", incluir_rubro2=True)
+def _pedido(pdf_bytes, dibujos=0, catalogo=(), dominante=False, extra=None):
+    """Arma el formulario multipart de /emitir/*."""
+    datos = {"pdf_guia": (io.BytesIO(pdf_bytes), "guia.pdf")}
+    orden = [{"t": "cat", "codigo": c} for c in catalogo]
+    for i in range(dibujos):
+        datos[f"dibujo_{i}"] = (io.BytesIO(_png_marca()), f"dibujo_{i}.png")
+        orden.append({"t": "dib", "archivo": f"dibujo_{i}", "guardar": i == 0})
+    datos["orden"] = json.dumps(orden)
+    if dominante:
+        datos["dominante_png"] = (io.BytesIO(_png_marca()), "dominante.png")
+        datos["dominante"] = json.dumps({"t": "dib", "archivo": "dominante_png", "guardar": False})
+    datos.update(extra or {})
+    return datos
 
+
+def _conteo(sql, *params):
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    try:
+        with conexion.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchone()["n"]
+    finally:
+        db.devolver_conexion(conexion)
+
+
+def test_emitir_dibujando_crea_operacion_marcas_y_archivo(cliente, tmp_path):
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0001", incluir_rubro2=True).read_bytes()
     r = cliente.post(
-        f"/guias/{operacion_id}/imprimir",
-        data={"marca_id": str(marca_id), "pdf_guia": (io.BytesIO(pdf.read_bytes()), "guia.pdf")},
+        "/emitir/generar",
+        data=_pedido(pdf, dibujos=2, dominante=True, extra={
+            "tipo_operacion": "compra", "numero_guia": "ARCH-0001", "vendedor_nombre": "Vendedor Prueba",
+            "comprador_nombre": "Comprador Prueba", "cantidad_animales": "12"}),
         content_type="multipart/form-data",
     )
     assert r.status_code == 200, r.get_data(as_text=True)[:300]
@@ -118,36 +145,90 @@ def test_generar_guia_queda_archivada(cliente, tmp_path):
     emitido = r.get_data()
     assert emitido.startswith(b"%PDF")
 
+    # operación y marcas creadas; sólo la primera dibujada se guardó en el catálogo
+    assert _conteo("SELECT count(*) AS n FROM operaciones WHERE numero_guia = %s", "ARCH-0001") == 1
+    assert _conteo("SELECT count(*) AS n FROM marcas m JOIN operaciones o ON o.id = m.operacion_id "
+                   "WHERE o.numero_guia = %s", "ARCH-0001") == 3
+    assert _conteo("SELECT count(*) AS n FROM marcas m JOIN operaciones o ON o.id = m.operacion_id "
+                   "WHERE o.numero_guia = %s AND m.activo", "ARCH-0001") == 1
+
     lista = cliente.get("/archivo?q=ARCH-0001").get_data(as_text=True)
-    assert "ARCH-0001" in lista and "Vendedor Prueba" in lista and "Comprador Prueba" in lista
+    assert "Vendedor Prueba" in lista and "Comprador Prueba" in lista
     documento_id = int(re.search(r"/archivo/(\d+)/pdf", lista).group(1))
-
     detalle = cliente.get(f"/archivo/{documento_id}").get_data(as_text=True)
-    assert "Vendedor Prueba" in detalle and "marca de prueba" in detalle
-
-    # el PDF guardado es exactamente el que se entregó
+    assert "Vendedor Prueba" in detalle and "Dibujada al emitir el PDF" in detalle
     assert cliente.get(f"/archivo/{documento_id}/pdf").get_data() == emitido
-
-    # filtros: por tipo y por fecha futura
-    assert "ARCH-0001" not in cliente.get("/archivo?tipo=venta&q=ARCH-0001").get_data(as_text=True).split("<tbody>")[1]
     assert "/pdf" not in cliente.get("/archivo?desde=2999-01-01").get_data(as_text=True)
+
+
+def test_emitir_con_marca_del_catalogo_en_operacion_existente(cliente, tmp_path):
+    operacion_id = _crear_guia(cliente, "ARCH-0003")
+    marca_id = _agregar_marca(cliente, operacion_id, con_imagen=True)
+    codigo = _conteo("SELECT 1 AS n") and None
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("SELECT codigo FROM marcas WHERE id = %s", (marca_id,))
+        codigo = cur.fetchone()["codigo"]
+    db.devolver_conexion(conexion)
+
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0003", incluir_rubro2=True).read_bytes()
+    antes = _conteo("SELECT count(*) AS n FROM marcas")
+    r = cliente.post(
+        "/emitir/generar",
+        data=_pedido(pdf, catalogo=[codigo], extra={"operacion_id": str(operacion_id)}),
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    assert _conteo("SELECT count(*) AS n FROM marcas") == antes  # no se crean marcas nuevas
+    assert _conteo("SELECT count(*) AS n FROM documentos_emitidos WHERE operacion_id = %s", operacion_id) == 1
+
+
+def test_previsualizar_no_guarda_nada(cliente, tmp_path):
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0004", incluir_rubro2=True).read_bytes()
+    antes = (_conteo("SELECT count(*) AS n FROM marcas"), _conteo("SELECT count(*) AS n FROM operaciones"))
+    r = cliente.post("/emitir/previsualizar", data=_pedido(pdf, dibujos=1), content_type="multipart/form-data")
+    assert r.status_code == 200
+    cuerpo = r.get_json()
+    assert cuerpo["paginas"] and cuerpo["cupo"]["complementarias_libres_rubro2"] > 0
+    assert (_conteo("SELECT count(*) AS n FROM marcas"), _conteo("SELECT count(*) AS n FROM operaciones")) == antes
 
 
 def test_marca_sin_imagen_no_genera_ni_archiva(cliente, tmp_path):
     operacion_id = _crear_guia(cliente, "ARCH-0002")
     marca_id = _agregar_marca(cliente, operacion_id, con_imagen=False)
-    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0002", incluir_rubro2=True)
+    from marcas.servidor import db
 
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("SELECT codigo FROM marcas WHERE id = %s", (marca_id,))
+        codigo = cur.fetchone()["codigo"]
+    db.devolver_conexion(conexion)
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0002", incluir_rubro2=True).read_bytes()
     r = cliente.post(
-        f"/guias/{operacion_id}/imprimir",
-        data={"marca_id": str(marca_id), "pdf_guia": (io.BytesIO(pdf.read_bytes()), "guia.pdf")},
+        "/emitir/generar",
+        data=_pedido(pdf, catalogo=[codigo], extra={"operacion_id": str(operacion_id)}),
         content_type="multipart/form-data",
     )
     assert r.status_code == 400
-    lista = cliente.get("/archivo?q=ARCH-0002").get_data(as_text=True)
-    assert "Todavía no se emitió ningún documento." in lista and "/pdf" not in lista
+    assert "imagen" in r.get_json()["error"]
+    assert _conteo("SELECT count(*) AS n FROM documentos_emitidos WHERE operacion_id = %s", operacion_id) == 0
 
 
-def test_rutas_eliminadas_no_existen(cliente):
-    assert cliente.get("/estadisticas").status_code == 404
-    assert cliente.get("/aprobaciones").status_code == 404
+def test_emitir_sin_marcas_o_sin_pdf_se_rechaza(cliente, tmp_path):
+    pdf = generar_guia(tmp_path / "entrada.pdf", guia="ARCH-0005", incluir_rubro2=True).read_bytes()
+    r = cliente.post("/emitir/generar", data=_pedido(pdf, extra={"tipo_operacion": "compra", "numero_guia": "X"}),
+                     content_type="multipart/form-data")
+    assert r.status_code == 400 and "marca" in r.get_json()["error"]
+    r = cliente.post("/emitir/generar", data={"orden": "[]"}, content_type="multipart/form-data")
+    assert r.status_code == 400 and "PDF" in r.get_json()["error"]
+    assert _conteo("SELECT count(*) AS n FROM operaciones WHERE numero_guia = %s", "ARCH-0005") == 0
+
+
+def test_pantalla_emitir_y_rutas_eliminadas(cliente):
+    assert cliente.get("/").status_code == 302
+    pagina = cliente.get("/emitir").get_data(as_text=True)
+    assert "Emitir PDF" in pagina and "lienzo" in pagina
+    for ruta in ("/estadisticas", "/aprobaciones"):
+        assert cliente.get(ruta).status_code == 404

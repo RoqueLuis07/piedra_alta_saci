@@ -11,16 +11,13 @@ from marcas.servidor.consultas import (
     actualizar_marca_campos,
     buscar_marcas,
     desglose_marcas,
-    estadisticas,
     ficha_marca,
     imagen_marca,
-    marcas_a_revisar,
     nombres_usuarios,
     obtener_marca_por_id,
     ocultar_marca,
     restaurar_marca,
     subir_imagen_marca,
-    ultimos_asientos,
     url_imagen,
 )
 from marcas.servidor.utilidades import _CODIGO_VALIDO, _error_seguro, _registro_no_encontrado
@@ -30,15 +27,11 @@ def registrar(app) -> None:
     @app.get("/")
     @requiere_sesion
     def inicio():
-        conexion = conexion_actual()
-        return render_template(
-            "inicio.html",
-            activo="inicio",
-            perfil=perfil_actual(),
-            stats=estadisticas(conexion),
-            asientos=ultimos_asientos(conexion),
-            a_revisar=marcas_a_revisar(conexion),
-        )
+        # No hay pantalla de inicio aparte: se entra directo a lo que se hace
+        # todos los días (emitir un PDF) o, si sólo se consulta, al catálogo.
+        perfil = perfil_actual()
+        destino = "emitir" if perfil and perfil["rol"] in ("administrador", "operador") else "buscar"
+        return redirect(url_for(destino))
 
     @app.get("/buscar")
     @requiere_sesion

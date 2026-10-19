@@ -42,8 +42,6 @@
   </div>
   {% endif %}
 
-  {% set columnas_disponibles = [('imagen', 'MARCA'), ('codigo', 'CÓDIGO'), ('propietario', 'PROPIETARIO'), ('guia', 'N.º DE GUÍA'), ('vence', 'VENCE'), ('estado', 'ESTADO')] %}
-
   <div style="display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0 10px; gap: 16px; border-top: 1px solid var(--borde-suave); margin-top: 12px; flex-wrap: wrap;">
     <div style="display: flex; flex-direction: column; gap: 10px;">
       <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
@@ -52,11 +50,6 @@
         {% else %}
         {{ total }} ASIENTO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
         {% endif %}
-      </div>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-
-        
-        
       </div>
     </div>
     <div style="display: flex; gap: 16px; align-items: baseline;">
@@ -70,51 +63,33 @@
   <div class="aviso-pendiente">Mostrando sólo marcas ocultas.</div>
   {% endif %}
 
-  <table class="registro">
-    <thead>
-      <tr>
-        {% for clave, etiqueta in columnas_disponibles %}
-        <th>{{ etiqueta }}</th>
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for m in resultados %}
-      <tr onclick="window.location='{{ url_for('ver_marca', codigo=m.codigo) }}'">
-        
-        <td>
-          {% if m.imagen_url %}
-          <img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; display: block; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">
-          {% else %}
-          <span class="sub">—</span>
-          {% endif %}
-        </td>
-        
-        <td class="mono" style="white-space: nowrap;">{{ m.codigo }}</td>
-        
-        <td>
-          <div style="font-weight: 500;">{{ m.propietarios.nombre if m.propietarios else 'Sin identificar' }}</div>
-          <div class="sub">{{ m.propietarios.documento if m.propietarios else '' }}</div>
-        </td>
-        
-        
-        <td class="mono" style="white-space: nowrap;">
-          <div>{{ m.operaciones.numero_guia if m.operaciones else '—' }}</div>
-          <div class="sub">{{ (m.operaciones.fecha or '') if m.operaciones else '' }}</div>
-        </td>
-        
-        <td class="mono" style="white-space: nowrap;">{{ m.vence_en or '—' }}</td>
-        
-        <td>
-          <span class="estado estado-{{ m.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
-        </td>
-        
-      </tr>
-      {% else %}
-      <tr><td colspan="{{ columnas_disponibles|length }}" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <style>
+    .galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-top: 8px; }
+    .tarjeta-marca { display: block; border: 1px solid var(--borde-suave); background: var(--superficie); padding: 10px; text-decoration: none; color: var(--texto); }
+    .tarjeta-marca:hover { border-color: var(--verde-claro); background: var(--tabla-hover); }
+    .tarjeta-marca .miniatura { aspect-ratio: 1; background: #fff; border: 1px solid var(--borde-fina); display: flex; align-items: center; justify-content: center; }
+    .tarjeta-marca img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .tarjeta-marca .sin-imagen { font-size: 11px; color: #5B6560; }
+    .tarjeta-marca .cod { font: 600 12.5px 'IBM Plex Mono', monospace; margin-top: 8px; }
+    .tarjeta-marca .detalle { font-size: 11.5px; color: var(--texto-secundario); line-height: 1.4; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+  <div class="galeria">
+    {% for m in resultados %}
+    <a class="tarjeta-marca" href="{{ url_for('ver_marca', codigo=m.codigo) }}">
+      <div class="miniatura">
+        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="Marca {{ m.codigo }}" loading="lazy">{% else %}<span class="sin-imagen">Sin imagen</span>{% endif %}
+      </div>
+      <div class="cod">{{ m.codigo }}</div>
+      <div class="detalle">{{ m.propietarios.nombre if m.propietarios else 'Sin propietario' }}</div>
+      <div class="detalle">
+        {{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}
+        {% if m.estado != 'activa' %}· <span class="estado estado-{{ m.estado }}">{{ {'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>{% endif %}
+      </div>
+    </a>
+    {% else %}
+    <p class="sub" style="grid-column: 1 / -1; padding: 20px 0;">Sin resultados.</p>
+    {% endfor %}
+  </div>
 </div>
 
 <div class="paginado">

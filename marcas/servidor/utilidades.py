@@ -4,25 +4,22 @@ from __future__ import annotations
 
 import base64
 import io
-import pypdfium2 as pdfium
 import re
 import tempfile
-from PIL import Image, ImageOps
 from datetime import date, datetime
-from flask import render_template, send_file
-from marcas.pdf.guia import analizar_venta, completar_guia, completar_venta, extraer_encabezado
-from marcas.servidor.auth import perfil_actual
-from marcas.servidor.consultas import (
-    eliminar_borrador_venta,
-    guardar_documento_emitido,
-    imagen_marca,
-)
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pypdfium2 as pdfium
+from flask import render_template, send_file
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+from PIL import Image, ImageOps
+
+from marcas.pdf.guia import analizar_venta, completar_venta, extraer_encabezado
+from marcas.servidor.auth import perfil_actual
+from marcas.servidor.consultas import guardar_documento_emitido
 
 _CODIGO_VALIDO = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -124,77 +121,6 @@ def _libro_excel(nombre_hoja: str, encabezados: list[str], filas: list[list]) ->
     return buffer
 
 
-def _previsualizar_estampado(conexion, operacion: dict, marcas_elegidas: list[dict], pdf_bytes: bytes, dominante_bytes: bytes | None = None) -> dict:
-    """Corre completar_venta/completar_guia con las marcas elegidas hasta el
-    momento sobre un PDF y un directorio TEMPORALES -- nunca sobre el PDF
-    real que se termina descargando -- y devuelve las páginas que quedaron
-    con algo nuevo (como PNG) para el panel izquierdo, más el cupo libre
-    restante. Se usa tanto para Venta (Rubro 2 + Anexo) como para Guía (sólo
-    Anexo, completar_guia no toca el Rubro 2)."""
-    es_venta = operacion.get("tipo_operacion") == "venta"
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        pdf_entrada = tmp_path / "entrada.pdf"
-        pdf_entrada.write_bytes(pdf_bytes)
-
-        rutas_imagenes = []
-        for marca in marcas_elegidas:
-            contenido = imagen_marca(conexion, marca["id"], "png")
-            if not contenido:
-                continue
-            destino = tmp_path / f"{marca['codigo']}.png"
-            destino.write_bytes(contenido)
-            rutas_imagenes.append(destino)
-
-        dominante_ruta = None
-        if dominante_bytes:
-            dominante_ruta = tmp_path / "dominante.png"
-            dominante_ruta.write_bytes(dominante_bytes)
-
-        salida = tmp_path / "salida.pdf"
-        paginas_modificadas: list[int] = []
-        error = None
-        try:
-            if es_venta:
-                info = completar_venta(pdf_entrada, dominante_ruta, rutas_imagenes, salida)
-            elif rutas_imagenes:
-                info = completar_guia(pdf_entrada, rutas_imagenes, salida)
-            else:
-                info = {"paginas_modificadas": []}
-            paginas_modificadas = info.get("paginas_modificadas", [])
-        except Exception as exc:
-            error = str(exc)
-            salida = pdf_entrada  # sin marcas que entren, se previsualiza el PDF tal cual
-
-        paginas_png = []
-        fuente = salida if salida.exists() else pdf_entrada
-        doc = pdfium.PdfDocument(str(fuente))
-        try:
-            # Sin nada estampado todavía, se muestra la primera página
-            # principal tal cual llegó, para que el panel izquierdo nunca
-            # quede vacío antes de la primera marca.
-            indices = paginas_modificadas or ([0] if len(doc) else [])
-            for i in indices:
-                if i >= len(doc):
-                    continue
-                imagen = doc[i].render(scale=1.3).to_pil()
-                buffer = io.BytesIO()
-                imagen.save(buffer, format="PNG")
-                paginas_png.append(base64.b64encode(buffer.getvalue()).decode("ascii"))
-        finally:
-            doc.close()
-
-        try:
-            cupo = analizar_venta(pdf_entrada)
-        except Exception:
-            cupo = None
-
-        try:
-            encabezado = extraer_encabezado(pdf_entrada)
-        except Exception:
-            encabezado = None
-
-    return {"paginas": paginas_png, "cupo": cupo, "encabezado": encabezado, "error": error}
 
 
 _CAMPOS_MINIMOS_GUIA = ("numero_guia", "vendedor_nombre", "comprador_nombre", "cantidad_animales")
@@ -248,36 +174,13 @@ def _preparar_respaldo(archivos) -> tuple[bytes, str]:
     return buffer.getvalue(), "respaldo.pdf"
 
 
-def _preparar_imagenes(conexion, marcas: list[dict], carpeta: Path) -> tuple[list[Path], list[str]]:
-    """Escribe en ``carpeta`` el PNG de cada marca elegida. Devuelve las rutas
-    y los códigos de las marcas que todavía no tienen imagen cargada."""
-    rutas: list[Path] = []
-    sin_imagen: list[str] = []
-    for m in marcas:
-        contenido = imagen_marca(conexion, m["id"], "png")
-        if not contenido:
-            sin_imagen.append(m["codigo"])
-            continue
-        destino = carpeta / f"{m['codigo']}.png"
-        destino.write_bytes(contenido)
-        rutas.append(destino)
-    return rutas, sin_imagen
 
 
-def _mensaje_sin_imagen(sin_imagen: list[str]) -> str:
-    """Una marca sin imagen bloquea TODA la generación (antes se salteaba en
-    silencio y el PDF salía "exitoso" sin esa marca)."""
-    uno = len(sin_imagen) == 1
-    return (
-        f"{'La marca' if uno else 'Las marcas'} {', '.join(sin_imagen)} todavía no "
-        f"{'tiene' if uno else 'tienen'} una imagen cargada -- subí la imagen antes de "
-        "generar el PDF, o quitá esa marca de la lista."
-    )
 
 
 def _entregar_documento(conexion, operacion: dict, tipo: str, marcas: list[dict], contenido_pdf: bytes):
     """Cola común de generar guía / generar venta: archiva el PDF (fecha +
-    datos de la operación + marcas), limpia el borrador y lo manda a descargar.
+    datos de la operación + marcas) y lo manda a descargar.
     Si no se puede archivar, no se entrega: así nunca sale un documento que no
     quede guardado."""
     prefijo = "venta" if tipo == "venta" else "guia"
@@ -288,12 +191,65 @@ def _entregar_documento(conexion, operacion: dict, tipo: str, marcas: list[dict]
             conexion, operacion, tipo, marcas, contenido_pdf, nombre, perfil["id"] if perfil else None
         )
     except Exception as exc:
+        # Sin el rollback, Flask haría commit de la operación y las marcas
+        # recién creadas aunque el documento no haya quedado archivado.
+        conexion.rollback()
         return _error_seguro("No se pudo guardar el documento en el archivo, así que no se generó.", exc)
-    if operacion.get("borrador_venta"):
-        try:
-            eliminar_borrador_venta(conexion, operacion["id"])
-        except Exception as exc:
-            print(f"_entregar_documento: no se pudo limpiar el borrador de {operacion['id']}: {exc}")
     return send_file(
         io.BytesIO(contenido_pdf), as_attachment=True, download_name=nombre, mimetype="application/pdf",
     )
+
+
+def _estampar(pdf_bytes: bytes, dominante: bytes | None, complementarias: list[bytes]) -> tuple[bytes, dict]:
+    """Completa la guía (Rubro 2 y, si sobran marcas, el Anexo) en un
+    directorio temporal. Devuelve el PDF resultante y lo que informó
+    ``completar_venta`` (páginas tocadas, cuántas entraron en cada lugar)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        carpeta = Path(tmp)
+        entrada = carpeta / "entrada.pdf"
+        entrada.write_bytes(pdf_bytes)
+        ruta_dominante = None
+        if dominante:
+            ruta_dominante = carpeta / "dominante.png"
+            ruta_dominante.write_bytes(dominante)
+        rutas = []
+        for i, contenido in enumerate(complementarias):
+            destino = carpeta / f"marca_{i:03d}.png"
+            destino.write_bytes(contenido)
+            rutas.append(destino)
+        salida = carpeta / "salida.pdf"
+        info = completar_venta(entrada, ruta_dominante, rutas, salida)
+        return salida.read_bytes(), info
+
+
+def _renderizar_paginas(pdf_bytes: bytes, indices: list[int], escala: float = 1.3) -> list[str]:
+    """Las páginas pedidas del PDF como PNG en base64 (para la vista previa)."""
+    resultado: list[str] = []
+    doc = pdfium.PdfDocument(pdf_bytes)
+    try:
+        for i in indices:
+            if i >= len(doc):
+                continue
+            buffer = io.BytesIO()
+            doc[i].render(scale=escala).to_pil().save(buffer, format="PNG")
+            resultado.append(base64.b64encode(buffer.getvalue()).decode("ascii"))
+    finally:
+        doc.close()
+    return resultado
+
+
+def _analizar_pdf(pdf_bytes: bytes) -> dict:
+    """Cupo libre y datos leídos del encabezado del PDF, o ``error`` si no
+    parece una Guía de Traslado de SENACSA."""
+    with tempfile.TemporaryDirectory() as tmp:
+        entrada = Path(tmp) / "entrada.pdf"
+        entrada.write_bytes(pdf_bytes)
+        try:
+            cupo = analizar_venta(entrada)
+        except Exception as exc:
+            return {"cupo": None, "encabezado": None, "error": str(exc)}
+        try:
+            encabezado = extraer_encabezado(entrada)
+        except Exception:
+            encabezado = None
+    return {"cupo": cupo, "encabezado": encabezado}

@@ -402,72 +402,6 @@ def nombres_usuarios(conexion, ids) -> dict[str, str]:
         return {str(f["id"]): f["nombre"] for f in cur.fetchall()}
 
 
-def guardar_borrador_venta(
-    conexion,
-    operacion_id: int,
-    marcas: list[str],
-    guardado_en: str,
-    pdf_bytes: bytes | None = None,
-    pdf_nombre: str | None = None,
-    dominante_bytes: bytes | None = None,
-) -> None:
-    """Guarda el avance de la carga de una Venta. Un archivo que no se
-    reenvía en este llamado se deja como estaba (``COALESCE``) -- así
-    guardar de nuevo sólo las marcas elegidas no borra un PDF ya subido
-    antes."""
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE operaciones SET
-                borrador_venta = %(borrador)s,
-                borrador_pdf = COALESCE(%(pdf_bytes)s, borrador_pdf),
-                borrador_pdf_nombre = COALESCE(%(pdf_nombre)s, borrador_pdf_nombre),
-                borrador_dominante_png = COALESCE(%(dominante_bytes)s, borrador_dominante_png)
-            WHERE id = %(operacion_id)s
-            """,
-            {
-                "borrador": Json({"marcas": marcas, "guardado_en": guardado_en}),
-                "pdf_bytes": psycopg2.Binary(pdf_bytes) if pdf_bytes else None,
-                "pdf_nombre": pdf_nombre,
-                "dominante_bytes": psycopg2.Binary(dominante_bytes) if dominante_bytes else None,
-                "operacion_id": operacion_id,
-            },
-        )
-
-
-def eliminar_borrador_venta(conexion, operacion_id: int) -> None:
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            UPDATE operaciones
-            SET borrador_venta = NULL, borrador_pdf = NULL, borrador_pdf_nombre = NULL,
-                borrador_dominante_png = NULL
-            WHERE id = %s
-            """,
-            (operacion_id,),
-        )
-
-
-def borrador_venta_pdf(conexion, operacion_id: int) -> tuple[bytes, str] | None:
-    with conexion.cursor() as cur:
-        cur.execute(
-            "SELECT borrador_pdf, borrador_pdf_nombre FROM operaciones WHERE id = %s", (operacion_id,)
-        )
-        fila = cur.fetchone()
-    if not fila or fila["borrador_pdf"] is None:
-        return None
-    return bytes(fila["borrador_pdf"]), (fila["borrador_pdf_nombre"] or "borrador.pdf")
-
-
-def borrador_venta_dominante(conexion, operacion_id: int) -> bytes | None:
-    with conexion.cursor() as cur:
-        cur.execute("SELECT borrador_dominante_png FROM operaciones WHERE id = %s", (operacion_id,))
-        fila = cur.fetchone()
-    if not fila or fila["borrador_dominante_png"] is None:
-        return None
-    return bytes(fila["borrador_dominante_png"])
-
-
 def ficha_marca(conexion, codigo: str) -> dict | None:
     """La marca, su formulario de origen y las marcas que la acompañan."""
     with conexion.cursor() as cur:
@@ -511,15 +445,6 @@ def ficha_marca(conexion, codigo: str) -> dict | None:
             acompanantes = [h for h in cur.fetchall() if h["codigo"] != codigo]
 
     return {"marca": marca, "operacion": operacion, "acompanantes": acompanantes}
-
-
-def estadisticas(conexion) -> dict:
-    with conexion.cursor() as cur:
-        cur.execute("SELECT count(*) AS total FROM marcas")
-        total = cur.fetchone()["total"]
-        cur.execute("SELECT count(*) AS total FROM marcas WHERE estado = 'revisar'")
-        a_revisar = cur.fetchone()["total"]
-    return {"total": total, "a_revisar": a_revisar}
 
 
 def desglose_marcas(conexion) -> dict:
@@ -737,35 +662,6 @@ def exportar_marcas(
         _anidar_relacion(f, "operacion_id", "operacion", "operaciones", ["numero_guia", "fecha"])
         del f["propietario_id"], f["operacion_id"]
     return filas
-
-
-def ultimos_asientos(conexion, limite: int = 6) -> list[dict]:
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            SELECT id, numero_guia, fecha, vendedor_nombre, creado_en
-            FROM operaciones
-            ORDER BY creado_en DESC
-            LIMIT %s
-            """,
-            (limite,),
-        )
-        return cur.fetchall()
-
-
-def marcas_a_revisar(conexion, limite: int = 6) -> list[dict]:
-    with conexion.cursor() as cur:
-        cur.execute(
-            """
-            SELECT codigo, motivo_calidad
-            FROM marcas
-            WHERE estado = 'revisar'
-            ORDER BY actualizado_en DESC
-            LIMIT %s
-            """,
-            (limite,),
-        )
-        return cur.fetchall()
 
 
 def listar_usuarios(conexion) -> list[dict]:

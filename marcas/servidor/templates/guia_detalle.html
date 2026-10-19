@@ -6,7 +6,7 @@
 {% block meta_encabezado %}
 <a href="{{ url_for('ventas' if es_venta else 'guias') }}">&larr; Volver al listado</a>
 &nbsp;·&nbsp;
-<a href="{{ url_for('imprimir_venta' if es_venta else 'imprimir_guia', operacion_id=operacion.id) }}">{{ 'Imprimir venta' if es_venta else 'Imprimir guía' }} &rarr;</a>
+<a href="{{ url_for('emitir', operacion=operacion.id) }}">Emitir PDF &rarr;</a>
 {% endblock %}
 
 {% block contenido %}
@@ -108,7 +108,7 @@
 
       {% if es_venta %}
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
-        <p class="sub">En una venta no se cargan marcas nuevas acá: se eligen las que ya tenés en el catálogo al <a href="{{ url_for('imprimir_venta', operacion_id=operacion.id) }}">generar el PDF de la venta</a>.</p>
+        <p class="sub">Las marcas de una venta se dibujan o se eligen del catálogo al <a href="{{ url_for('emitir', operacion=operacion.id) }}">emitir el PDF</a>.</p>
       </div>
       {% elif perfil.rol in ('operador', 'administrador') %}
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
