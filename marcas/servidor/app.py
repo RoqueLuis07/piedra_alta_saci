@@ -15,7 +15,7 @@ from flask_wtf import CSRFProtect
 from marcas.servidor.auth import cerrar_conexion_actual, conexion_actual, encriptar_contrasena
 from marcas.servidor.consultas import crear_usuario, obtener_usuario_por_email
 from marcas.servidor.db import ejecutar_schema
-from marcas.servidor.rutas import sesion, catalogo, operaciones, emitir, archivo, propietarios, exportacion, admin
+from marcas.servidor.rutas import sesion, catalogo, operaciones, emitir, archivo, propietarios, exportacion, admin, revision
 from marcas.servidor.utilidades import _etiqueta_campo, _formatear_fecha_hora
 
 
@@ -91,5 +91,6 @@ def crear_app() -> Flask:
     propietarios.registrar(app)
     exportacion.registrar(app)
     admin.registrar(app)
+    revision.registrar(app)
 
     return app

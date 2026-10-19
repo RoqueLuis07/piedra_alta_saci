@@ -232,3 +232,67 @@ def test_pantalla_emitir_y_rutas_eliminadas(cliente):
     assert "Emitir PDF" in pagina and "lienzo" in pagina
     for ruta in ("/estadisticas", "/aprobaciones"):
         assert cliente.get(ruta).status_code == 404
+
+
+def _marca_con_estado(estado):
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    try:
+        with conexion.cursor() as cur:
+            cur.execute(
+                "INSERT INTO marcas (tipo, estado, motivo_calidad, descripcion) "
+                "VALUES ('complementaria', %s, 'trazo_muy_chico', 'para revisar') RETURNING id, codigo",
+                (estado,),
+            )
+            fila = cur.fetchone()
+        conexion.commit()
+        return fila["id"], fila["codigo"]
+    finally:
+        db.devolver_conexion(conexion)
+
+
+def _situacion(marca_id):
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    try:
+        with conexion.cursor() as cur:
+            cur.execute("SELECT estado, activo FROM marcas WHERE id = %s", (marca_id,))
+            fila = cur.fetchone()
+            return fila["estado"], fila["activo"]
+    finally:
+        db.devolver_conexion(conexion)
+
+
+def test_revision_lista_y_acciones_rapidas(cliente):
+    marca_id, codigo = _marca_con_estado("revisar")
+    pagina = cliente.get("/revision").get_data(as_text=True)
+    assert codigo in pagina and "trazo muy chico" in pagina
+
+    url = f"/marcas/{marca_id}/revision"
+    r = cliente.post(url, json={"accion": "aprobar"})
+    assert r.status_code == 200 and r.get_json()["estado"] == "activa"
+    assert _situacion(marca_id) == ("activa", True)
+    assert codigo not in cliente.get("/revision").get_data(as_text=True)  # ya no está pendiente
+    assert codigo in cliente.get("/revision?ver=todas").get_data(as_text=True)
+
+    r = cliente.post(url, json={"accion": "baja"})
+    assert r.get_json()["anterior"] == {"estado": "activa", "activo": True}
+    assert _situacion(marca_id) == ("baja", True)
+
+    r = cliente.post(url, json={"accion": "ocultar"})
+    assert _situacion(marca_id) == ("baja", False)
+
+    # deshacer vuelve exactamente al estado anterior
+    r = cliente.post(url, json={"accion": "deshacer", "estado": "revisar", "activo": True})
+    assert r.status_code == 200 and _situacion(marca_id) == ("revisar", True)
+
+
+def test_revision_rechaza_pedidos_invalidos(cliente):
+    marca_id, _ = _marca_con_estado("revisar")
+    url = f"/marcas/{marca_id}/revision"
+    assert cliente.post(url, json={"accion": "borrar"}).status_code == 400
+    assert cliente.post(url, json={"accion": "deshacer", "estado": "inventado", "activo": True}).status_code == 400
+    assert cliente.post("/marcas/99999999/revision", json={"accion": "aprobar"}).status_code == 404
+    assert _situacion(marca_id) == ("revisar", True)

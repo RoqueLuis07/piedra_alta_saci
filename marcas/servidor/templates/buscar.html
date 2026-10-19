@@ -2,6 +2,11 @@
 {% block titulo %}Marcas{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · CATÁLOGO DE MARCAS{% endblock %}
 {% block titulo_pagina %}Marcas{% endblock %}
+{% block meta_encabezado %}
+{% if perfil.rol in ('operador', 'administrador') %}
+<a href="{{ url_for('revision') }}">Revisar marcas{% if desglose and desglose.revisar %} ({{ desglose.revisar }} pendientes){% endif %} &rarr;</a>
+{% endif %}
+{% endblock %}
 
 {% block contenido %}
 <div class="contenido">

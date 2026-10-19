@@ -111,6 +111,7 @@ def buscar_marcas(
             f"""
             SELECT m.id, m.codigo, m.tipo, m.estado, m.posicion, m.propietario_id, m.operacion_id,
                    (m.archivo_png IS NOT NULL) AS archivo_png, m.vence_en,
+                   m.motivo_calidad, m.observaciones, m.descripcion,
                    p.nombre AS propietario_nombre, p.documento AS propietario_documento,
                    o.numero_guia AS operacion_numero_guia, o.fecha AS operacion_fecha
             {origen}
@@ -867,3 +868,35 @@ def contenido_documento_emitido(conexion, documento_id: int) -> tuple[bytes, str
         cur.execute("SELECT contenido, nombre FROM documentos_emitidos WHERE id = %s", (documento_id,))
         fila = cur.fetchone()
     return (bytes(fila["contenido"]), fila["nombre"]) if fila else None
+
+
+# --- Revisión rápida de marcas -----------------------------------------------
+
+def cambiar_revision_marca(
+    conexion, marca_id: int, estado: str | None = None, activo: bool | None = None,
+    usuario_id: str | None = None,
+) -> dict | None:
+    """Aprobar (estado activa), dar de baja o ocultar/restaurar una marca.
+    Devuelve su situación nueva y la anterior (para poder deshacer), o None
+    si no existe. Nunca borra la fila."""
+    with conexion.cursor() as cur:
+        cur.execute("SELECT codigo, estado, activo FROM marcas WHERE id = %s FOR UPDATE", (marca_id,))
+        antes = cur.fetchone()
+        if not antes:
+            return None
+        nuevo_estado = estado if estado is not None else antes["estado"]
+        nuevo_activo = activo if activo is not None else antes["activo"]
+        cur.execute(
+            "UPDATE marcas SET estado = %s, activo = %s, actualizado_por = %s WHERE id = %s",
+            (nuevo_estado, nuevo_activo, usuario_id, marca_id),
+        )
+    return {
+        "codigo": antes["codigo"], "estado": nuevo_estado, "activo": nuevo_activo,
+        "anterior": {"estado": antes["estado"], "activo": antes["activo"]},
+    }
+
+
+def contar_pendientes_revision(conexion) -> int:
+    with conexion.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM marcas WHERE estado = 'revisar' AND activo")
+        return cur.fetchone()["n"]
