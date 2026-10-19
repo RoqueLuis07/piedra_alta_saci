@@ -29,8 +29,13 @@ from typing import Iterable, Sequence
 import pypdf
 import pypdfium2 as pdfium
 from PIL import Image
+from reportlab import rl_config
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
+
+# reportlab incrusta las imágenes con ASCII85 + Flate por defecto; el ASCII85
+# sólo infla ~25 % el flujo (los PDF aceptan binario). Sin pérdida de calidad.
+rl_config.useA85 = 0
 
 # Tolerancias de la detección de casillas, en puntos PDF.
 ANCHO_MIN, ANCHO_MAX = 80.0, 220.0
@@ -423,6 +428,41 @@ _RE_RUBRO7 = re.compile(
     r"([^\n]+)",
     re.DOTALL,
 )
+_RE_TOTAL_ANIMALES = re.compile(r"Total\s*\*+\s*(\d+)")
+_RE_SON = re.compile(r"SON:\s*(.+?)\s+ANIMALES?\s+Y\s+(.+?)\s+MARCAS?", re.IGNORECASE)
+
+_UNIDADES = {
+    "CERO": 0, "UN": 1, "UNO": 1, "UNA": 1, "DOS": 2, "TRES": 3, "CUATRO": 4, "CINCO": 5, "SEIS": 6,
+    "SIETE": 7, "OCHO": 8, "NUEVE": 9, "DIEZ": 10, "ONCE": 11, "DOCE": 12, "TRECE": 13, "CATORCE": 14,
+    "QUINCE": 15, "DIECISEIS": 16, "DIECISIETE": 17, "DIECIOCHO": 18, "DIECINUEVE": 19, "VEINTE": 20,
+    "VEINTIUN": 21, "VEINTIUNO": 21, "VEINTIDOS": 22, "VEINTITRES": 23, "VEINTICUATRO": 24,
+    "VEINTICINCO": 25, "VEINTISEIS": 26, "VEINTISIETE": 27, "VEINTIOCHO": 28, "VEINTINUEVE": 29,
+}
+_DECENAS = {"TREINTA": 30, "CUARENTA": 40, "CINCUENTA": 50, "SESENTA": 60, "SETENTA": 70, "OCHENTA": 80, "NOVENTA": 90}
+_CENTENAS = {
+    "CIEN": 100, "CIENTO": 100, "DOSCIENTOS": 200, "TRESCIENTOS": 300, "CUATROCIENTOS": 400,
+    "QUINIENTOS": 500, "SEISCIENTOS": 600, "SETECIENTOS": 700, "OCHOCIENTOS": 800, "NOVECIENTOS": 900,
+}
+
+
+def palabras_a_numero(texto: str) -> int | None:
+    """"SESENTA Y SEIS" -> 66. Hasta 999; ``None`` si no se entiende alguna palabra
+    (mejor no mostrar nada que mostrar un número equivocado)."""
+    sin_tildes = texto.upper().translate(str.maketrans("ÁÉÍÓÚÜ", "AEIOUU"))
+    total, visto = 0, False
+    for palabra in sin_tildes.replace("-", " ").split():
+        if palabra == "Y":
+            continue
+        valor = _CENTENAS.get(palabra) or _DECENAS.get(palabra)
+        if valor is None:
+            valor = _UNIDADES.get(palabra)
+        if valor is None:
+            return None
+        total += valor
+        visto = True
+    return total if visto else None
+
+
 _RE_NOMBRE_CI_DV = re.compile(r"^(.*?)\s+(\d+)(?:\s+(\d+))?$")
 
 
@@ -446,7 +486,16 @@ def extraer_encabezado(pdf: Path | str) -> dict:
         "numero_orden": None,
         "vendedor_nombre": None, "vendedor_ci_ruc": None, "vendedor_dv": None,
         "comprador_nombre": None, "comprador_ci_ruc": None, "comprador_dv": None,
+        "cantidad_animales": None, "marcas_declaradas": None,
     }
+    coincidencia = _RE_TOTAL_ANIMALES.search(texto)
+    if coincidencia:
+        resultado["cantidad_animales"] = int(coincidencia.group(1))
+    coincidencia = _RE_SON.search(texto)
+    if coincidencia:
+        resultado["marcas_declaradas"] = palabras_a_numero(coincidencia.group(2))
+        if resultado["cantidad_animales"] is None:
+            resultado["cantidad_animales"] = palabras_a_numero(coincidencia.group(1))
     coincidencia = _RE_RUBRO1.search(texto)
     if coincidencia:
         resultado["numero_orden"] = coincidencia.group(1)
@@ -545,6 +594,21 @@ def _capa(
     return pypdf.PdfReader(buffer).pages[0]
 
 
+def _capa_unica(capas: dict, ancho: float, alto: float, asignaciones, **kwargs) -> pypdf.PageObject:
+    """Como :func:`_capa`, pero arma una sola vez la capa de las páginas que
+    llevan exactamente las mismas marcas en las mismas casillas (las cuatro
+    copias de una guía). Fusionar el MISMO objeto en cada copia hace que pypdf
+    guarde las imágenes una sola vez: sin esto, 40 marcas pesaban ~9 MB."""
+    clave = (
+        round(ancho, 2), round(alto, 2),
+        tuple((round(c.x, 2), round(c.y, 2), round(c.ancho, 2), round(c.alto, 2), str(img))
+              for c, img in asignaciones),
+    )
+    if clave not in capas:
+        capas[clave] = _capa(ancho, alto, asignaciones, **kwargs)
+    return capas[clave]
+
+
 def planificar(hojas: Sequence[HojaAnexo], imagenes: Sequence[Path]) -> dict[int, list]:
     """Reparte las marcas entre las casillas libres, igual en todas las copias.
 
@@ -573,6 +637,16 @@ def planificar(hojas: Sequence[HojaAnexo], imagenes: Sequence[Path]) -> dict[int
     return plan
 
 
+def _libres_anexo_por_copia(hojas: Sequence[HojaAnexo]) -> int:
+    """Casillas libres del anexo en UNA copia: las marcas se estampan igual en
+    las cuatro, así que el cupo real es el de la copia con menos lugar (y no
+    la suma de las cuatro, que cuadruplicaba el número)."""
+    por_copia: dict[str, int] = {}
+    for h in hojas:
+        por_copia[h.copia] = por_copia.get(h.copia, 0) + len(h.libres)
+    return min(por_copia.values()) if por_copia else 0
+
+
 def analizar_venta(pdf: Path | str) -> dict:
     """Cuánto espacio libre hay para completar esta guía como Venta, sin
     tocar el PDF -- para mostrarlo antes de pedir las marcas a cargar."""
@@ -587,7 +661,7 @@ def analizar_venta(pdf: Path | str) -> dict:
         "copias": sorted({c for _, c in principales}) or sorted({h.copia for h in hojas}),
         "dominante_libre": bool(dominante and not dominante.ocupada),
         "complementarias_libres_rubro2": sum(1 for c in complementarias if not c.ocupada),
-        "complementarias_libres_anexo": sum(len(h.libres) for h in hojas),
+        "complementarias_libres_anexo": _libres_anexo_por_copia(hojas),
         "hojas_anexo": len(hojas),
     }
 
@@ -647,13 +721,14 @@ def completar_venta(
 
     escritor = pypdf.PdfWriter(clone_from=str(pdf_entrada))
     cache: dict = {}
+    capas: dict = {}
     for i, pagina in enumerate(escritor.pages):
         asignaciones = plan.get(i)
         if not asignaciones:
             continue
         caja = pagina.mediabox
         pagina.merge_page(
-            _capa(float(caja.width), float(caja.height), asignaciones,
+            _capa_unica(capas, float(caja.width), float(caja.height), asignaciones,
                   dpi=dpi, cache=cache, transparencia=transparencia)
         )
     try:
@@ -710,13 +785,14 @@ def completar_guia(
     # fusionar sobre las páginas de un lector suelto está en desuso en pypdf.
     escritor = pypdf.PdfWriter(clone_from=str(pdf_entrada))
     cache: dict = {}
+    capas: dict = {}
     for i, pagina in enumerate(escritor.pages):
         asignaciones = plan.get(i)
         if not asignaciones:
             continue
         caja = pagina.mediabox
         pagina.merge_page(
-            _capa(float(caja.width), float(caja.height), asignaciones,
+            _capa_unica(capas, float(caja.width), float(caja.height), asignaciones,
                   dpi=dpi, cache=cache, transparencia=transparencia)
         )
 

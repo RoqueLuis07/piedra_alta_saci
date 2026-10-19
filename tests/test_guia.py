@@ -338,3 +338,25 @@ def test_completar_venta_no_toca_el_rubro3(guia_venta, marcas, tmp_path):
     assert np.array_equal(recorte_antes, recorte_despues)
 
 
+def test_palabras_a_numero():
+    from marcas.pdf.guia import palabras_a_numero
+
+    assert palabras_a_numero("SESENTA Y SEIS") == 66
+    assert palabras_a_numero("cincuenta y dos") == 52
+    assert palabras_a_numero("CIENTO VEINTITRÉS") == 123
+    assert palabras_a_numero("VEINTIUN") == 21
+    assert palabras_a_numero("DIEZ") == 10
+    assert palabras_a_numero("algo raro") is None
+    assert palabras_a_numero("") is None
+
+
+def test_cupo_del_anexo_es_por_copia_no_la_suma_de_las_cuatro(guia_venta):
+    from marcas.pdf.guia import analizar_venta, hojas_de_anexo
+
+    hojas = hojas_de_anexo(guia_venta)
+    por_copia = {}
+    for h in hojas:
+        por_copia[h.copia] = por_copia.get(h.copia, 0) + len(h.libres)
+    assert len(por_copia) > 1
+    assert analizar_venta(guia_venta)["complementarias_libres_anexo"] == min(por_copia.values())
+    assert analizar_venta(guia_venta)["complementarias_libres_anexo"] < sum(len(h.libres) for h in hojas)

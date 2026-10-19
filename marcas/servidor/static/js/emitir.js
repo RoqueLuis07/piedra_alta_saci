@@ -7,6 +7,7 @@
 
   var estado = {
     pdf: null,          // File
+    declaradas: null,   // marcas que declara la propia guía (si se pudieron leer)
     cupo: null,         // {complementarias_libres_rubro2, complementarias_libres_anexo, dominante_libre}
     dominante: null,    // ítem o null
     items: [],          // complementarias, en orden
@@ -163,6 +164,11 @@
     chip("Rubro 2: " + enR2 + " / " + r2 + " casillas", enR2 >= r2 && usadas > 0);
     chip("Anexo: " + enAnexo + " / " + anexo + " casillas", enAnexo > anexo);
     chip(estado.cupo.dominante_libre ? "Dominante: libre" : "Dominante: ya viene en el PDF", false);
+    if (estado.declaradas) {
+      // La guía declara el total de marcas (dominante + complementarias).
+      var presentes = usadas + (estado.cupo.dominante_libre ? (estado.dominante ? 1 : 0) : 1);
+      chip("Marcas: " + presentes + " de " + estado.declaradas + " que declara la guía", presentes !== estado.declaradas);
+    }
     var nota = $("nota-dominante");
     var sinLugar = !estado.cupo.dominante_libre;
     $("btn-dominante").disabled = sinLugar;
@@ -229,7 +235,7 @@
         if (res.error) { aviso_pdf.textContent = res.error; aviso_pdf.style.display = "block"; }
         else aviso_pdf.style.display = "none";
         if (res.cupo) { estado.cupo = res.cupo; pintarCupo(); }
-        if (res.encabezado) autocompletar(res.encabezado);
+        if (res.encabezado) { estado.declaradas = res.encabezado.marcas_declaradas || null; autocompletar(res.encabezado); pintarCupo(); }
         if (res.paginas && res.paginas.length) {
           var v = $("vista");
           v.textContent = "";
@@ -266,6 +272,7 @@
     poner("f-numero", enc.numero_orden);
     poner("f-vendedor", enc.vendedor_nombre);
     poner("f-comprador", enc.comprador_nombre);
+    poner("f-cantidad", enc.cantidad_animales);
     if (enc.vendedor_nombre && !document.querySelector("input[name=tipo_operacion]").dataset.tocado) {
       var esVenta = /piedra\s+alta/i.test(enc.vendedor_nombre);
       document.querySelector("input[name=tipo_operacion][value=" + (esVenta ? "venta" : "compra") + "]").checked = true;
