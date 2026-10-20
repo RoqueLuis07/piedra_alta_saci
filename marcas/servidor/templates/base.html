@@ -114,6 +114,7 @@
   .migaja { font-size: 9.5px; letter-spacing: 0.2em; color: var(--texto-secundario); margin-bottom: 6px; }
   h1.titulo { margin: 0; font-family: 'Source Serif 4', serif; font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
   .meta-encabezado { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--texto-secundario); text-align: right; line-height: 1.7; }
+  .banner-demo { background: var(--dorado); color: #163823; text-align: center; font: 600 11px 'IBM Plex Mono', monospace; letter-spacing: 0.14em; padding: 6px 12px; }
   .contenido { padding: 0 28px 48px; }
   .pestanas { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--borde-suave); overflow-x: auto; }
   .pestanas a { padding: 12px 16px; font-size: 13px; font-weight: 600; text-decoration: none; color: var(--texto-secundario); border-bottom: 3px solid transparent; white-space: nowrap; }
@@ -238,6 +239,7 @@
     </div>
   </nav>
   <main class="main">
+    {% if entorno_demo %}<div class="banner-demo" role="note">ENTORNO DE DEMOSTRACIÓN · los datos son de ejemplo</div>{% endif %}
     <header class="encabezado">
       <div>
         <div class="migaja">{% block migaja %}{% endblock %}</div>

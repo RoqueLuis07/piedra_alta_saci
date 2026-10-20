@@ -151,6 +151,11 @@ def analizar(png: bytes) -> tuple[str | None, str, dict]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--aplicar", action="store_true", help="escribir las marcas en la base (por defecto sólo informa)")
+    ap.add_argument("--como", choices=("revisar", "baja"), default="revisar",
+                    help="estado que se les pone: 'revisar' (por defecto, para decidir a mano) o 'baja' "
+                         "(sólo para un entorno de demo: las saca del catálogo sin revisarlas)")
+    ap.add_argument("--categorias", default=",".join(CATEGORIAS),
+                    help="categorías a aplicar, separadas por coma (por defecto, todas)")
     args = ap.parse_args()
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -176,16 +181,18 @@ def main() -> int:
     print(f"Revisadas {len(ids)} marcas activas. Candidatas a 'no es una marca': {len(candidatas)}")
     for categoria, n in cuentas.most_common():
         print(f"  {n:5d}  {categoria}: {CATEGORIAS[categoria]}")
+    elegidas = {c.strip() for c in args.categorias.split(",") if c.strip()}
+    candidatas = [c for c in candidatas if c[1] in elegidas]
     if args.aplicar and candidatas:
         with conexion.cursor() as cur:
             for marca_id, categoria, razon in candidatas:
                 cur.execute(
-                    "UPDATE marcas SET estado = 'revisar', sospechosa_calidad = true, motivo_calidad = %s "
+                    "UPDATE marcas SET estado = %s, sospechosa_calidad = true, motivo_calidad = %s "
                     "WHERE id = %s AND estado = 'activa'",
-                    (f"{PREFIJO}{categoria} ({razon})", marca_id),
+                    (args.como, f"{PREFIJO}{categoria} ({razon})", marca_id),
                 )
         conexion.commit()
-        print("Marcadas para revisión (ninguna se dio de baja).")
+        print(f"Marcadas {len(candidatas)} como «{args.como}»." + (" Ninguna se dio de baja." if args.como == "revisar" else ""))
     elif candidatas:
         print("(No se escribió nada: usá --aplicar para marcarlas.)")
     conexion.close()

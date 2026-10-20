@@ -53,6 +53,10 @@ def crear_app() -> Flask:
 
     app.teardown_appcontext(cerrar_conexion_actual)
 
+    # Cartel visible en todas las pantallas si el servicio es una demostración
+    # (ENTORNO_DEMO=1): así nadie confunde la demo con el sistema real.
+    app.context_processor(lambda: {"entorno_demo": os.environ.get("ENTORNO_DEMO") == "1"})
+
     @app.cli.command("crear-esquema")
     def crear_esquema_cli():
         """Aplica schema.sql -- idempotente, se puede correr en cada deploy."""

@@ -419,3 +419,24 @@ def test_marca_oculta_solo_se_reutiliza_en_su_propia_operacion(cliente, tmp_path
                      content_type="multipart/form-data")
     assert r.status_code == 200
     assert oculta["codigo"] in cliente.get(f"/emitir?operacion={oculta['operacion_id']}").get_data(as_text=True)
+
+
+def test_cartel_de_entorno_de_demo(cliente, monkeypatch):
+    assert "ENTORNO DE DEMOSTRACIÓN" not in cliente.get("/emitir").get_data(as_text=True)
+    monkeypatch.setenv("ENTORNO_DEMO", "1")
+    assert "ENTORNO DE DEMOSTRACIÓN" in cliente.get("/emitir").get_data(as_text=True)
+
+
+def test_usuarios_de_demo_se_crean_una_sola_vez(cliente):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from crear_usuarios_demo import crear
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    try:
+        primera = crear(conexion)
+        assert [r[1] for r in primera] == ["administrador", "operador", "consulta"]
+        assert all(r[2] and len(r[2]) >= 10 for r in primera)           # contraseña aleatoria
+        assert all(r[2] is None for r in crear(conexion))                # la segunda vez no cambia nada
+    finally:
+        db.devolver_conexion(conexion)
