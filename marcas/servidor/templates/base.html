@@ -182,6 +182,8 @@
     .shell { flex-direction: column; }
     .nav, html.nav-colapsado .nav { width: 100%; flex-basis: auto; height: auto; position: static; overflow: visible; flex-direction: row; flex-wrap: wrap; }
     .nav-brand, .nav-seccion, .nav-pie, .nav-toggle { display: none; }
+    /* Los ítems viven dentro de un <div>: en teléfono ese div es la barra horizontal. */
+    .nav > div:not(.nav-brand):not(.nav-pie) { display: flex; flex: 1 1 100%; }
     .nav-item { flex: 1 1 auto; flex-direction: column; gap: 4px; text-align: center; border-left: 0; border-top: 3px solid transparent; padding: 8px 6px; }
     .nav-item.activo { border-top-color: var(--dorado); }
     .nav-texto { display: block !important; font-size: 11px; }
