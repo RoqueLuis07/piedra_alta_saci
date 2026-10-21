@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block titulo %}Guía {{ guia.numero }} · Escaneos{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS ESCANEADAS{% endblock %}
+{% block titulo_pagina %}Guía {{ guia.numero }}{% endblock %}
+{% block meta_encabezado %}
+<a href="{{ url_for('escaneos') }}">&larr; Volver a las guías escaneadas</a>
+{% if codigos_emitir %}&nbsp;·&nbsp;<a href="{{ url_for('emitir', marcas=codigos_emitir) }}"><strong>Estampar estas {{ cantidad_emitir }} marcas &rarr;</strong></a>{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .grilla-docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; margin-top: 12px; }
+  .doc-tarjeta { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px; text-decoration: none; color: var(--texto); display: block; }
+  .doc-tarjeta:hover { border-color: var(--verde-claro); }
+  .doc-tarjeta img { width: 100%; aspect-ratio: 3/4; object-fit: cover; object-position: top; background: #fff; border: 1px solid var(--borde-fina); display: block; }
+  .doc-tarjeta .nombre { font-weight: 600; font-size: 12.5px; margin-top: 6px; }
+  .doc-tarjeta .sub { font-size: 11px; }
+  .marcas-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; margin-top: 12px; }
+  .marca-tarjeta { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px; text-decoration: none; color: var(--texto); display: block; }
+  .marca-tarjeta:hover { border-color: var(--verde-claro); }
+  .marca-tarjeta .mini { aspect-ratio: 1; background: #fff; border: 1px solid var(--borde-fina); display: flex; align-items: center; justify-content: center; }
+  .marca-tarjeta img { width: 100%; height: 100%; object-fit: contain; }
+  .marca-tarjeta .cod { font: 600 12px 'IBM Plex Mono', monospace; margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <div style="display: flex; gap: 32px; flex-wrap: wrap; margin-top: 22px;">
+    <div style="flex: 1 1 360px; min-width: 0;">
+      <h2 class="subtitulo">Datos de la guía</h2>
+      <div class="campo-fila"><div class="campo-etiqueta">N.º de guía</div><div class="campo-valor mono">{{ guia.numero }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Propietario</div><div class="campo-valor">{{ guia.propietario or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">CI / RUC</div><div class="campo-valor mono">{{ guia.documento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Establecimiento</div><div class="campo-valor">{{ guia.establecimiento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Animales</div><div class="campo-valor mono">{{ guia.cantidad_animales if guia.cantidad_animales is not none else '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Fecha leída</div><div class="campo-valor mono">{{ guia.fecha_texto or '—' }}</div></div>
+      {% if guia.numeros_certificado %}<div class="campo-fila"><div class="campo-etiqueta">Certificado</div><div class="campo-valor mono">{{ guia.numeros_certificado|join(', ') }}</div></div>{% endif %}
+      {% for o in guia.operaciones %}
+      <div class="campo-fila"><div class="campo-etiqueta">En el sistema</div><div class="campo-valor"><a href="{{ url_for('ver_guia', operacion_id=o.id) }}">{{ 'Venta' if o.tipo_operacion == 'venta' else 'Compra' }} #{{ o.id }}</a></div></div>
+      {% endfor %}
+      <p class="sub" style="margin-top: 10px;">Lo leído por OCR puede tener errores: abrí cada página para corregirlo.</p>
+    </div>
+
+    <div style="flex: 2 1 480px; min-width: 0;">
+      <h2 class="subtitulo">Documentos escaneados ({{ guia.paginas|length }})</h2>
+      <div class="grilla-docs">
+        {% for p in guia.paginas %}
+        <a class="doc-tarjeta" href="{{ url_for('ver_escaneo', escaneo_id=p.id) }}">
+          <img src="{{ url_for('miniatura_escaneo', escaneo_id=p.id) }}" alt="{{ p.archivo }}" loading="lazy">
+          <div class="nombre">{{ formatos.get(p.formato, p.formato) }}</div>
+          <div class="sub mono">{{ p.carpeta }} · {{ p.archivo }}</div>
+          <div class="sub">{% if p.fuente_numero == 'manual' %}N.º corregido a mano{% elif p.fuente_numero and p.fuente_numero.startswith('inferido') %}N.º inferido por vecindad{% elif p.fuente_numero %}N.º leído{% endif %}{% if p.revisado %} · ✓ revisada{% endif %}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <h2 class="subtitulo" style="margin-top: 30px;">Marcas de esta guía ({{ guia.marcas|length }})</h2>
+  {% if guia.marcas %}
+  <div class="marcas-grilla">
+    {% for m in guia.marcas %}
+    <a class="marca-tarjeta" href="{{ url_for('ver_marca', codigo=m.codigo) }}" title="{{ m.posicion or '' }}">
+      <div class="mini">{% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="Marca {{ m.codigo }}" loading="lazy">{% else %}<span class="sub">Sin imagen</span>{% endif %}</div>
+      <div class="cod">{{ m.codigo }}</div>
+      <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.estado != 'activa' %} · <span class="estado estado-{{ m.estado }}">{{ {'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>{% endif %}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="sub">Todavía no hay marcas asociadas a las páginas de esta guía.</p>
+  {% endif %}
+</div>
+{% endblock %}

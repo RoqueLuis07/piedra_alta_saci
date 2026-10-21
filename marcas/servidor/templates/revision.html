@@ -85,6 +85,7 @@
         <div class="cod"><a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="text-decoration: none;">{{ m.codigo }}</a>
           <span class="estado estado-{{ m.estado }}" data-etiqueta-estado>{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span></div>
         <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.descripcion %} · {{ m.descripcion }}{% endif %}</div>
+        {% if m.escaneo_id %}<div class="sub" style="margin-top: 4px;"><a href="{{ url_for('ver_escaneo', escaneo_id=m.escaneo_id) }}" target="_blank" rel="noopener">Ver en su página &nearr;</a>{% if m.posicion %} · {{ m.posicion }}{% endif %}</div>{% endif %}
         {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }}</div>{% endif %}
       </div>
       <div class="rev-acciones">

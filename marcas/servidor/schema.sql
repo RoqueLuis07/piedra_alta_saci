@@ -237,3 +237,48 @@ create table if not exists documentos_emitidos (
 
 create index if not exists idx_documentos_emitidos_fecha on documentos_emitidos(emitido_en desc);
 create index if not exists idx_documentos_emitidos_operacion on documentos_emitidos(operacion_id);
+
+-- Guías escaneadas: cada página escaneada de los documentos históricos (guía GE2, anexo,
+-- certificado sanitario, declaración jurada CIEFA...), con lo que se pudo leer de ella
+-- (N.º de guía, propietario, cantidades) y el texto completo del OCR para buscar. Las páginas
+-- con el mismo N.º de guía forman una guía. Las imágenes van en una tabla aparte para que
+-- los listados no las arrastren. Nada de esto se borra: se corrige a mano desde la pantalla.
+create table if not exists escaneos (
+  id bigserial primary key,
+  carpeta text not null,
+  archivo text not null,
+  orden integer not null default 0,
+  formato text,
+  numero_guia text,
+  fuente_numero text,
+  confianza_numero real,
+  numero_certificado text,
+  propietario text,
+  propietario_documento text,
+  establecimiento text,
+  cantidad_animales integer,
+  fecha_texto text,
+  n_marcas integer not null default 0,
+  texto_ocr text,
+  ancho integer,
+  alto integer,
+  revisado boolean not null default false,
+  notas text,
+  creado_en timestamptz not null default now(),
+  unique (carpeta, archivo)
+);
+
+create table if not exists escaneos_imagenes (
+  escaneo_id bigint primary key references escaneos(id) on delete cascade,
+  imagen bytea not null,
+  miniatura bytea not null
+);
+
+create index if not exists idx_escaneos_numero on escaneos(numero_guia);
+create index if not exists idx_escaneos_orden on escaneos(carpeta, orden);
+
+-- De qué página salió cada marca (para verla en su contexto y comprobar que es una marca de verdad).
+alter table marcas add column if not exists escaneo_id bigint references escaneos(id);
+alter table marcas add column if not exists origen_carpeta text;
+alter table marcas add column if not exists origen_pagina text;
+create index if not exists idx_marcas_escaneo on marcas(escaneo_id);

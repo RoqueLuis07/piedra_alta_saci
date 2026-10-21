@@ -20,6 +20,7 @@ from marcas.servidor.consultas import (
     subir_imagen_marca,
     url_imagen,
 )
+from marcas.servidor.consultas_escaneos import origen_de_marca
 from marcas.servidor.utilidades import _CODIGO_VALIDO, _error_seguro, _registro_no_encontrado
 
 
@@ -82,6 +83,7 @@ def registrar(app) -> None:
             "marca_detalle.html",
             activo="buscar",
             ficha=ficha,
+            origen=origen_de_marca(conexion, ficha["marca"]["id"]),
             perfil=perfil_actual(),
         )
 

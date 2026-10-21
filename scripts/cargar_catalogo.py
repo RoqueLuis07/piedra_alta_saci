@@ -48,6 +48,16 @@ def _ajustar(imagen: Image.Image, lado: int) -> Image.Image:
     return imagen.resize((max(1, round(imagen.size[0] * proporcion)), max(1, round(imagen.size[1] * proporcion))), Image.LANCZOS)
 
 
+def _posicion(fila: dict) -> str | None:
+    """De qué sección de la hoja salió: la casilla (fila/columna) y si era Dominante o Complementaria."""
+    partes = []
+    if fila.get("dominante_o_complementaria"):
+        partes.append(fila["dominante_o_complementaria"].capitalize())
+    if fila.get("fila") not in (None, "") and fila.get("columna") not in (None, ""):
+        partes.append(f"casilla {int(fila['fila']) + 1}·{int(fila['columna']) + 1}")
+    return " · ".join(partes) or None
+
+
 def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite: int | None = None,
            informar=print, lote: int = 250, escribir: bool = True) -> dict:
     with open(csv_ruta, encoding="utf-8", newline="") as f:
@@ -82,8 +92,9 @@ def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite:
                 cur.execute(
                     """
                     INSERT INTO marcas (tipo, descripcion, origen_archivo, archivo_png, sospechosa_calidad,
-                                        motivo_calidad, estado, observaciones, borde_limpiado)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true)
+                                        motivo_calidad, estado, observaciones, borde_limpiado,
+                                        origen_carpeta, origen_pagina, posicion)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true, %s, %s, %s)
                     """,
                     (
                         TIPOS.get(fila.get("dominante_o_complementaria")),
@@ -94,6 +105,9 @@ def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite:
                         fila.get("motivo_calidad") or None,
                         "revisar" if sospechosa else "activa",
                         f"Formato: {fila['formato_detectado']}",
+                        fila["carpeta_escaneo"],
+                        fila["archivo_origen"],
+                        _posicion(fila),
                     ),
                 )
             cuentas["cargadas"] += 1
@@ -105,6 +119,16 @@ def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite:
             if i % 250 == 0:
                 informar(f"  {i}/{len(filas)}…")
     if escribir:
+        conexion.commit()
+        # Si las páginas escaneadas ya están cargadas, se une cada marca con la suya.
+        with conexion.cursor() as cur:
+            cur.execute("SELECT to_regclass('escaneos') AS t")
+            if cur.fetchone()["t"]:
+                cur.execute(
+                    "UPDATE marcas m SET escaneo_id = e.id FROM escaneos e "
+                    "WHERE m.escaneo_id IS NULL AND m.origen_carpeta = e.carpeta AND m.origen_pagina = e.archivo"
+                )
+                cuentas["vinculadas"] = cur.rowcount
         conexion.commit()
     return cuentas
 

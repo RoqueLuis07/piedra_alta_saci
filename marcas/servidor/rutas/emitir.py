@@ -25,6 +25,7 @@ from marcas.servidor.consultas import (
     subir_imagen_marca,
     url_imagen,
 )
+from marcas.servidor.consultas_escaneos import codigos_a_marcas
 from marcas.servidor.utilidades import (
     _CAMPOS_MINIMOS_GUIA,
     _CAMPOS_MINIMOS_VENTA,
@@ -155,6 +156,12 @@ def registrar(app) -> None:
                         "codigo": m["codigo"], "descripcion": m.get("descripcion"),
                         "imagen_url": url_imagen(m["id"], m.get("archivo_png")),
                     })
+        codigos = [c.strip() for c in (request.args.get("marcas") or "").split(",") if c.strip()][:MAX_MARCAS]
+        for m in codigos_a_marcas(conexion, codigos):
+            marcas_previas.append({
+                "codigo": m["codigo"], "descripcion": m.get("descripcion"),
+                "imagen_url": url_imagen(m["id"], m.get("archivo_png")),
+            })
         return render_template(
             "emitir.html", activo="emitir", perfil=perfil_actual(),
             operacion=operacion, marcas_previas=marcas_previas,

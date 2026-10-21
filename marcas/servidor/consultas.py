@@ -119,7 +119,7 @@ def buscar_marcas(
             f"""
             SELECT m.id, m.codigo, m.tipo, m.estado, m.posicion, m.propietario_id, m.operacion_id,
                    (m.archivo_png IS NOT NULL) AS archivo_png, m.vence_en,
-                   m.motivo_calidad, m.observaciones, m.descripcion,
+                   m.motivo_calidad, m.observaciones, m.descripcion, m.escaneo_id, m.posicion,
                    p.nombre AS propietario_nombre, p.documento AS propietario_documento,
                    o.numero_guia AS operacion_numero_guia, o.fecha AS operacion_fecha
             {origen}

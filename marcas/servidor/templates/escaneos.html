@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block titulo %}Guías escaneadas{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS ESCANEADAS{% endblock %}
+{% block titulo_pagina %}Guías escaneadas{% endblock %}
+{% block meta_encabezado %}{{ resumen.guias }} GUÍA{{ '' if resumen.guias == 1 else 'S' }} · {{ resumen.paginas }} PÁGINAS{% endblock %}
+
+{% block head %}
+<style>
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0 0; }
+  .chip { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 5px 10px; font: 500 11.5px 'IBM Plex Mono', monospace; text-decoration: none; color: var(--texto); }
+  a.chip:hover { border-color: var(--verde-claro); }
+  .chip.aviso { border-color: var(--aviso-texto); background: var(--aviso-fondo); color: var(--aviso-texto); }
+  .doc { display: inline-block; font-size: 10.5px; letter-spacing: .04em; padding: 2px 7px; margin: 0 4px 4px 0; border: 1px solid var(--borde-suave); background: var(--superficie); white-space: nowrap; }
+  .doc.cert { border-color: #3F6B2E; } .doc.ge2 { border-color: #1F4D34; background: var(--tabla-hover); }
+  .vistas { display: flex; gap: 3px; }
+  .vistas img { width: 38px; height: 52px; object-fit: cover; object-position: top; border: 1px solid var(--borde-fina); background: #fff; }
+  .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; margin-top: 16px; }
+  .tarjeta-pag { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px; }
+  .tarjeta-pag img { width: 100%; aspect-ratio: 3/4; object-fit: cover; object-position: top; background: #fff; border: 1px solid var(--borde-fina); display: block; }
+  .tarjeta-pag .cab { font-size: 11.5px; margin: 6px 0 4px; line-height: 1.35; }
+  .tarjeta-pag form { display: flex; gap: 4px; }
+  .tarjeta-pag input { flex: 1; min-width: 0; padding: 6px 8px; font-size: 12.5px; }
+  .tarjeta-pag button { padding: 6px 10px; min-height: 34px; font-size: 12px; }
+  .tarjeta-pag.hecha { opacity: .4; }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 80ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Todas las páginas escaneadas de los documentos históricos, <strong>agrupadas por N.º de guía</strong> a partir de lo que dice cada imagen
+    (el número impreso, el certificado sanitario, el propietario). Cada guía junta sus documentos y las marcas que salieron de ellos.
+    Lo que el lector no pudo leer queda en <em>Sin número</em> para completarlo a mano.
+  </p>
+
+  <div class="chips">
+    <a class="chip {{ '' if vista == 'sin_numero' else 'aviso' }}" href="{{ url_for('escaneos') }}">{{ resumen.guias }} guías</a>
+    <a class="chip {{ 'aviso' if vista == 'sin_numero' }}" href="{{ url_for('escaneos', vista='sin_numero') }}">{{ resumen.sin_numero }} páginas sin número</a>
+    <span class="chip">{{ resumen.paginas }} páginas</span>
+    <span class="chip">{{ resumen.revisadas }} revisadas</span>
+  </div>
+
+  <form method="get" action="{{ url_for('escaneos') }}" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 18px;">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    <div style="flex: 1 1 280px; min-width: 0;">
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">N.º DE GUÍA, PROPIETARIO, CI O CUALQUIER TEXTO DE LA IMAGEN</span>
+      <input type="text" name="q" value="{{ texto }}" placeholder="Ej. 10894231 / Franco / Fiebre Aftosa" style="width: 100%;">
+    </div>
+    {% if vista == 'guias' %}
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">TIENE DOCUMENTO</span>
+      <select name="formato">
+        <option value="">Cualquiera</option>
+        {% for clave, nombre in formatos.items() %}<option value="{{ clave }}" {% if formato == clave %}selected{% endif %}>{{ nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <button type="submit" class="boton boton-primario" style="min-height: auto;">Buscar</button>
+  </form>
+
+  {% if vista == 'guias' %}
+  <table class="registro" style="margin-top: 18px;">
+    <thead><tr><th>N.º DE GUÍA</th><th>PROPIETARIO</th><th>DOCUMENTOS</th><th>PÁG.</th><th>MARCAS</th><th>VISTA</th></tr></thead>
+    <tbody>
+      {% for g in filas %}
+      <tr onclick="window.location='{{ url_for('ver_guia_escaneada', numero=g.numero_guia) }}'">
+        <td class="mono" style="white-space: nowrap; font-weight: 600;">{{ g.numero_guia }}{% if g.revisada %} <span class="estado estado-activa" title="Todas las páginas revisadas">✓</span>{% endif %}</td>
+        <td>
+          <div style="font-weight: 500;">{{ g.propietario or '—' }}</div>
+          <div class="sub">{{ g.documento or '' }}{% if g.cantidad_animales %} · {{ g.cantidad_animales }} animales{% endif %}</div>
+        </td>
+        <td>{% for f in g.formatos %}<span class="doc {{ 'cert' if f == 'SENACSA_CERTIFICADO' }} {{ 'ge2' if f == 'GE2_PRINCIPAL' }}">{{ formatos.get(f, f) }}</span>{% endfor %}</td>
+        <td class="mono">{{ g.paginas }}</td>
+        <td class="mono">{{ g.marcas }}</td>
+        <td><div class="vistas">{% for i in g.ids[:3] %}<img src="{{ url_for('miniatura_escaneo', escaneo_id=i) }}" alt="" loading="lazy">{% endfor %}</div></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="padding: 20px 0; color: var(--texto-secundario);">{% if texto or formato %}Ninguna guía coincide con esa búsqueda.{% else %}Todavía no hay guías escaneadas cargadas.{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="sub" style="margin-top: 18px;">Escribí el N.º de guía de cada página y apretá Guardar: pasa a formar parte de esa guía. {{ total }} página{{ '' if total == 1 else 's' }} sin número.</p>
+  <div class="tarjetas">
+    {% for p in filas %}
+    <div class="tarjeta-pag" data-id="{{ p.id }}">
+      <a href="{{ url_for('ver_escaneo', escaneo_id=p.id) }}"><img src="{{ url_for('miniatura_escaneo', escaneo_id=p.id) }}" alt="Página {{ p.archivo }}" loading="lazy"></a>
+      <div class="cab"><span class="mono">{{ p.carpeta }} · {{ p.archivo }}</span><br>{{ formatos.get(p.formato, p.formato) }}{% if p.n_marcas %} · {{ p.n_marcas }} marca{{ '' if p.n_marcas == 1 else 's' }}{% endif %}</div>
+      {% if perfil.rol in ('operador', 'administrador') %}
+      <form onsubmit="return asignar(this, {{ p.id }});">
+        <input type="text" name="numero_guia" placeholder="N.º de guía" inputmode="numeric" aria-label="N.º de guía de la página {{ p.archivo }}">
+        <button type="submit" class="boton">Guardar</button>
+      </form>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="sub" style="grid-column: 1 / -1;">No quedan páginas sin número. ¡Todo agrupado!</p>
+    {% endfor %}
+  </div>
+  <script>
+    function asignar(form, id) {
+      var numero = form.numero_guia.value.trim();
+      if (!numero) return false;
+      fetch({{ url_for('editar_escaneo', escaneo_id=0) | tojson }}.replace('/0', '/' + id), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': {{ csrf_token() | tojson }} },
+        body: JSON.stringify({ numero_guia: numero })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.ok) { form.closest('.tarjeta-pag').classList.add('hecha'); form.querySelector('button').textContent = '✓'; form.querySelector('button').disabled = true; }
+        else alert(j.error || 'No se pudo guardar.');
+      });
+      return false;
+    }
+  </script>
+  {% endif %}
+</div>
+
+<div class="paginado">
+  <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }} · {{ total }} {{ 'GUÍA' if vista == 'guias' else 'PÁGINA' }}{{ '' if total == 1 else 'S' }}</div>
+  <div class="enlaces">
+    {% if pagina > 1 %}<a class="boton" href="{{ url_for('escaneos', vista=vista, q=texto or None, formato=formato or None, pagina=pagina - 1) }}">&larr; Anteriores</a>{% else %}<span class="boton-inactivo">&larr; Anteriores</span>{% endif %}
+    {% if pagina * por_pagina < total %}<a class="boton" href="{{ url_for('escaneos', vista=vista, q=texto or None, formato=formato or None, pagina=pagina + 1) }}">Siguientes &rarr;</a>{% else %}<span class="boton-inactivo">Siguientes &rarr;</span>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block titulo %}{{ pagina.carpeta }} {{ pagina.archivo }} · Escaneo{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS ESCANEADAS{% endblock %}
+{% block titulo_pagina %}{{ formatos.get(pagina.formato, pagina.formato) }}{% endblock %}
+{% block meta_encabezado %}
+{% if pagina.numero_guia %}<a href="{{ url_for('ver_guia_escaneada', numero=pagina.numero_guia) }}">&larr; Guía {{ pagina.numero_guia }}</a>{% else %}<a href="{{ url_for('escaneos', vista='sin_numero') }}">&larr; Páginas sin número</a>{% endif %}
+{% if pagina.anterior_id %}&nbsp;·&nbsp;<a href="{{ url_for('ver_escaneo', escaneo_id=pagina.anterior_id) }}">&laquo; Anterior</a>{% endif %}
+{% if pagina.siguiente_id %}&nbsp;·&nbsp;<a href="{{ url_for('ver_escaneo', escaneo_id=pagina.siguiente_id) }}">Siguiente &raquo;</a>{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .visor-pag { flex: 1 1 520px; min-width: 0; }
+  .visor-pag .marco { border: 1px solid var(--borde-suave); background: #fff; max-height: 86vh; overflow: auto; }
+  .visor-pag img { width: 100%; display: block; }
+  .ficha-pag { flex: 1 1 340px; min-width: 0; max-width: 460px; }
+  .ocr { max-height: 280px; overflow: auto; white-space: pre-wrap; font: 11.5px/1.5 'IBM Plex Mono', monospace; border: 1px solid var(--borde-fina); background: var(--superficie); padding: 8px; }
+  .marcas-pag { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 10px; }
+  .marcas-pag a { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 6px; text-decoration: none; color: var(--texto); }
+  .marcas-pag .mini { aspect-ratio: 1; background: #fff; border: 1px solid var(--borde-fina); }
+  .marcas-pag img { width: 100%; height: 100%; object-fit: contain; display: block; }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="contenido" style="max-width: 1400px;">
+  <div style="display: flex; gap: 28px; flex-wrap: wrap; margin-top: 22px; align-items: flex-start;">
+    <div class="visor-pag">
+      <div class="marco"><a href="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" target="_blank" rel="noopener" title="Abrir en una pestaña nueva"><img src="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" alt="Página escaneada {{ pagina.archivo }}"></a></div>
+      <p class="sub mono" style="margin-top: 6px;">{{ pagina.carpeta }} · {{ pagina.archivo }}</p>
+    </div>
+
+    <div class="ficha-pag">
+      <h2 class="subtitulo">Lo que dice esta página</h2>
+      {% if perfil.rol in ('operador', 'administrador') %}
+      <form method="post" action="{{ url_for('editar_escaneo', escaneo_id=pagina.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="campo-edicion"><label for="f-num">N.º de guía</label><input type="text" id="f-num" name="numero_guia" value="{{ pagina.numero_guia or '' }}" inputmode="numeric">
+          {% if pagina.fuente_numero %}<span class="sub">{{ 'corregido a mano' if pagina.fuente_numero == 'manual' else ('inferido por la página vecina' if pagina.fuente_numero.startswith('inferido') else 'leído de la imagen (' ~ pagina.fuente_numero ~ ')') }}</span>{% endif %}</div>
+        <div class="campo-edicion"><label for="f-prop">Propietario</label><input type="text" id="f-prop" name="propietario" value="{{ pagina.propietario or '' }}" style="font-family: inherit;"></div>
+        <div class="campo-edicion"><label for="f-doc">CI / RUC</label><input type="text" id="f-doc" name="propietario_documento" value="{{ pagina.propietario_documento or '' }}"></div>
+        <div class="campo-edicion"><label for="f-est">Establecimiento</label><input type="text" id="f-est" name="establecimiento" value="{{ pagina.establecimiento or '' }}" style="font-family: inherit;"></div>
+        <div class="campo-edicion"><label for="f-cant">Animales</label><input type="number" id="f-cant" name="cantidad_animales" min="0" value="{{ pagina.cantidad_animales if pagina.cantidad_animales is not none else '' }}"></div>
+        <div class="campo-edicion"><label for="f-notas">Notas</label><textarea id="f-notas" name="notas" rows="2">{{ pagina.notas or '' }}</textarea></div>
+        <label style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="revisado" value="1" {% if pagina.revisado %}checked{% endif %} style="width: auto;"> Ya la revisé contra la imagen</label>
+        <button type="submit" class="boton boton-primario">Guardar cambios</button>
+      </form>
+      {% else %}
+      <div class="campo-fila"><div class="campo-etiqueta">N.º de guía</div><div class="campo-valor mono">{{ pagina.numero_guia or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Propietario</div><div class="campo-valor">{{ pagina.propietario or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">CI / RUC</div><div class="campo-valor mono">{{ pagina.propietario_documento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Establecimiento</div><div class="campo-valor">{{ pagina.establecimiento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Animales</div><div class="campo-valor mono">{{ pagina.cantidad_animales if pagina.cantidad_animales is not none else '—' }}</div></div>
+      {% endif %}
+      {% if pagina.numero_certificado %}<div class="campo-fila"><div class="campo-etiqueta">Certificado</div><div class="campo-valor mono">{{ pagina.numero_certificado }}</div></div>{% endif %}
+
+      <h2 class="subtitulo" style="margin-top: 26px;">Marcas de esta página ({{ pagina.marcas|length }})</h2>
+      {% if pagina.marcas %}
+      <div class="marcas-pag">
+        {% for m in pagina.marcas %}
+        <a href="{{ url_for('ver_marca', codigo=m.codigo) }}" title="{{ m.posicion or '' }}">
+          <div class="mini">{% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" loading="lazy">{% endif %}</div>
+          <div class="mono" style="font-size: 11.5px; margin-top: 4px;">{{ m.codigo }}</div>
+          <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.estado != 'activa' %} · {{ {'revisar': 'revisar', 'baja': 'de baja'}.get(m.estado, m.estado) }}{% endif %}</div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}<p class="sub">Sin marcas asociadas.</p>{% endif %}
+
+      <details style="margin-top: 22px;">
+        <summary class="sub" style="cursor: pointer;">Texto leído de la imagen (OCR)</summary>
+        <div class="ocr">{{ pagina.texto_ocr or '(sin texto)' }}</div>
+      </details>
+    </div>
+  </div>
+</div>
+{% endblock %}
