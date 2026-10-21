@@ -33,6 +33,9 @@
     Lo que el lector no pudo leer queda en <em>Sin número</em> para completarlo a mano.
   </p>
 
+  {% if perfil.rol in ('administrador', 'operador') %}
+  <p style="margin: 16px 0 0;"><a class="boton boton-primario" href="{{ url_for('subir_guias_pantalla') }}">+ Subir guía (PDF o escaneo)</a></p>
+  {% endif %}
   <div class="chips">
     <a class="chip {{ '' if vista == 'sin_numero' else 'aviso' }}" href="{{ url_for('escaneos') }}">{{ resumen.guias }} guías</a>
     <a class="chip {{ 'aviso' if vista == 'sin_numero' }}" href="{{ url_for('escaneos', vista='sin_numero') }}">{{ resumen.sin_numero }} páginas sin número</a>

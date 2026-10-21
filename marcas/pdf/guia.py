@@ -666,6 +666,56 @@ def analizar_venta(pdf: Path | str) -> dict:
     }
 
 
+def _rect(c: Casilla) -> dict:
+    return {"pagina": c.pagina, "x": round(c.x, 2), "y": round(c.y, 2), "ancho": round(c.ancho, 2), "alto": round(c.alto, 2)}
+
+
+def analizar_con_casillas(pdf: Path | str) -> dict:
+    """Todo lo que la vista previa necesita saber de la guía, leído UNA sola vez: el cupo (igual que
+    :func:`analizar_venta`), el tamaño de cada página y dónde cae cada marca.
+
+    ``estaciones[k]`` es el lugar de la k-ésima complementaria: la lista de recuadros que ocupa en cada copia
+    (primero las casillas libres del Rubro 2 y después las de cada hoja de Anexo, en el mismo orden y con el
+    mismo reparto que usa :func:`completar_venta`). ``dominante`` son los recuadros libres para la dominante."""
+    principales = paginas_principales(pdf)
+    if not principales:
+        raise ValueError(
+            "No se encontró el Rubro 2 en el PDF. ¿Es una Guía de Traslado oficial descargada de SENACSA?"
+        )
+    rubro2 = {i: detectar_rubro2(pdf, i) for i, _ in principales}
+    hojas = hojas_de_anexo(pdf)
+    cupo_rubro2 = min(sum(1 for c in comp if not c.ocupada) for _, comp in rubro2.values())
+
+    estaciones: list[list[dict]] = []
+    libres_por_pagina = {i: [c for c in comp if not c.ocupada] for i, (_, comp) in rubro2.items()}
+    for k in range(cupo_rubro2):
+        estaciones.append([_rect(libres[k]) for libres in libres_por_pagina.values()])
+    por_orden: dict[int, list[HojaAnexo]] = {}
+    for hoja in hojas:
+        por_orden.setdefault(hoja.orden, []).append(hoja)
+    for orden in sorted(por_orden):
+        grupo = por_orden[orden]
+        for k in range(min(len(h.libres) for h in grupo)):
+            estaciones.append([_rect(h.libres[k]) for h in grupo])
+
+    dominante = [_rect(d) for d, _ in rubro2.values() if d is not None and not d.ocupada]
+    lector = pypdf.PdfReader(str(pdf))
+    paginas = [{"ancho": float(p.mediabox.width), "alto": float(p.mediabox.height)} for p in lector.pages]
+    dominantes = [d for d, _ in rubro2.values()]
+    return {
+        "cupo": {
+            "copias": sorted({c for _, c in principales}) or sorted({h.copia for h in hojas}),
+            "dominante_libre": bool(dominantes and dominantes[0] is not None and not dominantes[0].ocupada),
+            "complementarias_libres_rubro2": sum(1 for c in rubro2[principales[0][0]][1] if not c.ocupada),
+            "complementarias_libres_anexo": _libres_anexo_por_copia(hojas),
+            "hojas_anexo": len(hojas),
+        },
+        "paginas": paginas,
+        "dominante": dominante,
+        "estaciones": estaciones,
+    }
+
+
 def completar_venta(
     pdf_entrada: Path | str,
     imagen_dominante: Path | str | None,

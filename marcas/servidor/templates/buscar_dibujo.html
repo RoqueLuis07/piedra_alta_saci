@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block titulo %}Buscar por dibujo{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · BUSCAR POR DIBUJO{% endblock %}
+{% block titulo_pagina %}Buscar por dibujo{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('buscar') }}">&larr; Volver al catálogo</a>{% endblock %}
+
+{% block contenido %}
+<style>
+  .dib-grid { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; margin-top: 18px; }
+  .dib-lienzo canvas { width: 340px; max-width: 100%; aspect-ratio: 1; border: 1px solid var(--texto); background: #fff; touch-action: none; cursor: crosshair; display: block; }
+  .dib-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+  .dib-acciones .boton { min-height: 38px; padding: 8px 14px; font-size: 12px; }
+  .dib-acciones select { width: auto; }
+  .dib-res { flex: 1 1 420px; min-width: 0; }
+  .mejor { display: flex; gap: 14px; flex-wrap: wrap; border: 2px solid var(--verde-claro); background: var(--superficie); padding: 14px; margin-bottom: 16px; }
+  .mejor figure { margin: 0; text-align: center; font-size: 11.5px; color: var(--texto-secundario); }
+  .mejor img, .mejor .tu-dibujo { width: 170px; height: 170px; object-fit: contain; background: #fff; border: 1px solid var(--borde-fina); display: block; }
+  .mejor .datos { flex: 1 1 180px; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+  .mejor .puntaje { font: 600 28px 'IBM Plex Mono', monospace; }
+  .rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .rejilla a { display: block; border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px; text-decoration: none; color: var(--texto); }
+  .rejilla a:hover { border-color: var(--verde-claro); }
+  .rejilla img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border: 1px solid var(--borde-fina); display: block; }
+  .rejilla .cod { font: 600 12px 'IBM Plex Mono', monospace; margin-top: 6px; }
+  .rejilla .sub { font-size: 11px; }
+  #msg-dibujo { font-size: 12.5px; margin-top: 10px; min-height: 18px; color: var(--texto-secundario); }
+</style>
+<div class="contenido">
+  <p style="font-size: 13px; line-height: 1.6; color: var(--texto-secundario); max-width: 64ch; margin: 20px 0 0;">
+    Dibujá la marca como la recordás (o subí una foto) y el sistema ordena todo el catálogo por parecido: arriba queda la más cercana.
+    No hace falta que sea exacta ni del mismo grosor.
+  </p>
+  <div class="dib-grid">
+    <div class="dib-lienzo" id="dibujo">
+      <canvas id="lienzo-b" width="480" height="480" aria-label="Cuadro para dibujar la marca a buscar"></canvas>
+      <div class="dib-acciones">
+        <button type="button" class="boton boton-primario" id="b-buscar">Buscar parecidas</button>
+        <button type="button" class="boton" id="b-deshacer">Deshacer</button>
+        <button type="button" class="boton" id="b-borrar">Borrar</button>
+      </div>
+      <div class="dib-acciones">
+        <select id="b-grosor" aria-label="Grosor">
+          <option value="5">Fino</option>
+          <option value="9" selected>Medio</option>
+          <option value="16">Grueso</option>
+        </select>
+        <select id="b-tipo" aria-label="Tipo de marca">
+          <option value="">Dominantes y complementarias</option>
+          <option value="dominante">Sólo dominantes</option>
+          <option value="complementaria">Sólo complementarias</option>
+        </select>
+        <label class="boton" style="cursor: pointer; margin: 0;">Subir imagen
+          <input type="file" id="b-archivo" accept="image/*" style="display: none;">
+        </label>
+      </div>
+      <div id="msg-dibujo" role="status"></div>
+    </div>
+    <div class="dib-res" id="resultados" hidden>
+      <div class="mejor" id="mejor"></div>
+      <div class="sub mono" style="margin: 0 0 8px; font-size: 11px;" id="resumen"></div>
+      <div class="rejilla" id="rejilla"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const CSRF = "{{ csrf_token() }}";
+  const URL_FICHA = "{{ url_for('ver_marca', codigo='__C__') }}";
+  const URL_EMITIR = "{{ url_for('emitir') }}";
+  const canvas = document.getElementById("lienzo-b");
+  const ctx = canvas.getContext("2d");
+  const msg = document.getElementById("msg-dibujo");
+  let trazos = [], actual = null, subida = null;
+
+  function limpiar() { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  function redibujar() {
+    limpiar();
+    if (subida) {
+      const k = Math.min(canvas.width / subida.width, canvas.height / subida.height);
+      ctx.drawImage(subida, (canvas.width - subida.width * k) / 2, (canvas.height - subida.height * k) / 2, subida.width * k, subida.height * k);
+    }
+    ctx.strokeStyle = "#000"; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    for (const t of trazos) {
+      ctx.lineWidth = t.grosor; ctx.beginPath();
+      t.puntos.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      if (t.puntos.length === 1) ctx.lineTo(t.puntos[0].x + 0.1, t.puntos[0].y);
+      ctx.stroke();
+    }
+  }
+  limpiar();
+  function pos(e) {
+    const r = canvas.getBoundingClientRect(), p = e.touches ? e.touches[0] : e;
+    return { x: (p.clientX - r.left) * (canvas.width / r.width), y: (p.clientY - r.top) * (canvas.height / r.height) };
+  }
+  function empezar(e) { e.preventDefault(); actual = { grosor: parseInt(document.getElementById("b-grosor").value, 10), puntos: [pos(e)] }; trazos.push(actual); redibujar(); }
+  function seguir(e) { if (!actual) return; e.preventDefault(); actual.puntos.push(pos(e)); redibujar(); }
+  function terminar() { actual = null; }
+  canvas.addEventListener("mousedown", empezar); canvas.addEventListener("mousemove", seguir);
+  window.addEventListener("mouseup", terminar);
+  canvas.addEventListener("touchstart", empezar, { passive: false });
+  canvas.addEventListener("touchmove", seguir, { passive: false });
+  canvas.addEventListener("touchend", terminar);
+  document.getElementById("b-deshacer").onclick = () => { trazos.pop(); redibujar(); };
+  document.getElementById("b-borrar").onclick = () => { trazos = []; subida = null; redibujar(); };
+  document.getElementById("b-archivo").onchange = (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const img = new Image();
+    img.onload = () => { subida = img; redibujar(); };
+    img.src = URL.createObjectURL(f);
+  };
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  const TIPO = { dominante: "Dominante", complementaria: "Complementaria" };
+
+  document.getElementById("b-buscar").onclick = async () => {
+    if (!trazos.length && !subida) { msg.textContent = "Dibujá algo primero."; return; }
+    msg.textContent = "Buscando…";
+    const dibujo = canvas.toDataURL("image/png");
+    try {
+      const r = await fetch("{{ url_for('buscar_por_dibujo_resultados') }}", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify({ imagen: dibujo, tipo: document.getElementById("b-tipo").value }),
+      });
+      const d = await r.json();
+      if (!r.ok) { msg.textContent = d.error || "No se pudo buscar."; return; }
+      mostrar(d, dibujo);
+      msg.textContent = "";
+    } catch (e) { msg.textContent = "No se pudo conectar. Probá de nuevo."; }
+  };
+
+  function mostrar(d, dibujo) {
+    const res = d.resultados;
+    document.getElementById("resultados").hidden = false;
+    if (!res.length) {
+      document.getElementById("mejor").innerHTML = "<p class='sub'>No hay marcas con las que comparar.</p>";
+      document.getElementById("rejilla").innerHTML = ""; return;
+    }
+    const m = res[0];
+    document.getElementById("mejor").innerHTML =
+      `<figure><img class="tu-dibujo" src="${dibujo}" alt="Tu dibujo">Tu dibujo</figure>` +
+      `<figure><img src="${esc(m.imagen_url)}" alt="Marca ${esc(m.codigo)}">${esc(m.codigo)}</figure>` +
+      `<div class="datos"><div class="sub mono">LA MÁS PARECIDA</div><div class="puntaje">${m.puntaje}%</div>` +
+      `<div>${esc(m.propietario || "Sin propietario")}</div><div class="sub">${esc(TIPO[m.tipo] || "")}${m.estado !== "activa" ? " · " + esc(m.estado) : ""}</div>` +
+      `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"><a class="boton boton-primario" style="min-height:36px;padding:7px 12px;font-size:12px;" href="${URL_FICHA.replace("__C__", encodeURIComponent(m.codigo))}">Ver ficha</a>` +
+      `<a class="boton" style="min-height:36px;padding:7px 12px;font-size:12px;" href="${URL_EMITIR}?marcas=${encodeURIComponent(m.codigo)}">Usar en Emitir PDF</a></div></div>`;
+    document.getElementById("resumen").textContent = `COMPARADAS ${d.comparadas} MARCAS · MOSTRANDO LAS ${res.length} MÁS PARECIDAS` +
+      (d.huellas_pendientes ? ` · ${d.huellas_pendientes} MARCAS TODAVÍA SIN ANALIZAR (VOLVÉ A BUSCAR)` : "");
+    document.getElementById("rejilla").innerHTML = res.slice(1).map((x) =>
+      `<a href="${URL_FICHA.replace("__C__", encodeURIComponent(x.codigo))}"><img loading="lazy" src="${esc(x.imagen_url)}" alt="${esc(x.codigo)}">` +
+      `<div class="cod">${esc(x.codigo)} · ${x.puntaje}%</div><div class="sub">${esc(TIPO[x.tipo] || "")}</div></a>`).join("");
+  }
+})();
+</script>
+{% endblock %}

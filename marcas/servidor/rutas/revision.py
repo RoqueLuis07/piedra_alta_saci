@@ -12,6 +12,7 @@ from marcas.servidor.consultas import (
     cambiar_revision_marca,
     contar_bajas_automaticas,
     contar_pendientes_revision,
+    eliminar_marcas_en_baja,
     motivos_pendientes,
     restaurar_revision_lote,
     url_imagen,
@@ -22,6 +23,8 @@ _ESTADOS = ("activa", "revisar", "baja")
 
 
 def registrar(app) -> None:
+    registrar_eliminacion(app)
+
     @app.get("/revision")
     @requiere_sesion
     @requiere_rol("administrador", "operador")
@@ -123,3 +126,22 @@ def registrar(app) -> None:
             return jsonify({"error": "No se pudo guardar el cambio."}), 500
         respuesta["pendientes"] = contar_pendientes_revision(conexion)
         return jsonify(respuesta)
+
+
+def registrar_eliminacion(app) -> None:
+    @app.post("/revision/eliminar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def revision_eliminar():
+        """Borra para siempre marcas que ya están de baja (lo que no es una marca). {ids: [...]}"""
+        conexion = conexion_actual()
+        ids = (request.get_json(silent=True) or {}).get("ids")
+        if not isinstance(ids, list) or not ids or len(ids) > 1000 or not all(isinstance(i, int) for i in ids):
+            return jsonify({"error": "Pedido inválido."}), 400
+        try:
+            borradas = eliminar_marcas_en_baja(conexion, ids)
+        except Exception as exc:
+            conexion.rollback()
+            print(f"revision_eliminar: {exc}")
+            return jsonify({"error": "No se pudo eliminar."}), 500
+        return jsonify({"eliminadas": borradas, "pendientes": contar_pendientes_revision(conexion)})

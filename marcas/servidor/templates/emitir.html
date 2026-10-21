@@ -36,6 +36,17 @@
   .vacio { padding: 16px; border: 1px dashed var(--borde-suave); color: var(--texto-secundario); font-size: 12.5px; grid-column: 1 / -1; }
   .vista { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 12px; min-height: 280px; max-height: 78vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; transition: opacity .15s; }
   .vista img { width: 100%; border: 1px solid var(--borde-fina); }
+  .vista { position: relative; }
+  .vista .pg { position: relative; flex: none; width: 100%; background: #fff; }
+  .vista .pg > img { display: block; width: 100%; height: 100%; }
+  .vista .capa { position: absolute; inset: 0; pointer-events: none; }
+  .vista img.est { position: absolute; object-fit: contain; border: 0; width: auto; }
+  .vista .sig { position: absolute; box-sizing: border-box; border: 3px solid #d97706; background: rgba(245, 158, 11, 0.20); animation: latido 1.3s ease-in-out infinite; }
+  .vista .sig.suave { border-width: 2px; background: rgba(245, 158, 11, 0.08); animation: none; }
+  .vista .sig.dom { border-color: #2563eb; background: rgba(37, 99, 235, 0.15); }
+  .vista .sig span { position: absolute; left: -3px; bottom: 100%; background: #d97706; color: #fff; font: 600 11px 'IBM Plex Mono', monospace; padding: 2px 6px; white-space: nowrap; }
+  .vista .sig.dom span { background: #2563eb; }
+  @keyframes latido { 50% { background: rgba(245, 158, 11, 0.38); } }
   .campos-doc { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
   .opciones { display: flex; gap: 8px; margin-bottom: 12px; }
   .opciones label { flex: 1; border: 1px solid var(--texto); padding: 9px 12px; cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; }
@@ -136,7 +147,7 @@
     <aside>
       <h2 class="subtitulo">Vista previa en vivo</h2>
       <div class="sub" id="vp-estado" style="min-height: 16px; margin-bottom: 8px;"></div>
-      <div class="vista" id="vista"><p class="sub" style="margin: 0;">Acá vas a ver la guía con cada marca estampada.</p></div>
+      <div class="vista" id="vista"><p class="sub" style="margin: 0;">Subí la guía y acá vas a ver todas sus páginas; el recuadro naranja marca dónde va la próxima marca.</p></div>
     </aside>
   </div>
 </div>
@@ -157,7 +168,7 @@
     operacionId: {{ operacion.id if operacion else 'null' }},
     marcasPrevias: {{ marcas_previas | tojson }},
     urls: {
-      previsualizar: "{{ url_for('emitir_previsualizar') }}",
+      analizar: "{{ url_for('emitir_analizar') }}",
       generar: "{{ url_for('emitir_generar') }}",
       catalogo: "{{ url_for('buscar_marcas_json') }}",
       archivo: "{{ url_for('archivo') }}"

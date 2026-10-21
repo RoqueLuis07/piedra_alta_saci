@@ -968,3 +968,30 @@ def restaurar_revision_lote(conexion, items: list[dict], usuario_id: str | None)
                 "UPDATE marcas SET estado = %s, activo = %s, actualizado_por = %s WHERE id = %s",
                 (item["estado"], item["activo"], usuario_id, item["id"]),
             )
+
+
+def eliminar_marcas_en_baja(conexion, ids: list[int]) -> int:
+    """Borra DEFINITIVAMENTE marcas que ya están dadas de baja (no se pueden recuperar).
+    Las que no están de baja se ignoran: primero hay que sacarlas de uso. Devuelve cuántas se borraron."""
+    if not ids:
+        return 0
+    with conexion.cursor() as cur:
+        cur.execute("DELETE FROM marcas WHERE id = ANY(%s) AND estado = 'baja'", (ids,))
+        return cur.rowcount
+
+
+def eliminar_operaciones(conexion, ids: list[int]) -> tuple[list[int], list[int]]:
+    """Borra DEFINITIVAMENTE guías/ventas (y su respaldo). Las marcas que tenían se conservan en el catálogo, sin
+    guía. Las que ya tienen un documento emitido en el Archivo NO se borran (el Archivo no se toca): para esas hay
+    que usar Ocultar. Devuelve (borradas, bloqueadas)."""
+    if not ids:
+        return [], []
+    with conexion.cursor() as cur:
+        cur.execute("SELECT DISTINCT operacion_id FROM documentos_emitidos WHERE operacion_id = ANY(%s)", (ids,))
+        bloqueadas = [f["operacion_id"] for f in cur.fetchall()]
+        cur.execute("SELECT id FROM operaciones WHERE id = ANY(%s) AND NOT (id = ANY(%s))", (ids, bloqueadas))
+        borrables = [f["id"] for f in cur.fetchall()]
+        if borrables:
+            cur.execute("UPDATE marcas SET operacion_id = NULL WHERE operacion_id = ANY(%s)", (borrables,))
+            cur.execute("DELETE FROM operaciones WHERE id = ANY(%s)", (borrables,))
+    return borrables, bloqueadas

@@ -3,6 +3,7 @@
 {% block migaja %}REGISTRO DE MARCAS · CATÁLOGO DE MARCAS{% endblock %}
 {% block titulo_pagina %}Marcas{% endblock %}
 {% block meta_encabezado %}
+<a href="{{ url_for('buscar_por_dibujo') }}">Buscar por dibujo &rarr;</a>
 {% if perfil.rol in ('operador', 'administrador') %}
 <a href="{{ url_for('revision') }}">Revisar marcas{% if desglose and desglose.revisar %} ({{ desglose.revisar }} pendientes){% endif %} &rarr;</a>
 {% endif %}
@@ -13,6 +14,13 @@
   <p style="font-size: 13px; line-height: 1.6; color: var(--texto-secundario); max-width: 62ch; margin: 20px 0 16px;">
     Escribí un código de marca, el nombre de un propietario o un número de guía y presioná Buscar. Hacé click en un resultado para ver su ficha completa.
   </p>
+  <div class="pestanas-tipo" style="display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px;">
+    {% for valor, nombre, n in [('', 'Todas', None), ('dominante', 'Dominantes', desglose.dominante if desglose else None), ('complementaria', 'Complementarias', desglose.complementaria if desglose else None)] %}
+    <a class="boton {{ 'boton-primario' if tipo == valor else '' }}" style="min-height: 38px; padding: 8px 16px; font-size: 13px;"
+       href="{{ url_for('buscar', q=texto or None, estado=estado or None, tipo=valor or None) }}">{{ nombre }}{% if n is not none %} ({{ n }}){% endif %}</a>
+    {% endfor %}
+    <a class="boton" style="min-height: 38px; padding: 8px 16px; font-size: 13px;" href="{{ url_for('buscar_por_dibujo') }}">&#9998; Buscar por dibujo</a>
+  </div>
   <form method="get" action="{{ url_for('buscar') }}" id="form-filtro-marcas" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px;">
     <div style="flex: 1 1 320px; min-width: 0;">
       <span class="etiqueta" style="display: block; margin-bottom: 6px;">CÓDIGO, PROPIETARIO, N.º DE GUÍA</span>

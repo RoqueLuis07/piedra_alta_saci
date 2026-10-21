@@ -192,7 +192,7 @@
     }
   }
   function cambio() {
-    pintarBandeja(); pintarCupo(); actualizarBoton(); programarVistaPrevia();
+    pintarBandeja(); pintarCupo(); actualizarBoton(); pintarVista();
   }
 
   // ---------- pedido al servidor ----------
@@ -215,48 +215,112 @@
   }
 
   // ---------- vista previa ----------
-  var temporizador = null, enCurso = false, pendiente = false;
-  function programarVistaPrevia() {
-    if (!estado.pdf) return;
-    clearTimeout(temporizador);
-    temporizador = setTimeout(vistaPrevia, 350);
+  // La guía se lee UNA vez en el servidor (/emitir/analizar): páginas, cupo y dónde cae cada marca.
+  // Después la vista previa se arma acá, en el navegador: agregar o quitar una marca es instantáneo.
+  var geom = null, capas = [], ultimoN = -1, reintento = false;
+  function pct(v, t) { return (v / t * 100) + "%"; }
+  function ubicar(el, r, margen) {
+    var P = geom.paginas[r.pagina];
+    el.style.left = pct(r.x + margen, P.ancho);
+    el.style.top = pct(P.alto - (r.y + r.alto) + margen, P.alto);
+    el.style.width = pct(r.ancho - 2 * margen, P.ancho);
+    el.style.height = pct(r.alto - 2 * margen, P.alto);
   }
-  function vistaPrevia() {
-    if (enCurso) { pendiente = true; return; }
-    enCurso = true;
+  function analizarPdf() {
     var mia = ++estado.secuencia;
-    $("vp-estado").textContent = "Actualizando vista previa…";
+    geom = null; capas = []; ultimoN = -1;
+    $("vp-estado").textContent = "Leyendo la guía…";
     $("vista").style.opacity = "0.55";
-    fetch(CFG.urls.previsualizar, { method: "POST", body: armarPedido() })
+    var f = new FormData();
+    f.append("csrf_token", CFG.csrf);
+    f.append("pdf_guia", estado.pdf);
+    fetch(CFG.urls.analizar, { method: "POST", body: f })
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (mia !== estado.secuencia) return;
         var aviso_pdf = $("aviso-pdf");
-        if (res.error) { aviso_pdf.textContent = res.error; aviso_pdf.style.display = "block"; }
-        else aviso_pdf.style.display = "none";
-        if (res.cupo) { estado.cupo = res.cupo; pintarCupo(); }
-        if (res.encabezado) { estado.declaradas = res.encabezado.marcas_declaradas || null; autocompletar(res.encabezado); pintarCupo(); }
-        if (res.paginas && res.paginas.length) {
-          var v = $("vista");
-          v.textContent = "";
-          res.paginas.forEach(function (b64) {
-            var img = document.createElement("img");
-            img.src = "data:image/png;base64," + b64;
-            img.alt = "Página de la guía";
-            v.appendChild(img);
-          });
+        if (res.error) {
+          aviso_pdf.textContent = res.error; aviso_pdf.style.display = "block";
+          $("vp-estado").textContent = "";
+          $("vista").textContent = "";
+          return;
         }
-        if (res.resumen) {
-          $("vp-estado").textContent = "En el Rubro 2: " + res.resumen.rubro2 + " · En el Anexo: " + res.resumen.anexo + (res.resumen.dominante ? " · Dominante estampada" : "");
-        } else $("vp-estado").textContent = "";
+        aviso_pdf.style.display = "none";
+        geom = res;
+        estado.cupo = res.cupo; pintarCupo();
+        if (res.encabezado) { estado.declaradas = res.encabezado.marcas_declaradas || null; autocompletar(res.encabezado); pintarCupo(); }
+        construirVista();
         desbloquear();
       })
-      .catch(function () { $("vp-estado").textContent = "No se pudo actualizar la vista previa."; })
-      .finally(function () {
-        enCurso = false;
-        $("vista").style.opacity = "1";
-        if (pendiente) { pendiente = false; vistaPrevia(); }
+      .catch(function () { $("vp-estado").textContent = "No se pudo leer la guía. Probá de nuevo."; })
+      .finally(function () { $("vista").style.opacity = "1"; });
+  }
+  function construirVista() {
+    var v = $("vista");
+    v.textContent = "";
+    capas = geom.paginas.map(function (P, i) {
+      var pg = document.createElement("div");
+      pg.className = "pg";
+      pg.style.aspectRatio = P.ancho + " / " + P.alto;
+      var img = document.createElement("img");
+      img.alt = "Página " + (i + 1) + " de la guía";
+      img.loading = i < 2 ? "eager" : "lazy";
+      img.src = geom.url_pagina.replace(/\/0\.jpg$/, "/" + i + ".jpg");
+      img.addEventListener("error", function () {
+        // la memoria del servidor se reinició: se vuelve a leer la guía una sola vez
+        if (!reintento) { reintento = true; analizarPdf(); }
       });
+      var capa = document.createElement("div");
+      capa.className = "capa";
+      pg.appendChild(img); pg.appendChild(capa);
+      v.appendChild(pg);
+      return capa;
+    });
+    pintarVista();
+  }
+  function sello(item, rects) {
+    rects.forEach(function (r) {
+      var im = document.createElement("img");
+      im.className = "est"; im.src = item.url; im.alt = "";
+      ubicar(im, r, Math.min(r.ancho, r.alto) * 0.10);
+      capas[r.pagina].appendChild(im);
+    });
+  }
+  function resaltar(rects, texto, clase) {
+    var primero = null;
+    rects.forEach(function (r, i) {
+      var d = document.createElement("div");
+      d.className = "sig " + (i === 0 ? "" : "suave ") + (clase || "");
+      ubicar(d, r, 0);
+      if (i === 0) { var t = document.createElement("span"); t.textContent = texto; d.appendChild(t); primero = d; }
+      capas[r.pagina].appendChild(d);
+    });
+    return primero;
+  }
+  function pintarVista() {
+    if (!geom || !capas.length) return;
+    capas.forEach(function (c) { c.textContent = ""; });
+    var E = geom.estaciones, n = estado.items.length;
+    if (estado.dominante) sello(estado.dominante, geom.dominante);
+    estado.items.forEach(function (item, k) { if (E[k]) sello(item, E[k]); });
+    var destino = null;
+    if (n < E.length) destino = resaltar(E[n], "Acá va la marca " + (n + 1), "");
+    if (!estado.dominante && geom.dominante.length) {
+      var d = resaltar(geom.dominante, "Dominante", "dom");
+      if (!destino) destino = d;
+    }
+    var r2 = geom.cupo.complementarias_libres_rubro2;
+    var enR2 = Math.min(n, r2), enAnexo = Math.max(0, Math.min(n, E.length) - r2);
+    var txt = "En el Rubro 2: " + enR2 + " · En el Anexo: " + enAnexo + (estado.dominante ? " · Dominante estampada" : "");
+    if (n > E.length) txt = "Sobran " + (n - E.length) + " marcas: no entran en esta guía. " + txt;
+    else if (n === E.length) txt += " · No quedan casillas libres";
+    $("vp-estado").textContent = txt;
+    if (destino && n !== ultimoN) {
+      ultimoN = n;
+      var v = $("vista");
+      var y = destino.getBoundingClientRect().top - v.getBoundingClientRect().top + v.scrollTop;
+      v.scrollTo({ top: Math.max(0, y - 80), behavior: "smooth" });
+    }
   }
   function desbloquear() {
     ["paso-datos", "paso-dominante", "paso-marcas"].forEach(function (id) { $(id).classList.remove("bloqueado"); });
@@ -294,7 +358,9 @@
     estado.generado = false;
     $("zona-pdf-titulo").textContent = archivo.name;
     $("zona-pdf-sub").textContent = "Tocá para cambiar el PDF.";
+    reintento = false;
     cambio();
+    analizarPdf();
   }
   $("campo-pdf").addEventListener("change", function (e) { elegirPdf(e.target.files[0]); });
   var zona = $("zona-pdf");

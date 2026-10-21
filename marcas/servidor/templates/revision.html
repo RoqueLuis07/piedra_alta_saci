@@ -72,6 +72,7 @@
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
       <button type="button" class="boton" id="lote-aprobar" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">✓ Aprobar las visibles</button>
       <button type="button" class="boton" id="lote-baja" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">Dar de baja las visibles</button>
+      {% if ver == 'bajas' and perfil.rol == 'administrador' %}<button type="button" class="boton" id="lote-eliminar" style="min-height: 38px; padding: 8px 14px; font-size: 12px; border-color: var(--aviso-texto); color: var(--aviso-texto);">&#128465; Eliminar para siempre las visibles</button>{% endif %}
     </div>
     {% endif %}
   </div>
@@ -93,6 +94,7 @@
         <button type="button" class="ok" data-accion="aprobar" {% if m.estado == 'activa' %}disabled{% endif %}>✓ Aprobar</button>
         <button type="button" class="baja" data-accion="baja" {% if m.estado == 'baja' %}disabled{% endif %}>Baja</button>
         {% if perfil.rol == 'administrador' %}<button type="button" class="ocultar" data-accion="ocultar">Ocultar</button>{% endif %}
+        {% if ver == 'bajas' and perfil.rol == 'administrador' %}<button type="button" class="baja" data-accion="eliminar" title="Borrarla definitivamente: no se puede deshacer">Eliminar</button>{% endif %}
       </div>
     </article>
     {% else %}
@@ -172,6 +174,7 @@
     if (!boton || boton.disabled) return;
     var tarjeta = boton.closest('.rev-tarjeta');
     var accion = boton.dataset.accion;
+    if (accion === 'eliminar') { eliminar([tarjeta]); return; }
     var antes = { estado: tarjeta.dataset.estado, activo: !tarjeta.classList.contains('oculta') };
     boton.disabled = true;
     enviar(tarjeta.dataset.id, { accion: accion }).then(function (r) {
@@ -236,6 +239,23 @@
       mostrarAviso(r.cantidad + (accion === 'baja' ? ' marcas dadas de baja.' : ' marcas aprobadas.'));
     }).catch(function (err) { mostrarAviso('No se pudo: ' + err.message); });
   }
+  function eliminar(tarjetas) {
+    if (!tarjetas.length) return;
+    if (!window.confirm('¿Eliminar PARA SIEMPRE ' + (tarjetas.length === 1 ? 'la marca ' + tarjetas[0].dataset.codigo : 'las ' + tarjetas.length + ' marcas que ves en pantalla') + '? No se puede deshacer.')) return;
+    var ids = tarjetas.map(function (t) { return parseInt(t.dataset.id, 10); });
+    fetch({{ url_for('revision_eliminar') | tojson }}, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF }, body: JSON.stringify({ ids: ids })
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Error'); return j; }); })
+      .then(function (r) {
+        tarjetas.forEach(function (t) { t.remove(); });
+        ultimo = null; ultimoLote = null;
+        document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+        contarVisibles();
+        mostrarAviso(r.eliminadas + ' marca' + (r.eliminadas === 1 ? '' : 's') + ' eliminada' + (r.eliminadas === 1 ? '' : 's') + ' definitivamente.');
+      }).catch(function (err) { mostrarAviso('No se pudo eliminar: ' + err.message); });
+  }
+  var botonEliminar = document.getElementById('lote-eliminar');
+  if (botonEliminar) botonEliminar.addEventListener('click', function () { eliminar(visibles()); });
   var botonLoteA = document.getElementById('lote-aprobar'), botonLoteB = document.getElementById('lote-baja');
   if (botonLoteA) botonLoteA.addEventListener('click', function () { lote('aprobar'); });
   if (botonLoteB) botonLoteB.addEventListener('click', function () { lote('baja'); });

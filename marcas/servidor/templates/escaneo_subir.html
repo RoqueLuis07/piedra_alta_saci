@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}Subir guía{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · GUÍAS ESCANEADAS · SUBIR{% endblock %}
+{% block titulo_pagina %}Subir guía{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('escaneos') }}">&larr; Volver a Guías</a>{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  {% if resultados is defined %}
+  <h2 style="margin: 22px 0 10px; font-size: 16px;">Carga terminada</h2>
+  <ul style="line-height: 1.9; font-size: 14px;">
+    {% for r in resultados %}
+    <li><strong>{{ r.nombre }}</strong> · {{ r.paginas }} página{{ '' if r.paginas == 1 else 's' }} ·
+      {% if r.numero %}<a href="{{ url_for('ver_guia_escaneada', numero=r.numero) }}">guía {{ r.numero }}</a>
+      {% else %}<a href="{{ url_for('ver_escaneo', escaneo_id=r.primero) }}">sin N.º de guía: completalo acá</a>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% for e in errores %}<div class="aviso-pendiente">{{ e }}</div>{% endfor %}
+  <p><a class="boton" href="{{ url_for('subir_guias_pantalla') }}">Subir otra</a></p>
+  {% else %}
+  <p style="max-width: 70ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 14px;">
+    Subí la guía como <strong>PDF</strong> (por ejemplo la oficial de SENACSA: el N.º de guía se lee solo) o como <strong>fotos / escaneos</strong>
+    (JPG o PNG). Cada página queda en <em>Guías escaneadas</em>, agrupada por N.º de guía y con el texto del PDF para poder buscarla.
+    Máximo {{ max_paginas }} páginas por carga.
+  </p>
+  {% if error %}<div class="aviso-pendiente">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ url_for('subir_guias') }}" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 16px; max-width: 520px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">ARCHIVOS (PDF, JPG O PNG)</span>
+      <input type="file" name="archivos" accept=".pdf,image/*" multiple required>
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">N.º DE GUÍA (OPCIONAL)</span>
+      <input type="text" name="numero_guia" maxlength="40" placeholder="Si lo dejás vacío se lee del PDF" style="width: 100%;">
+      <div class="sub" style="margin-top: 4px;">Para fotos sueltas conviene escribirlo: así quedan juntas en la misma guía.</div>
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">TIPO DE DOCUMENTO</span>
+      <select name="formato">
+        <option value="">Detectar solo</option>
+        {% for clave, nombre in formatos.items() %}<option value="{{ clave }}">{{ nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><button type="submit" class="boton boton-primario">Subir</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

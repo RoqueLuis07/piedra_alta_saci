@@ -15,7 +15,7 @@ from flask_wtf import CSRFProtect
 from marcas.servidor.auth import cerrar_conexion_actual, conexion_actual, encriptar_contrasena
 from marcas.servidor.consultas import crear_usuario, obtener_usuario_por_email
 from marcas.servidor.db import ejecutar_schema
-from marcas.servidor.rutas import sesion, catalogo, operaciones, emitir, archivo, propietarios, exportacion, admin, revision, escaneos
+from marcas.servidor.rutas import sesion, catalogo, operaciones, emitir, archivo, propietarios, exportacion, admin, revision, escaneos, similares
 from marcas.servidor.utilidades import _etiqueta_campo, _formatear_fecha_hora
 
 
@@ -36,7 +36,7 @@ def crear_app() -> Flask:
     # Sin este límite, cualquier sesión logueada podría mandar un archivo
     # enorme (imagen de marca o PDF de guía) y agotar memoria/disco del
     # servidor. 20 MB alcanza de sobra para una imagen o un PDF de guía.
-    app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024
 
     # Token oculto obligatorio en todo formulario POST -- protege contra
     # peticiones falsificadas desde otro sitio (CSRF). Queda disponible en
@@ -97,5 +97,6 @@ def crear_app() -> Flask:
     admin.registrar(app)
     revision.registrar(app)
     escaneos.registrar(app)
+    similares.registrar(app)
 
     return app

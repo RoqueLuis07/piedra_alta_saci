@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from flask import redirect, render_template, request, send_file, url_for
+from flask import jsonify, redirect, render_template, request, send_file, url_for
 from marcas.servidor.auth import conexion_actual, perfil_actual, requiere_rol, requiere_sesion
 from marcas.servidor.consultas import (
     CAMPOS_OPERACION_EDITABLES,
@@ -11,6 +11,7 @@ from marcas.servidor.consultas import (
     crear_marca,
     crear_operacion,
     guardar_respaldo_operacion,
+    eliminar_operaciones,
     listar_operaciones_paginado,
     marcas_de_operacion,
     nombres_usuarios,
@@ -255,6 +256,43 @@ def registrar(app) -> None:
             return _registro_no_encontrado("No se encontró esa guía.")
         ocultar_operacion(conexion, operacion_id)
         return redirect(url_for("ver_guia", operacion_id=operacion_id))
+
+    @app.post("/guias/eliminar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def eliminar_guias_ruta():
+        """Borra para siempre guías/ventas elegidas ({ids: [...]}). Las que tienen documentos en el Archivo se saltean."""
+        conexion = conexion_actual()
+        ids = (request.get_json(silent=True) or {}).get("ids")
+        if not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, int) for i in ids):
+            return jsonify({"error": "Pedido inválido."}), 400
+        try:
+            borradas, bloqueadas = eliminar_operaciones(conexion, ids)
+        except Exception as exc:
+            conexion.rollback()
+            print(f"eliminar_guias: {exc}")
+            return jsonify({"error": "No se pudo eliminar."}), 500
+        return jsonify({"eliminadas": len(borradas), "bloqueadas": len(bloqueadas)})
+
+    @app.post("/guias/<int:operacion_id>/eliminar")
+    @requiere_sesion
+    @requiere_rol("administrador")
+    def eliminar_guia_ruta(operacion_id: int):
+        conexion = conexion_actual()
+        operacion = obtener_operacion_por_id(conexion, operacion_id)
+        if not operacion:
+            return _registro_no_encontrado("No se encontró esa guía.")
+        try:
+            borradas, _ = eliminar_operaciones(conexion, [operacion_id])
+        except Exception as exc:
+            conexion.rollback()
+            return _error_seguro("No se pudo eliminar.", exc)
+        if not borradas:
+            return _error_seguro(
+                "Esta guía ya tiene documentos emitidos en el Archivo y no se puede borrar. Usá «Ocultar».",
+                ValueError("operación con documentos emitidos"),
+            )
+        return redirect(url_for("ventas" if operacion.get("tipo_operacion") == "venta" else "guias"))
 
     @app.post("/guias/<int:operacion_id>/restaurar")
     @requiere_sesion

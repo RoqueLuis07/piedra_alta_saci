@@ -19,6 +19,7 @@ from marcas.servidor.consultas_escaneos import (
     paginas_sin_numero,
     resumen_escaneos,
 )
+from marcas.servidor.subida_guias import MAX_PAGINAS, ErrorSubida, guardar_paginas, nuevo_lote, preparar
 from marcas.servidor.utilidades import _registro_no_encontrado
 
 MAX_MARCAS_A_EMITIR = 150
@@ -30,6 +31,55 @@ def _entero_o_none(valor: str | None) -> int | None:
 
 
 def registrar(app) -> None:
+    @app.get("/escaneos/subir")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def subir_guias_pantalla():
+        return render_template("escaneo_subir.html", activo="escaneos", perfil=perfil_actual(), formatos=FORMATOS, max_paginas=MAX_PAGINAS)
+
+    @app.post("/escaneos/subir")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def subir_guias():
+        """Sube uno o varios PDF / fotos. Cada PDF es una guía (su N.º de orden se lee solo); las fotos
+        sueltas usan el N.º de guía escrito en el formulario."""
+        conexion = conexion_actual()
+        numero_forzado = (request.form.get("numero_guia") or "").strip()[:40] or None
+        formato = request.form.get("formato") or None
+        if formato not in FORMATOS:
+            formato = None
+        archivos = [a for a in request.files.getlist("archivos") if a and a.filename]
+        if not archivos:
+            return render_template("escaneo_subir.html", activo="escaneos", perfil=perfil_actual(), formatos=FORMATOS,
+                                   max_paginas=MAX_PAGINAS, error="Elegí al menos un archivo."), 400
+        resultados, errores, restante = [], [], MAX_PAGINAS
+        try:
+            for archivo in archivos:
+                if restante <= 0:
+                    errores.append(f"«{archivo.filename}»: se llegó al máximo de {MAX_PAGINAS} páginas por carga; subilo aparte.")
+                    continue
+                try:
+                    paginas, detectado = preparar(archivo.filename, archivo.read(), restante)
+                except ErrorSubida as exc:
+                    errores.append(str(exc))
+                    continue
+                numero = numero_forzado or detectado
+                fuente = "manual" if numero_forzado else ("pdf" if detectado else None)
+                ids = guardar_paginas(conexion, paginas, numero, fuente, formato, nuevo_lote(), 0)
+                restante -= len(paginas)
+                resultados.append({"nombre": archivo.filename, "paginas": len(ids), "numero": numero, "primero": ids[0]})
+            conexion.commit()
+        except Exception as exc:
+            conexion.rollback()
+            print(f"subir_guias: {exc}")
+            return render_template("escaneo_subir.html", activo="escaneos", perfil=perfil_actual(), formatos=FORMATOS,
+                                   max_paginas=MAX_PAGINAS, error="No se pudo guardar la carga. No quedó nada a medias; probá de nuevo."), 500
+        if len(resultados) == 1 and not errores:
+            r = resultados[0]
+            return redirect(url_for("ver_guia_escaneada", numero=r["numero"]) if r["numero"] else url_for("ver_escaneo", escaneo_id=r["primero"]))
+        return render_template("escaneo_subir.html", activo="escaneos", perfil=perfil_actual(), formatos=FORMATOS,
+                               max_paginas=MAX_PAGINAS, resultados=resultados, errores=errores)
+
     @app.get("/escaneos")
     @requiere_sesion
     def escaneos():

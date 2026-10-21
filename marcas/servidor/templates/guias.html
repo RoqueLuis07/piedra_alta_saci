@@ -50,6 +50,10 @@
 
   <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 14px; flex-wrap: wrap;">
     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+      {% if perfil.rol == 'administrador' %}
+      <button type="button" class="boton" id="eliminar-sel" disabled style="min-height: 38px; padding: 8px 14px; font-size: 12px; border-color: var(--aviso-texto); color: var(--aviso-texto);">&#128465; Eliminar seleccionadas</button>
+      <span class="sub" id="msg-eliminar"></span>
+      {% endif %}
 
       
       
@@ -68,6 +72,7 @@
   <table class="registro" style="margin-top: 12px;">
     <thead>
       <tr>
+        {% if perfil.rol == 'administrador' %}<th style="width: 28px;"><input type="checkbox" id="sel-todas" aria-label="Elegir todas" title="Elegir todas"></th>{% endif %}
         {% for clave, etiqueta in columnas_disponibles %}
         <th>{{ etiqueta }}</th>
         {% endfor %}
@@ -76,6 +81,7 @@
     <tbody>
       {% for o in operaciones %}
       <tr onclick="window.location='{{ url_for('ver_guia', operacion_id=o.id) }}'">
+        {% if perfil.rol == 'administrador' %}<td onclick="event.stopPropagation()"><input type="checkbox" class="sel-guia" value="{{ o.id }}" aria-label="Elegir guía {{ o.numero_guia or o.id }}"></td>{% endif %}
         <td class="mono" style="white-space: nowrap;">{{ o.fecha or '—' }}</td>
         <td class="mono" style="white-space: nowrap;">{{ o.numero_guia or '—' }}</td>
         <td>{{ o.vendedor_nombre or 'Sin identificar' }}</td>
@@ -90,7 +96,7 @@
         
       </tr>
       {% else %}
-      <tr><td colspan="{{ columnas_disponibles|length }}" style="padding: 20px 0; color: var(--texto-secundario);">{{ 'Todavía no hay ventas cargadas.' if modo == 'venta' else 'Todavía no hay guías cargadas.' }}</td></tr>
+      <tr><td colspan="{{ columnas_disponibles|length + (1 if perfil.rol == 'administrador' else 0) }}" style="padding: 20px 0; color: var(--texto-secundario);">{{ 'Todavía no hay ventas cargadas.' if modo == 'venta' else 'Todavía no hay guías cargadas.' }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -111,4 +117,30 @@
     {% endif %}
   </div>
 </div>
+{% if perfil.rol == 'administrador' %}
+<script>
+(function () {
+  var CSRF = {{ csrf_token() | tojson }}, URL = {{ url_for('eliminar_guias_ruta') | tojson }};
+  var boton = document.getElementById('eliminar-sel'), msg = document.getElementById('msg-eliminar');
+  function marcadas() { return [].slice.call(document.querySelectorAll('.sel-guia:checked')); }
+  function refrescar() { var n = marcadas().length; boton.disabled = !n; boton.textContent = '\u{1F5D1} Eliminar seleccionadas' + (n ? ' (' + n + ')' : ''); }
+  document.addEventListener('change', function (e) {
+    if (e.target.id === 'sel-todas') document.querySelectorAll('.sel-guia').forEach(function (c) { c.checked = e.target.checked; });
+    if (e.target.id === 'sel-todas' || e.target.classList.contains('sel-guia')) refrescar();
+  });
+  boton.addEventListener('click', function () {
+    var ids = marcadas().map(function (c) { return parseInt(c.value, 10); });
+    if (!ids.length) return;
+    if (!window.confirm('¿Eliminar PARA SIEMPRE ' + ids.length + (ids.length === 1 ? ' registro' : ' registros') + '? Sus marcas quedan en el catálogo. No se puede deshacer. Los que ya tienen documentos emitidos en el Archivo no se borran (usá Ocultar).')) return;
+    boton.disabled = true;
+    fetch(URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF }, body: JSON.stringify({ ids: ids }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Error'); return j; }); })
+      .then(function (r) {
+        if (r.bloqueadas) alert(r.eliminadas + ' eliminados. ' + r.bloqueadas + ' no se pueden borrar porque tienen documentos en el Archivo: usá Ocultar.');
+        window.location.reload();
+      }).catch(function (err) { msg.textContent = 'No se pudo: ' + err.message; refrescar(); });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

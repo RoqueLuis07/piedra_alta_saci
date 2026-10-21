@@ -9,10 +9,14 @@ las marcas dibujadas, y el PDF queda en el Archivo."""
 from __future__ import annotations
 
 import json
+import tempfile
 from datetime import date
+from pathlib import Path
 
-from flask import jsonify, render_template, request
+from flask import Response, jsonify, render_template, request, url_for
 
+from marcas.pdf.guia import analizar_con_casillas, extraer_encabezado
+from marcas.servidor import cache_guias
 from marcas.servidor.auth import conexion_actual, perfil_actual, requiere_rol, requiere_sesion
 from marcas.servidor.consultas import (
     actualizar_marca_campos,
@@ -166,6 +170,42 @@ def registrar(app) -> None:
             "emitir.html", activo="emitir", perfil=perfil_actual(),
             operacion=operacion, marcas_previas=marcas_previas,
         )
+
+    @app.post("/emitir/analizar")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def emitir_analizar():
+        """Lee la guía UNA vez: cupo, encabezado y dónde cae cada marca. La pantalla arma después la vista
+        previa sola, sin volver al servidor por cada marca."""
+        archivo = request.files.get("pdf_guia")
+        pdf_bytes = archivo.read() if archivo else b""
+        if not pdf_bytes:
+            return jsonify({"error": "Subí el PDF de la guía."}), 400
+        clave = cache_guias.clave_de(pdf_bytes)
+        analisis = cache_guias.obtener_analisis(clave)
+        if analisis is None:
+            with tempfile.TemporaryDirectory() as tmp:
+                ruta = Path(tmp) / "guia.pdf"
+                ruta.write_bytes(pdf_bytes)
+                try:
+                    analisis = analizar_con_casillas(ruta)
+                except Exception as exc:
+                    return jsonify({"error": str(exc) or "No se pudo leer el PDF."}), 400
+                try:
+                    analisis["encabezado"] = extraer_encabezado(ruta)
+                except Exception:
+                    analisis["encabezado"] = None
+            cache_guias.guardar(clave, pdf_bytes, analisis)
+        return jsonify({**analisis, "clave": clave, "url_pagina": url_for("emitir_pagina", clave=clave, indice=0)})
+
+    @app.get("/emitir/pagina/<clave>/<int:indice>.jpg")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def emitir_pagina(clave: str, indice: int):
+        contenido = cache_guias.pagina_jpeg(clave, indice) if clave.isalnum() else None
+        if contenido is None:
+            return ("", 404)
+        return Response(contenido, mimetype="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
 
     @app.post("/emitir/previsualizar")
     @requiere_sesion

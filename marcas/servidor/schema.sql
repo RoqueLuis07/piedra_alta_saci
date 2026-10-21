@@ -279,6 +279,8 @@ create index if not exists idx_escaneos_orden on escaneos(carpeta, orden);
 
 -- De qué página salió cada marca (para verla en su contexto y comprobar que es una marca de verdad).
 alter table marcas add column if not exists escaneo_id bigint references escaneos(id);
+-- Huella de la imagen para la búsqueda por dibujo (ver marcas/servidor/similitud.py); se calcula sola.
+alter table marcas add column if not exists huella bytea;
 alter table marcas add column if not exists origen_carpeta text;
 alter table marcas add column if not exists origen_pagina text;
 create index if not exists idx_marcas_escaneo on marcas(escaneo_id);
