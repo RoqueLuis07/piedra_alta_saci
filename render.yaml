@@ -1,0 +1,59 @@
+# Blueprint de Render para Piedra Alta (web + Postgres + respaldo diario a GitHub).
+# Guía paso a paso: docs/despliegue_render.md
+#
+# Los identificadores de plan son los de Render (se verificaron en su documentación):
+#   web / cron:  0.5c-512mb (≈ Starter, US$7/mes)  ·  1c-2g (≈ Standard, US$25/mes)
+#   Postgres:    0.1c-256mb (≈ Basic-256mb, US$6/mes)  ·  0.5c-1g (≈ Basic-1gb, US$19/mes)
+# El plan "free" NO sirve para producción: el servicio se duerme a los 15 min (un minuto para
+# despertar) y la base gratuita se borra a los 30 días.
+
+databases:
+  - name: piedra-alta-db
+    databaseName: piedra_alta
+    user: piedra_alta
+    region: virginia            # la región más cercana a Paraguay de las que ofrece Render (no se puede cambiar luego)
+    plan: 0.1c-256mb            # si se nota lenta con el catálogo cargado, pasar a 0.5c-1g
+    diskSizeGB: 5               # 1 o múltiplo de 5; se puede aumentar, no reducir. Catálogo + escaneos ≈ 0,4 GB; cada PDF emitido pesa 2-7 MB
+
+services:
+  - type: web
+    name: piedra-alta
+    runtime: python             # la versión sale de .python-version (3.11)
+    region: virginia
+    plan: 0.5c-512mb            # si aparecen reinicios por memoria al emitir PDF grandes, pasar a 1c-2g
+    branch: escaneos            # rama con todo lo nuevo; cuando se fusione el PR #2, cambiar a la rama principal
+    autoDeployTrigger: commit
+    buildCommand: pip install -r requirements.txt
+    # Mismo arranque que el Procfile: aplica el esquema (idempotente) y levanta gunicorn.
+    startCommand: flask --app wsgi crear-esquema && gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /login
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: piedra-alta-db
+          property: connectionString
+      - key: FLASK_SECRET_KEY
+        generateValue: true     # clave aleatoria distinta de la de Railway: las sesiones abiertas se cierran
+
+  # Respaldo diario a un repositorio privado de GitHub (mismo script que usaba Railway).
+  # Cuesta poco (se factura por minuto de ejecución, con un mínimo mensual). Si no se quiere, borrar este bloque.
+  - type: cron
+    name: piedra-alta-respaldo
+    runtime: python
+    region: virginia
+    plan: 0.5c-512mb
+    branch: escaneos
+    schedule: "0 8 * * *"       # 08:00 UTC todos los días
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/respaldo_a_github.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: piedra-alta-db
+          property: connectionString
+      - key: BACKUP_REPO
+        value: RoqueLuis07/piedra-alta-respaldos
+      - key: BACKUP_BRANCH
+        value: main
+      - key: GITHUB_TOKEN
+        sync: false             # Render lo pide al crear el Blueprint; nunca se guarda en el repo

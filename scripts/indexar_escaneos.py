@@ -274,7 +274,8 @@ def main() -> int:
         for linea in indice.read_text(encoding="utf-8").splitlines():
             if linea.strip():
                 d = json.loads(linea)
-                hechas.add((d["carpeta"], d["archivo"]))
+                if "error" not in d:                       # un error NO cuenta como hecho: se reintenta
+                    hechas.add((d["carpeta"], d["archivo"]))
     pendientes = [p for p in listar_paginas(args.escaneos) if (p["carpeta"], p["archivo"]) not in hechas]
     if args.limite:
         pendientes = pendientes[: args.limite]
@@ -290,8 +291,12 @@ def main() -> int:
             try:
                 d = f.result()
             except Exception as exc:                              # una página mala no frena el resto
-                d = {"carpeta": p["carpeta"], "archivo": p["archivo"], "orden": p["orden"], "formato": p["formato"],
-                     "n_marcas": p["n_marcas"], "error": f"{type(exc).__name__}: {exc}"[:200]}
+                # Los errores van a un archivo aparte (no al índice): así un corte del proceso
+                # no deja filas de error que parezcan páginas ya leídas.
+                with open(args.salida / "errores.jsonl", "a", encoding="utf-8") as fe:
+                    fe.write(json.dumps({"carpeta": p["carpeta"], "archivo": p["archivo"],
+                                         "error": f"{type(exc).__name__}: {exc}"[:200]}, ensure_ascii=False) + "\n")
+                continue
             salida_idx.write(json.dumps(d, ensure_ascii=False) + "\n")
             salida_idx.flush()
             hechas_ahora += 1

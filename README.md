@@ -52,5 +52,7 @@ traen; el embebido de las pruebas no, y las pruebas lo omiten.
 
 ## Despliegue y cambios
 
-- Cómo desplegar sin riesgo para los datos: [docs/despliegue.md](docs/despliegue.md)
+- Cómo desplegar sin riesgo para los datos (Railway): [docs/despliegue.md](docs/despliegue.md)
+- Desplegar en Render (alternativa, con `render.yaml`): [docs/despliegue_render.md](docs/despliegue_render.md)
+- Guías escaneadas y cómo se cargan: [docs/guias_escaneadas.md](docs/guias_escaneadas.md)
 - Qué cambió respecto de la versión anterior: [docs/cambios_fase1-3.md](docs/cambios_fase1-3.md)
