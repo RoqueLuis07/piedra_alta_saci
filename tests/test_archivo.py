@@ -392,3 +392,24 @@ def test_usuarios_de_demo_se_crean_una_sola_vez(cliente):
         assert all(r[2] is None for r in crear(conexion))                # la segunda vez no cambia nada
     finally:
         db.devolver_conexion(conexion)
+
+
+def test_revision_muestra_las_bajas_automaticas_para_recuperar_las_buenas(cliente):
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute(
+            "INSERT INTO marcas (tipo, estado, motivo_calidad, sospechosa_calidad) "
+            "VALUES ('complementaria', 'baja', 'no_es_marca:anulacion (91 % recta)', true) RETURNING id, codigo"
+        )
+        fila = cur.fetchone()
+    conexion.commit()
+    db.devolver_conexion(conexion)
+
+    pagina = cliente.get("/revision?ver=bajas").get_data(as_text=True)
+    assert fila["codigo"] in pagina and "SACADAS POR EL DETECTOR" in pagina
+    assert fila["codigo"] not in cliente.get("/revision").get_data(as_text=True)        # no está en «por revisar»
+    r = cliente.post(f"/marcas/{fila['id']}/revision", json={"accion": "aprobar"})      # recuperada: era buena
+    assert r.status_code == 200 and _situacion(fila["id"]) == ("activa", True)
+    assert fila["codigo"] not in cliente.get("/revision?ver=bajas").get_data(as_text=True)

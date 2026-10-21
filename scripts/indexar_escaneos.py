@@ -141,6 +141,7 @@ def extraer_campos(formato: str, lineas: list[dict], alto: int) -> dict:
                 ]
                 if mejores:
                     campos["propietario"] = mejores[0]["texto"].strip()
+                    campos["caja_propietario"] = mejores[0]["caja"]
                 break
         for t, l in norm:
             m = re.match(r"ESTABLECIMIENTO[:\.]?(\d{6,12})", t)
@@ -206,6 +207,30 @@ def _iniciar_trabajador(hilos: int):
     _motor = RapidOCR()
 
 
+def _nombre_con_espacios(im, tam_ocr, caja, leido: str) -> str:
+    """El OCR de toda la página junta las palabras de un nombre («HUGOALBERTOFRANCO»).
+    Releyendo sólo esa línea, recortada del original en alta resolución y estirada a lo
+    ancho, aparecen los espacios («HUGO ALBERTO FRANCO»)."""
+    import numpy as np
+
+    esc = im.size[0] / tam_ocr[0]
+    xs, ys = [p[0] for p in caja], [p[1] for p in caja]
+    margen = 6
+    recorte = im.crop((max(0, int((min(xs) - margen) * esc)), max(0, int((min(ys) - margen) * esc)),
+                       min(im.size[0], int((max(xs) + margen) * esc)), min(im.size[1], int((max(ys) + margen) * esc))))
+    estirado = recorte.resize((int(recorte.size[0] * 1.6), recorte.size[1]))
+    resultado, _ = _motor(np.array(estirado))
+    if not resultado:
+        return leido
+    trozos = sorted(resultado, key=lambda r: min(p[0] for p in r[0]))
+    nuevo = " ".join(r[1].strip() for r in trozos).strip()
+    # sólo se acepta si dice lo mismo que la lectura original (sin contar espacios)
+    solo = lambda t: "".join(ch for ch in t.upper() if ch.isalpha())
+    a, b = solo(leido), solo(nuevo)
+    parecido = sum(1 for x, y in zip(a, b) if x == y) / max(len(a), len(b), 1)
+    return nuevo if nuevo and parecido >= 0.85 else leido
+
+
 def procesar(pagina: dict, salida: str) -> dict:
     import numpy as np
 
@@ -220,6 +245,9 @@ def procesar(pagina: dict, salida: str) -> dict:
     lineas = [{"texto": r[1], "caja": [[float(x), float(y)] for x, y in r[0]], "conf": float(r[2])}
               for r in (resultado or [])]
     campos = extraer_campos(pagina["formato"], lineas, ocr.size[1])
+    caja = campos.pop("caja_propietario", None)
+    if caja and campos.get("propietario"):
+        campos["propietario"] = _nombre_con_espacios(im, ocr.size, caja, campos["propietario"])
     return {
         "carpeta": pagina["carpeta"], "archivo": pagina["archivo"], "orden": pagina["orden"],
         "formato": pagina["formato"], "n_marcas": pagina["n_marcas"], "imagen": f"imagenes/{base}.jpg",

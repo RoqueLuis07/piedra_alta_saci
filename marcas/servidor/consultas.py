@@ -917,13 +917,20 @@ def cambiar_revision_marca(
     }
 
 
+def contar_bajas_automaticas(conexion) -> int:
+    """Marcas que el detector sacó del catálogo (estado baja) y que conviene mirar por si alguna era buena."""
+    with conexion.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM marcas WHERE estado = 'baja' AND activo AND motivo_calidad LIKE 'no_es_marca:%'")
+        return cur.fetchone()["n"]
+
+
 def contar_pendientes_revision(conexion) -> int:
     with conexion.cursor() as cur:
         cur.execute("SELECT count(*) AS n FROM marcas WHERE estado = 'revisar' AND activo")
         return cur.fetchone()["n"]
 
 
-def motivos_pendientes(conexion) -> list[dict]:
+def motivos_pendientes(conexion, estado: str = "revisar") -> list[dict]:
     """Cuántas marcas por revisar hay por cada motivo (para filtrar la pantalla de
     Revisión): el motivo sin el detalle entre paréntesis."""
     with conexion.cursor() as cur:
@@ -931,9 +938,10 @@ def motivos_pendientes(conexion) -> list[dict]:
             """
             SELECT split_part(motivo_calidad, ' (', 1) AS motivo, count(*) AS n
             FROM marcas
-            WHERE estado = 'revisar' AND activo AND motivo_calidad IS NOT NULL
+            WHERE estado = %s AND activo AND motivo_calidad IS NOT NULL
             GROUP BY 1 ORDER BY n DESC
-            """
+            """,
+            (estado,),
         )
         return cur.fetchall()
 

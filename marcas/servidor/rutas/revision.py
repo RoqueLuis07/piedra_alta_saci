@@ -10,6 +10,7 @@ from marcas.servidor.consultas import (
     buscar_marcas,
     cambiar_revision_lote,
     cambiar_revision_marca,
+    contar_bajas_automaticas,
     contar_pendientes_revision,
     motivos_pendientes,
     restaurar_revision_lote,
@@ -26,14 +27,14 @@ def registrar(app) -> None:
     @requiere_rol("administrador", "operador")
     def revision():
         conexion = conexion_actual()
-        ver = "todas" if request.args.get("ver") == "todas" else "pendientes"
+        ver = request.args.get("ver") if request.args.get("ver") in ("todas", "bajas") else "pendientes"
         tipo = request.args.get("tipo") or None
         texto = request.args.get("q") or None
         motivo = request.args.get("motivo") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
         marcas, total = buscar_marcas(
             conexion, texto, pagina=pagina, por_pagina=POR_PAGINA_REVISION,
-            estado="revisar" if ver == "pendientes" else None, tipo=tipo,
+            estado={"pendientes": "revisar", "bajas": "baja"}.get(ver), tipo=tipo,
             motivo=motivo,
         )
         for m in marcas:
@@ -41,7 +42,8 @@ def registrar(app) -> None:
         return render_template(
             "revision.html", activo="buscar", perfil=perfil_actual(), marcas=marcas, total=total,
             pagina=pagina, por_pagina=POR_PAGINA_REVISION, ver=ver, tipo=tipo or "", texto=texto or "",
-            motivo=motivo or "", motivos=motivos_pendientes(conexion),
+            motivo=motivo or "", motivos=motivos_pendientes(conexion, "baja" if ver == "bajas" else "revisar"),
+            bajas_auto=contar_bajas_automaticas(conexion),
             pendientes=contar_pendientes_revision(conexion),
         )
 

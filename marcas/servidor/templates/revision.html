@@ -43,6 +43,7 @@
   <div class="modos">
     <div class="segmento" role="tablist">
       <a href="{{ url_for('revision', ver='pendientes', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'pendientes' }}">Por revisar <span class="cuenta" id="cuenta-pendientes">{{ pendientes }}</span></a>
+      <a href="{{ url_for('revision', ver='bajas', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'bajas' }}" title="Marcas que el detector sacó del catálogo: por si alguna era buena">Sacadas por el detector <span class="cuenta" style="background: var(--borde-suave); color: var(--texto);">{{ bajas_auto }}</span></a>
       <a href="{{ url_for('revision', ver='todas', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'todas' }}">Todas las marcas</a>
     </div>
     <form method="get" action="{{ url_for('revision') }}" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
@@ -65,7 +66,7 @@
 
   <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;">
     <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
-      {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% endif %}{% if motivo %} · {{ motivo|replace('no_es_marca:', '')|replace('_', ' ')|upper }}{% endif %} · MOSTRANDO <span id="visibles">{{ marcas|length }}</span>
+      {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% elif ver == 'bajas' %} SACADAS POR EL DETECTOR{% endif %}{% if motivo %} · {{ motivo|replace('no_es_marca:', '')|replace('_', ' ')|upper }}{% endif %} · MOSTRANDO <span id="visibles">{{ marcas|length }}</span>
     </div>
     {% if marcas %}
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
@@ -142,7 +143,11 @@
     tarjeta.querySelector('[data-accion=aprobar]').disabled = estado === 'activa';
     tarjeta.querySelector('[data-accion=baja]').disabled = estado === 'baja';
   }
-  function saleDeLaLista(estado, activo) { return VER === 'pendientes' ? (estado !== 'revisar' || !activo) : !activo; }
+  function saleDeLaLista(estado, activo) {
+    if (VER === 'pendientes') return estado !== 'revisar' || !activo;
+    if (VER === 'bajas') return estado !== 'baja' || !activo;
+    return !activo;
+  }
   function actualizarVista(tarjeta, estado, activo) {
     pintar(tarjeta, estado, activo);
     tarjeta.style.display = saleDeLaLista(estado, activo) ? 'none' : '';
