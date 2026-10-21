@@ -1,2 +1,6 @@
 -r requirements.txt
 pytest>=8.0
+# sólo lo usa tests/test_guia.py
+opencv-python-headless>=4.9
+# Postgres embebido para tests/test_archivo.py
+pixeltable-pgserver>=0.6

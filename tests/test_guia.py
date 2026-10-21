@@ -338,35 +338,25 @@ def test_completar_venta_no_toca_el_rubro3(guia_venta, marcas, tmp_path):
     assert np.array_equal(recorte_antes, recorte_despues)
 
 
-def test_extraer_monto_total_lee_la_boleta_de_pago(tmp_path):
-    """Comprobado contra ocho guías reales de SENACSA: el único monto que
-    trae el documento oficial está en la Boleta de Pago ("Monto a Pagar"),
-    nunca en el Rubro 2 ni en el Rubro 7 -- ahí sólo se identifica a las
-    partes."""
-    from reportlab.pdfgen import canvas as rl_canvas
+def test_palabras_a_numero():
+    from marcas.pdf.guia import palabras_a_numero
 
-    from marcas.pdf.guia import extraer_monto_total
-
-    pdf = tmp_path / "boleta.pdf"
-    c = rl_canvas.Canvas(str(pdf), pagesize=(612, 1008))
-    c.drawString(40, 900, "BOLETA DE PAGO - GUIA DE TRASLADO")
-    c.drawString(40, 700, "Monto a Pagar 1.144.000")
-    c.drawString(40, 680, "Son Guaraníes: UN MILLON CIENTO CUARENTA Y CUATRO MIL .")
-    c.save()
-
-    assert extraer_monto_total(pdf) == 1144000
+    assert palabras_a_numero("SESENTA Y SEIS") == 66
+    assert palabras_a_numero("cincuenta y dos") == 52
+    assert palabras_a_numero("CIENTO VEINTITRÉS") == 123
+    assert palabras_a_numero("VEINTIUN") == 21
+    assert palabras_a_numero("DIEZ") == 10
+    assert palabras_a_numero("algo raro") is None
+    assert palabras_a_numero("") is None
 
 
-def test_extraer_monto_total_ninguno_si_no_hay_boleta(tmp_path):
-    """Nunca inventa un valor: si el documento no trae Boleta de Pago (u
-    otro formato), devuelve None en vez de un monto adivinado."""
-    from reportlab.pdfgen import canvas as rl_canvas
+def test_cupo_del_anexo_es_por_copia_no_la_suma_de_las_cuatro(guia_venta):
+    from marcas.pdf.guia import analizar_venta, hojas_de_anexo
 
-    from marcas.pdf.guia import extraer_monto_total
-
-    pdf = tmp_path / "sin_boleta.pdf"
-    c = rl_canvas.Canvas(str(pdf), pagesize=(612, 1008))
-    c.drawString(40, 900, "GUIA DE TRASLADO Y TRANSFERENCIA DE GANADO")
-    c.save()
-
-    assert extraer_monto_total(pdf) is None
+    hojas = hojas_de_anexo(guia_venta)
+    por_copia = {}
+    for h in hojas:
+        por_copia[h.copia] = por_copia.get(h.copia, 0) + len(h.libres)
+    assert len(por_copia) > 1
+    assert analizar_venta(guia_venta)["complementarias_libres_anexo"] == min(por_copia.values())
+    assert analizar_venta(guia_venta)["complementarias_libres_anexo"] < sum(len(h.libres) for h in hojas)

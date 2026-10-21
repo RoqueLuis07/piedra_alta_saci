@@ -6,13 +6,6 @@
 
 {% block contenido %}
 <div class="contenido">
-  {% if cambio_pendiente %}
-  <div class="aviso-pendiente">
-    Hay una modificación de esta marca esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en|fecha_hora }}).
-    Los datos de abajo son los vigentes hasta que se resuelva en <a href="{{ url_for('aprobaciones') }}">Aprobaciones</a>.
-  </div>
-  {% endif %}
-
   {% if ficha.marca.activo == false %}
   <div class="aviso-pendiente">
     Esta marca está oculta -- no aparece en el catálogo ni en las búsquedas normales.
@@ -137,9 +130,6 @@
         </details>
         <div class="campo-edicion"><label>Reemplazar imagen SVG</label><input type="file" name="nuevo_svg" accept="image/svg+xml"></div>
         <button type="submit" class="boton boton-primario">Guardar cambios</button>
-        {% if perfil.rol == 'administrador' %}
-        <p class="sub" style="margin-top: 10px;">Como Administrador, esto queda propuesto y necesita que otra persona lo apruebe en Aprobaciones antes de aplicarse.</p>
-        {% endif %}
       </form>
     </aside>
     {% endif %}

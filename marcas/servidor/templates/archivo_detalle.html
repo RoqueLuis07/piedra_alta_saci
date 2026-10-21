@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set es_venta = documento.tipo == 'venta' %}
+{% set d = documento.datos %}
+{% block titulo %}{{ 'Venta' if es_venta else 'Guía' }} {{ documento.numero_guia or documento.id }} · Archivo{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · ARCHIVO DE DOCUMENTOS EMITIDOS{% endblock %}
+{% block titulo_pagina %}{{ 'Venta' if es_venta else 'Guía' }} {{ documento.numero_guia or ('#' ~ documento.id) }}{% endblock %}
+{% block meta_encabezado %}
+<a href="{{ url_for('archivo') }}">&larr; Volver al archivo</a>
+&nbsp;·&nbsp;
+<a href="{{ url_for('documento_pdf', documento_id=documento.id, descargar=1) }}">Descargar PDF &darr;</a>
+&nbsp;·&nbsp;
+<a href="{{ url_for('ver_guia', operacion_id=documento.operacion_id) }}">Ver operación actual &rarr;</a>
+{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <div class="aviso-pendiente" style="margin-top: 18px;">
+    Documento emitido el {{ documento.emitido_en|fecha_hora }}{% if documento.emitido_por_nombre %} por {{ documento.emitido_por_nombre }}{% endif %}.
+    Los datos de abajo son los que tenía la operación en ese momento; si se editó después, la operación actual puede diferir.
+  </div>
+
+  <div style="display: flex; gap: 32px; flex-wrap: wrap; margin-top: 20px; align-items: flex-start;">
+    <div style="flex: 1 1 360px; min-width: 0;">
+      <h2 class="subtitulo">{{ 'Datos de la venta' if es_venta else 'Datos de la guía' }}</h2>
+      <div class="campo-fila"><div class="campo-etiqueta">{{ 'N.º de venta' if es_venta else 'N.º de guía' }}</div><div class="campo-valor mono">{{ d.numero_guia or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Fecha del formulario</div><div class="campo-valor mono">{{ d.fecha or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Vendedor</div><div class="campo-valor">{{ d.vendedor_nombre or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">CI / RUC vendedor</div><div class="campo-valor mono">{{ d.vendedor_documento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Establecimiento</div><div class="campo-valor">{{ d.vendedor_establecimiento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Código de establecimiento</div><div class="campo-valor mono">{{ d.vendedor_establecimiento_codigo or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Comprador</div><div class="campo-valor">{{ d.comprador_nombre or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">CI / RUC comprador</div><div class="campo-valor mono">{{ d.comprador_documento or '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Cantidad</div><div class="campo-valor mono">{{ d.cantidad_animales if d.cantidad_animales is not none else '—' }}</div></div>
+      <div class="campo-fila"><div class="campo-etiqueta">Categoría</div><div class="campo-valor">{{ d.categoria_animales or '—' }}</div></div>
+      {% if d.revisar %}
+      <div class="campo-fila"><div class="campo-etiqueta">Notas de revisar</div><div class="campo-valor">{{ d.revisar }}</div></div>
+      {% endif %}
+
+      <h2 class="subtitulo" style="margin-top: 24px;">Marcas estampadas ({{ documento.marcas|length }})</h2>
+      {% for m in documento.marcas %}
+      <div class="campo-fila">
+        <div class="campo-etiqueta"><a class="mono" href="{{ url_for('ver_marca', codigo=m.codigo) }}">{{ m.codigo }}</a></div>
+        <div class="campo-valor">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '—') }}{% if m.descripcion %} · {{ m.descripcion }}{% endif %}</div>
+      </div>
+      {% else %}
+      <p class="sub">Sin marcas registradas.</p>
+      {% endfor %}
+    </div>
+
+    <aside style="flex: 1 1 420px; min-width: 0;">
+      <h2 class="subtitulo">Documento emitido</h2>
+      <iframe src="{{ url_for('documento_pdf', documento_id=documento.id) }}" title="PDF emitido" style="width: 100%; height: 720px; border: 1px solid var(--borde-suave); background: #fff;"></iframe>
+    </aside>
+  </div>
+</div>
+{% endblock %}

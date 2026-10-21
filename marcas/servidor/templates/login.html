@@ -154,7 +154,7 @@
         <div class="form-panel">
           <div class="form-etiqueta">Registro de marcas</div>
           <h1>Ingresar</h1>
-          <p class="bajada">Accedé con tu usuario para consultar el registro de marcas, guías y aprobaciones.</p>
+          <p class="bajada">Accedé con tu usuario para consultar el registro de marcas y guías.</p>
           {% if error %}<div class="error">{{ error }}</div>{% endif %}
           <form method="post" action="{{ url_for('login_post') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

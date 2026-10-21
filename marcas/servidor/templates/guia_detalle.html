@@ -6,18 +6,11 @@
 {% block meta_encabezado %}
 <a href="{{ url_for('ventas' if es_venta else 'guias') }}">&larr; Volver al listado</a>
 &nbsp;·&nbsp;
-<a href="{{ url_for('imprimir_venta' if es_venta else 'imprimir_guia', operacion_id=operacion.id) }}">{{ 'Imprimir venta' if es_venta else 'Imprimir guía' }} &rarr;</a>
+<a href="{{ url_for('emitir', operacion=operacion.id) }}">Emitir PDF &rarr;</a>
 {% endblock %}
 
 {% block contenido %}
 <div class="contenido">
-  {% if cambio_pendiente %}
-  <div class="aviso-pendiente">
-    Hay una modificación de esta guía esperando aprobación (propuesta el {{ cambio_pendiente.propuesto_en|fecha_hora }}).
-    Los datos de abajo son los vigentes hasta que se apruebe en <a href="{{ url_for('aprobaciones') }}">Aprobaciones</a>.
-  </div>
-  {% endif %}
-
   {% if operacion.activo == false %}
   <div class="aviso-pendiente">
     Esta {{ 'venta' if es_venta else 'guía' }} está oculta -- no aparece en el listado ni en las búsquedas normales.
@@ -79,23 +72,10 @@
           <div class="campo-edicion" style="flex: 1 1 200px;"><label>Categoría (original del formulario)</label><input type="text" name="categoria_animales_original" value="{{ operacion.categoria_animales_original or '' }}"></div>
         </div>
 
-        <h2 class="subtitulo" style="margin-top: 24px;">Monto</h2>
-        {% if es_venta %}
-        <p class="sub" style="margin: 0 0 10px;">Se lee automáticamente del PDF de SENACSA (Boleta de Pago) al generar el documento de la venta -- no se carga a mano.</p>
-        <div class="campo-fila"><div class="campo-etiqueta">Monto total (Gs.)</div><div class="campo-valor mono">{{ '{:,}'.format(operacion.monto_total).replace(',', '.') if operacion.monto_total is not none else '— (todavía no se generó el PDF)' }}</div></div>
-        {% else %}
-        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-          <div class="campo-edicion" style="flex: 1 1 200px;"><label>Monto total (Gs.)</label><input type="number" name="monto_total" min="0" step="1" value="{{ operacion.monto_total if operacion.monto_total is not none else '' }}"></div>
-        </div>
-        {% endif %}
-
         <h2 class="subtitulo" style="margin-top: 24px;">Revisión</h2>
         <div class="campo-edicion"><label>Notas de revisar (vacío si está todo bien)</label><textarea name="revisar" rows="2">{{ operacion.revisar or '' }}</textarea></div>
 
         <button type="submit" class="boton boton-primario" style="margin-top: 8px;">Guardar cambios</button>
-        {% if perfil.rol == 'administrador' %}
-        <p class="sub" style="margin-top: 10px;">Como Administrador, esto queda propuesto y necesita que otra persona lo apruebe en Aprobaciones antes de aplicarse.</p>
-        {% endif %}
       </form>
       {% else %}
       <h2 class="subtitulo">{{ 'Datos de la venta' if es_venta else 'Datos de la guía' }}</h2>
@@ -107,7 +87,6 @@
       <div class="campo-fila"><div class="campo-etiqueta">Comprador</div><div class="campo-valor">{{ operacion.comprador_nombre or '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">Cantidad</div><div class="campo-valor mono">{{ operacion.cantidad_animales if operacion.cantidad_animales is not none else '—' }}</div></div>
       <div class="campo-fila"><div class="campo-etiqueta">Categoría</div><div class="campo-valor">{{ operacion.categoria_animales or '—' }}</div></div>
-      <div class="campo-fila"><div class="campo-etiqueta">Monto total (Gs.)</div><div class="campo-valor mono">{{ '{:,}'.format(operacion.monto_total).replace(',', '.') if operacion.monto_total is not none else '—' }}</div></div>
       {% endif %}
     </div>
 
@@ -129,7 +108,7 @@
 
       {% if es_venta %}
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">
-        <p class="sub">En una venta no se cargan marcas nuevas acá: se eligen las que ya tenés en el catálogo al <a href="{{ url_for('imprimir_venta', operacion_id=operacion.id) }}">generar el PDF de la venta</a>.</p>
+        <p class="sub">Las marcas de una venta se dibujan o se eligen del catálogo al <a href="{{ url_for('emitir', operacion=operacion.id) }}">emitir el PDF</a>.</p>
       </div>
       {% elif perfil.rol in ('operador', 'administrador') %}
       <div style="margin-top: 20px; border-top: 1px solid var(--texto); padding-top: 14px;">

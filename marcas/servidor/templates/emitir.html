@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block titulo %}Emitir PDF{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · EMITIR PDF{% endblock %}
+{% block titulo_pagina %}Emitir PDF{% endblock %}
+{% block meta_encabezado %}
+{% if operacion %}Operación {{ operacion.numero_guia or ('#' ~ operacion.id) }} · <a href="{{ url_for('ver_guia', operacion_id=operacion.id) }}">ver detalle</a>{% else %}Guía de Traslado nueva{% endif %}
+{% endblock %}
+
+{% block head %}
+<style>
+  .emitir { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 32px; margin-top: 22px; align-items: start; }
+  @media (max-width: 1000px) { .emitir { grid-template-columns: minmax(0, 1fr); } }
+  .paso { border-top: 1px solid var(--texto); padding-top: 14px; margin-bottom: 26px; }
+  .paso-titulo { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; font-family: 'Source Serif 4', serif; font-size: 17px; font-weight: 600; }
+  .paso-num { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; background: var(--verde-oscuro); color: var(--sobre-oscuro); font: 600 12px 'IBM Plex Mono', monospace; flex: none; }
+  .paso.bloqueado { opacity: 0.45; pointer-events: none; }
+  .zona-pdf { display: block; border: 2px dashed var(--borde-suave); padding: 22px; text-align: center; cursor: pointer; background: var(--superficie); }
+  .zona-pdf.arrastrando, .zona-pdf:hover { border-color: var(--verde-claro); }
+  .zona-pdf strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .cupo { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
+  .cupo span { border: 1px solid var(--borde-suave); padding: 4px 10px; font: 500 11.5px 'IBM Plex Mono', monospace; background: var(--superficie); }
+  .cupo span.lleno { border-color: var(--aviso-texto); color: var(--aviso-texto); background: var(--aviso-fondo); }
+  .lienzo-marco { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+  .lienzo-marco canvas { width: 300px; max-width: 100%; aspect-ratio: 1; border: 1px solid var(--texto); background: #fff; touch-action: none; cursor: crosshair; box-sizing: content-box; }
+  .lienzo-acciones { display: flex; flex-direction: column; gap: 8px; min-width: 150px; }
+  .lienzo-acciones .boton { min-height: 38px; padding: 8px 12px; font-size: 12px; }
+  .lienzo-acciones label { font-size: 11.5px; color: var(--sobre-claro); }
+  .bandeja { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin-top: 12px; }
+  .ficha { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px; position: relative; }
+  .ficha img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border: 1px solid var(--borde-fina); display: block; }
+  .ficha .n { position: absolute; top: 4px; left: 4px; background: var(--verde-oscuro); color: var(--sobre-oscuro); font: 600 10px 'IBM Plex Mono', monospace; padding: 1px 5px; }
+  .ficha .pie { font-size: 11px; margin-top: 6px; line-height: 1.35; }
+  .ficha .quitar { position: absolute; top: 2px; right: 2px; border: 0; background: rgba(255,255,255,0.9); color: #14181A; cursor: pointer; width: 22px; height: 22px; font-size: 14px; line-height: 1; }
+  .ficha label { display: flex; gap: 5px; align-items: center; font-size: 10.5px; color: var(--texto-secundario); margin-top: 4px; cursor: pointer; }
+  .ficha label input { width: auto; }
+  .vacio { padding: 16px; border: 1px dashed var(--borde-suave); color: var(--texto-secundario); font-size: 12.5px; grid-column: 1 / -1; }
+  .vista { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 12px; min-height: 280px; max-height: 78vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; transition: opacity .15s; }
+  .vista img { width: 100%; border: 1px solid var(--borde-fina); }
+  .campos-doc { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .opciones { display: flex; gap: 8px; margin-bottom: 12px; }
+  .opciones label { flex: 1; border: 1px solid var(--texto); padding: 9px 12px; cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; }
+  .opciones input { position: absolute; opacity: 0; }
+  .opciones label:has(input:checked) { background: var(--verde-oscuro); color: var(--sobre-oscuro); border-color: var(--verde-oscuro); }
+  .barra-generar { position: sticky; bottom: 0; background: var(--fondo); border-top: 1px solid var(--texto); padding: 14px 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .barra-generar .boton-primario { min-width: 220px; font-size: 14px; }
+  #modal-catalogo { display: none; position: fixed; inset: 0; background: rgba(20,24,26,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  #modal-catalogo .caja { background: var(--superficie); width: 100%; max-width: 640px; max-height: 84vh; overflow-y: auto; padding: 22px; border: 1px solid var(--texto); }
+  .grilla-catalogo { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 12px; }
+  .grilla-catalogo button { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 6px; cursor: pointer; text-align: center; color: var(--texto); }
+  .grilla-catalogo button:hover { border-color: var(--verde-claro); }
+  .grilla-catalogo img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; display: block; }
+  .grilla-catalogo .cod { font: 500 11px 'IBM Plex Mono', monospace; margin-top: 4px; }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="contenido" style="max-width: 1400px;">
+  <p style="max-width: 80ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Subí la Guía de Traslado de SENACSA, dibujá las marcas a mano (o elegí las del catálogo) y generá el PDF.
+    Se completan primero las casillas libres del Rubro 2 y, si sobran marcas, el Anexo -- en las cuatro copias.
+    Todo lo que emitís queda guardado en <a href="{{ url_for('archivo') }}">Documentos → Archivo</a>.
+  </p>
+
+  <div class="emitir">
+    <section id="columna-pasos">
+      <div class="paso">
+        <h2 class="paso-titulo"><span class="paso-num">1</span> Guía de SENACSA</h2>
+        <label class="zona-pdf" id="zona-pdf" for="campo-pdf">
+          <strong id="zona-pdf-titulo">Elegí o arrastrá el PDF de la guía</strong>
+          <span class="sub" id="zona-pdf-sub">El PDF oficial tal como lo descargaste de SENACSA.</span>
+        </label>
+        <input type="file" id="campo-pdf" accept="application/pdf" style="display: none;">
+        <div id="aviso-pdf" class="error" style="display: none;"></div>
+        <div class="cupo" id="cupo" style="display: none;"></div>
+      </div>
+
+      <div class="paso bloqueado" id="paso-datos">
+        <h2 class="paso-titulo"><span class="paso-num">2</span> Datos del documento</h2>
+        {% if operacion %}
+        <p class="sub" style="margin: 0;">Este PDF se asocia a la operación {{ operacion.numero_guia or ('#' ~ operacion.id) }} ({{ 'venta' if operacion.tipo_operacion == 'venta' else 'compra' }}); los datos ya están cargados.</p>
+        {% else %}
+        <p class="sub" style="margin: 0 0 12px;">Se leyeron del PDF; corregí lo que haga falta.</p>
+        <div class="opciones" role="radiogroup" aria-label="Tipo de operación">
+          <label><input type="radio" name="tipo_operacion" value="compra" checked> Compra</label>
+          <label><input type="radio" name="tipo_operacion" value="venta"> Venta</label>
+        </div>
+        <div class="campos-doc">
+          <div class="campo-edicion"><label for="f-numero">N.º de guía</label><input type="text" id="f-numero"></div>
+          <div class="campo-edicion"><label for="f-vendedor">Vendedor</label><input type="text" id="f-vendedor" style="font-family: inherit;"></div>
+          <div class="campo-edicion"><label for="f-comprador">Comprador</label><input type="text" id="f-comprador" style="font-family: inherit;"></div>
+          <div class="campo-edicion"><label for="f-cantidad">Cantidad de animales</label><input type="number" id="f-cantidad" min="0"></div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="paso bloqueado" id="paso-dominante">
+        <h2 class="paso-titulo"><span class="paso-num">3</span> Marca dominante <span class="sub" style="font-weight: 400;">(opcional)</span></h2>
+        <p class="sub" id="nota-dominante" style="margin: 0 0 10px;">Si el PDF ya trae la dominante dibujada, no se pisa. Dibujala en el cuadro de abajo y tocá «Usar como dominante».</p>
+        <div id="dominante-elegida"></div>
+        <button type="button" class="boton" id="btn-catalogo-dom" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">Elegir la dominante del catálogo</button>
+      </div>
+
+      <div class="paso bloqueado" id="paso-marcas">
+        <h2 class="paso-titulo"><span class="paso-num">4</span> Marcas complementarias</h2>
+        <p class="sub" style="margin: 0 0 12px;">Dibujá la marca como en el papel y tocá «Agregar». Cada una entra en la siguiente casilla libre.</p>
+        <div class="lienzo-marco panel-dibujo">
+          <canvas id="lienzo" width="480" height="480" aria-label="Cuadro para dibujar la marca"></canvas>
+          <div class="lienzo-acciones">
+            <button type="button" class="boton boton-primario" id="btn-agregar">+ Agregar como complementaria</button>
+            <button type="button" class="boton" id="btn-dominante">Usar como dominante</button>
+            <button type="button" class="boton" id="btn-deshacer">Deshacer trazo</button>
+            <button type="button" class="boton" id="btn-borrar">Borrar todo</button>
+            <label>Grosor
+              <select id="grosor" style="width: 100%;">
+                <option value="5">Fino</option>
+                <option value="9" selected>Medio</option>
+                <option value="16">Grueso</option>
+              </select>
+            </label>
+            <hr style="width: 100%; border: 0; border-top: 1px solid var(--borde-suave); margin: 4px 0;">
+            <button type="button" class="boton" id="btn-catalogo">Buscar en el catálogo</button>
+            <label class="boton" style="display: block; text-align: center; cursor: pointer;">Subir imagen
+              <input type="file" id="campo-imagen" accept="image/png" multiple style="display: none;">
+            </label>
+          </div>
+        </div>
+        <div class="bandeja" id="bandeja"></div>
+      </div>
+
+      <div class="barra-generar">
+        <button type="button" class="boton boton-primario" id="btn-generar" disabled>Generar PDF</button>
+        <span class="sub" id="estado-generar">Subí el PDF para empezar.</span>
+      </div>
+    </section>
+
+    <aside>
+      <h2 class="subtitulo">Vista previa en vivo</h2>
+      <div class="sub" id="vp-estado" style="min-height: 16px; margin-bottom: 8px;"></div>
+      <div class="vista" id="vista"><p class="sub" style="margin: 0;">Acá vas a ver la guía con cada marca estampada.</p></div>
+    </aside>
+  </div>
+</div>
+
+<div id="modal-catalogo" role="dialog" aria-modal="true" aria-label="Buscar en el catálogo">
+  <div class="caja">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+      <h2 class="subtitulo" style="margin: 0; border: 0; padding: 0;">Catálogo de marcas</h2>
+      <button type="button" class="boton" id="cerrar-catalogo" style="min-height: auto; padding: 4px 10px;">Cerrar</button>
+    </div>
+    <input type="text" id="buscador" placeholder="Código, propietario o N.º de guía" style="width: 100%; margin-top: 12px;">
+    <div class="grilla-catalogo" id="resultados"></div>
+  </div>
+</div>
+
+<script>
+  window.EMITIR = {
+    operacionId: {{ operacion.id if operacion else 'null' }},
+    marcasPrevias: {{ marcas_previas | tojson }},
+    urls: {
+      previsualizar: "{{ url_for('emitir_previsualizar') }}",
+      generar: "{{ url_for('emitir_generar') }}",
+      catalogo: "{{ url_for('buscar_marcas_json') }}",
+      archivo: "{{ url_for('archivo') }}"
+    },
+    csrf: "{{ csrf_token() }}"
+  };
+</script>
+<script src="{{ url_for('static', filename='js/emitir.js') }}"></script>
+{% endblock %}

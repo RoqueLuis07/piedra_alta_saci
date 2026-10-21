@@ -2,6 +2,11 @@
 {% block titulo %}Marcas{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · CATÁLOGO DE MARCAS{% endblock %}
 {% block titulo_pagina %}Marcas{% endblock %}
+{% block meta_encabezado %}
+{% if perfil.rol in ('operador', 'administrador') %}
+<a href="{{ url_for('revision') }}">Revisar marcas{% if desglose and desglose.revisar %} ({{ desglose.revisar }} pendientes){% endif %} &rarr;</a>
+{% endif %}
+{% endblock %}
 
 {% block contenido %}
 <div class="contenido">
@@ -42,9 +47,6 @@
   </div>
   {% endif %}
 
-  {% set columnas_disponibles = [('imagen', 'MARCA'), ('codigo', 'CÓDIGO'), ('propietario', 'PROPIETARIO'), ('guia', 'N.º DE GUÍA'), ('vence', 'VENCE'), ('estado', 'ESTADO')] %}
-  {% set mostrar_todas = columnas_visibles is none %}
-
   <div style="display: flex; align-items: flex-start; justify-content: space-between; padding: 14px 0 10px; gap: 16px; border-top: 1px solid var(--borde-suave); margin-top: 12px; flex-wrap: wrap;">
     <div style="display: flex; flex-direction: column; gap: 10px;">
       <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
@@ -53,52 +55,6 @@
         {% else %}
         {{ total }} ASIENTO{{ '' if total == 1 else 'S' }}{% if texto %} · FILTRO "{{ texto|upper }}"{% endif %}
         {% endif %}
-      </div>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-        {% for f in filtros_guardados %}
-        <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--borde-suave); padding: 3px 4px 3px 10px; font-size: 12px;">
-          <a href="{{ url_for('buscar', **f.parametros) }}">{{ f.nombre }}</a>
-          <form method="post" action="{{ url_for('eliminar_filtro_ruta', filtro_id=f.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar este filtro guardado?')">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="volver" value="{{ request.full_path }}">
-            <button type="submit" style="border: 0; background: none; color: var(--texto-secundario); padding: 0 4px; cursor: pointer; font-size: 13px; min-height: auto;" title="Eliminar filtro">&times;</button>
-          </form>
-        </span>
-        {% endfor %}
-        <details>
-          <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">+ Guardar filtro actual</summary>
-          <!--
-            A propósito NO es un <form> aparte: si alguien escribe en el
-            buscador de arriba pero no aprieta "Filtrar" antes de guardar,
-            un formulario separado con sus propios campos ocultos guardaría
-            esos campos vacíos (el valor con el que se renderizó la página),
-            no lo que la persona acaba de tipear -- y el filtro guardado
-            quedaría vacío sin que nadie se entere. Por eso el nombre y el
-            botón están asociados al MISMO <form id="form-filtro-marcas">
-            de arriba vía el atributo "form": al enviarse, viajan los
-            valores que estén en pantalla en ese momento, sean cuales sean.
-          -->
-          <div style="display: flex; gap: 6px; margin-top: 6px; align-items: center;">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" form="form-filtro-marcas">
-            <input type="hidden" name="volver" value="{{ request.full_path }}" form="form-filtro-marcas">
-            <input type="text" name="nombre" form="form-filtro-marcas" placeholder="Nombre del filtro" required style="font-size: 12px; padding: 4px 6px;">
-            <button type="submit" form="form-filtro-marcas" formmethod="post" formaction="{{ url_for('guardar_filtro_ruta', seccion='marcas') }}" class="boton" style="min-height: auto; padding: 4px 10px; font-size: 12px;">Guardar</button>
-          </div>
-        </details>
-        <details>
-          <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">Columnas</summary>
-          <form method="post" action="{{ url_for('actualizar_preferencias_columnas_ruta', seccion='marcas') }}" style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; border: 1px solid var(--borde-suave); padding: 10px; font-size: 12px; background: var(--superficie);">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="volver" value="{{ request.full_path }}">
-            {% for clave, etiqueta in columnas_disponibles %}
-            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-              <input type="checkbox" name="columna" value="{{ clave }}" {% if mostrar_todas or clave in columnas_visibles %}checked{% endif %} style="width: auto;">
-              {{ etiqueta }}
-            </label>
-            {% endfor %}
-            <button type="submit" class="boton boton-primario" style="min-height: auto; margin-top: 4px;">Aplicar</button>
-          </form>
-        </details>
       </div>
     </div>
     <div style="display: flex; gap: 16px; align-items: baseline;">
@@ -112,51 +68,33 @@
   <div class="aviso-pendiente">Mostrando sólo marcas ocultas.</div>
   {% endif %}
 
-  <table class="registro">
-    <thead>
-      <tr>
-        {% for clave, etiqueta in columnas_disponibles %}
-        {% if mostrar_todas or clave in columnas_visibles %}<th>{{ etiqueta }}</th>{% endif %}
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for m in resultados %}
-      <tr onclick="window.location='{{ url_for('ver_marca', codigo=m.codigo) }}'">
-        {% if mostrar_todas or 'imagen' in columnas_visibles %}
-        <td>
-          {% if m.imagen_url %}
-          <img src="{{ m.imagen_url }}" alt="{{ m.codigo }}" width="30" height="30" style="object-fit: contain; display: block; background: #fff; border: 1px solid var(--borde-fina); border-radius: 2px;">
-          {% else %}
-          <span class="sub">—</span>
-          {% endif %}
-        </td>
-        {% endif %}
-        {% if mostrar_todas or 'codigo' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ m.codigo }}</td>{% endif %}
-        {% if mostrar_todas or 'propietario' in columnas_visibles %}
-        <td>
-          <div style="font-weight: 500;">{{ m.propietarios.nombre if m.propietarios else 'Sin identificar' }}</div>
-          <div class="sub">{{ m.propietarios.documento if m.propietarios else '' }}</div>
-        </td>
-        {% endif %}
-        {% if mostrar_todas or 'guia' in columnas_visibles %}
-        <td class="mono" style="white-space: nowrap;">
-          <div>{{ m.operaciones.numero_guia if m.operaciones else '—' }}</div>
-          <div class="sub">{{ (m.operaciones.fecha or '') if m.operaciones else '' }}</div>
-        </td>
-        {% endif %}
-        {% if mostrar_todas or 'vence' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ m.vence_en or '—' }}</td>{% endif %}
-        {% if mostrar_todas or 'estado' in columnas_visibles %}
-        <td>
-          <span class="estado estado-{{ m.estado }}">{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>
-        </td>
-        {% endif %}
-      </tr>
-      {% else %}
-      <tr><td colspan="{{ columnas_visibles|length if not mostrar_todas else 6 }}" style="padding: 20px 0; color: var(--texto-secundario);">Sin resultados.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <style>
+    .galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; margin-top: 8px; }
+    .tarjeta-marca { display: block; border: 1px solid var(--borde-suave); background: var(--superficie); padding: 10px; text-decoration: none; color: var(--texto); }
+    .tarjeta-marca:hover { border-color: var(--verde-claro); background: var(--tabla-hover); }
+    .tarjeta-marca .miniatura { aspect-ratio: 1; background: #fff; border: 1px solid var(--borde-fina); display: flex; align-items: center; justify-content: center; }
+    .tarjeta-marca img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .tarjeta-marca .sin-imagen { font-size: 11px; color: #5B6560; }
+    .tarjeta-marca .cod { font: 600 12.5px 'IBM Plex Mono', monospace; margin-top: 8px; }
+    .tarjeta-marca .detalle { font-size: 11.5px; color: var(--texto-secundario); line-height: 1.4; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+  <div class="galeria">
+    {% for m in resultados %}
+    <a class="tarjeta-marca" href="{{ url_for('ver_marca', codigo=m.codigo) }}">
+      <div class="miniatura">
+        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="Marca {{ m.codigo }}" loading="lazy">{% else %}<span class="sin-imagen">Sin imagen</span>{% endif %}
+      </div>
+      <div class="cod">{{ m.codigo }}</div>
+      <div class="detalle">{{ m.propietarios.nombre if m.propietarios else 'Sin propietario' }}</div>
+      <div class="detalle">
+        {{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}
+        {% if m.estado != 'activa' %}· <span class="estado estado-{{ m.estado }}">{{ {'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>{% endif %}
+      </div>
+    </a>
+    {% else %}
+    <p class="sub" style="grid-column: 1 / -1; padding: 20px 0;">Sin resultados.</p>
+    {% endfor %}
+  </div>
 </div>
 
 <div class="paginado">

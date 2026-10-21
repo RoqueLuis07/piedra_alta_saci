@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block titulo %}Revisión de marcas{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · REVISIÓN DEL CATÁLOGO{% endblock %}
+{% block titulo_pagina %}Revisión de marcas{% endblock %}
+{% block meta_encabezado %}<a href="{{ url_for('buscar') }}">&larr; Volver a Marcas</a>{% endblock %}
+
+{% block head %}
+<style>
+  .modos { display: flex; gap: 0; margin: 18px 0 14px; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px; }
+  .segmento { display: inline-flex; border: 1px solid var(--texto); }
+  .segmento a { padding: 10px 16px; font-size: 13px; font-weight: 600; text-decoration: none; color: var(--texto); }
+  .segmento a.activo { background: var(--verde-oscuro); color: var(--sobre-oscuro); }
+  .segmento .cuenta { font: 600 11px 'IBM Plex Mono', monospace; background: var(--dorado); color: #163823; padding: 1px 6px; margin-left: 6px; }
+  .rev-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+  .rev-tarjeta { border: 1px solid var(--borde-suave); background: var(--superficie); display: flex; flex-direction: column; transition: opacity .2s; }
+  .rev-tarjeta.baja { border-color: var(--aviso-texto); }
+  .rev-tarjeta.oculta { opacity: .5; }
+  .rev-miniatura { aspect-ratio: 1; background: #fff; border-bottom: 1px solid var(--borde-fina); cursor: zoom-in; display: flex; align-items: center; justify-content: center; border: 0; padding: 0; width: 100%; }
+  .rev-miniatura img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .rev-datos { padding: 10px 12px; flex: 1; }
+  .rev-datos .cod { font: 600 13px 'IBM Plex Mono', monospace; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .rev-datos .motivo { margin-top: 6px; font-size: 11.5px; line-height: 1.4; color: var(--aviso-texto); background: var(--aviso-fondo); padding: 4px 8px; }
+  .rev-acciones { display: flex; border-top: 1px solid var(--borde-suave); }
+  .rev-acciones button { flex: 1; border: 0; border-right: 1px solid var(--borde-suave); background: transparent; padding: 11px 6px; font: 600 12px 'Public Sans', sans-serif; cursor: pointer; color: var(--texto); min-height: 44px; }
+  .rev-acciones button:last-child { border-right: 0; }
+  .rev-acciones .ok { color: var(--estado-ok-texto); }
+  .rev-acciones .ok:hover { background: var(--verde-oscuro); color: var(--sobre-oscuro); }
+  .rev-acciones .baja:hover, .rev-acciones .ocultar:hover { background: var(--aviso-fondo); color: var(--aviso-texto); }
+  .rev-acciones button:disabled { opacity: .35; cursor: default; }
+  #aviso-deshacer { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--texto); color: var(--fondo); padding: 12px 18px; display: none; gap: 16px; align-items: center; z-index: 900; font-size: 13px; box-shadow: 0 4px 18px rgba(0,0,0,.3); }
+  #aviso-deshacer button { background: transparent; border: 1px solid currentColor; color: inherit; padding: 4px 12px; cursor: pointer; font-weight: 600; }
+  #visor { display: none; position: fixed; inset: 0; background: rgba(20,24,26,.82); z-index: 1000; align-items: center; justify-content: center; padding: 20px; cursor: zoom-out; }
+  #visor img { max-width: min(92vw, 720px); max-height: 88vh; background: #fff; border: 1px solid var(--texto); }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 78ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 20px 0 0;">
+    Mirá cada marca y decidí con un toque: <strong>Aprobar</strong> la deja lista para usar, <strong>Baja</strong> la saca de uso (por ejemplo un sello o un fragmento de página que no es una marca) y <strong>Ocultar</strong> la esconde del catálogo. Nada se borra, y podés deshacer el último cambio. Tocá la imagen para verla grande.
+  </p>
+
+  <div class="modos">
+    <div class="segmento" role="tablist">
+      <a href="{{ url_for('revision', ver='pendientes', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'pendientes' }}">Por revisar <span class="cuenta" id="cuenta-pendientes">{{ pendientes }}</span></a>
+      <a href="{{ url_for('revision', ver='todas', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'todas' }}">Todas las marcas</a>
+    </div>
+    <form method="get" action="{{ url_for('revision') }}" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+      <input type="hidden" name="ver" value="{{ ver }}">
+      <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">TIPO</span>
+        <select name="tipo"><option value="">Todos</option>
+          <option value="dominante" {% if tipo == 'dominante' %}selected{% endif %}>Dominante</option>
+          <option value="complementaria" {% if tipo == 'complementaria' %}selected{% endif %}>Complementaria</option></select></div>
+      {% if motivos %}
+      <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">MOTIVO</span>
+        <select name="motivo" style="max-width: 260px;"><option value="">Todos ({{ pendientes }})</option>
+          {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }} ({{ m.n }})</option>{% endfor %}
+        </select></div>
+      {% endif %}
+      <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">CÓDIGO</span>
+        <input type="text" name="q" value="{{ texto }}" placeholder="M-00337" style="width: 140px;"></div>
+      <button type="submit" class="boton" style="min-height: 38px; padding: 8px 14px;">Filtrar</button>
+    </form>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;">
+    <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
+      {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% endif %}{% if motivo %} · {{ motivo|replace('no_es_marca:', '')|replace('_', ' ')|upper }}{% endif %} · MOSTRANDO <span id="visibles">{{ marcas|length }}</span>
+    </div>
+    {% if marcas %}
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button type="button" class="boton" id="lote-aprobar" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">✓ Aprobar las visibles</button>
+      <button type="button" class="boton" id="lote-baja" style="min-height: 38px; padding: 8px 14px; font-size: 12px;">Dar de baja las visibles</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="rev-grilla" id="grilla">
+    {% for m in marcas %}
+    <article class="rev-tarjeta {{ 'baja' if m.estado == 'baja' }}" data-id="{{ m.id }}" data-codigo="{{ m.codigo }}" data-estado="{{ m.estado }}">
+      <button type="button" class="rev-miniatura" data-ampliar="{{ m.imagen_url or '' }}" title="Ver grande" aria-label="Ver {{ m.codigo }} grande">
+        {% if m.imagen_url %}<img src="{{ m.imagen_url }}" alt="Marca {{ m.codigo }}" loading="lazy">{% else %}<span class="sub">Sin imagen</span>{% endif %}
+      </button>
+      <div class="rev-datos">
+        <div class="cod"><a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="text-decoration: none;">{{ m.codigo }}</a>
+          <span class="estado estado-{{ m.estado }}" data-etiqueta-estado>{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span></div>
+        <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.descripcion %} · {{ m.descripcion }}{% endif %}</div>
+        {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }}</div>{% endif %}
+      </div>
+      <div class="rev-acciones">
+        <button type="button" class="ok" data-accion="aprobar" {% if m.estado == 'activa' %}disabled{% endif %}>✓ Aprobar</button>
+        <button type="button" class="baja" data-accion="baja" {% if m.estado == 'baja' %}disabled{% endif %}>Baja</button>
+        {% if perfil.rol == 'administrador' %}<button type="button" class="ocultar" data-accion="ocultar">Ocultar</button>{% endif %}
+      </div>
+    </article>
+    {% else %}
+    <p class="sub" style="grid-column: 1 / -1; padding: 28px 0; font-size: 14px;">
+      {% if ver == 'pendientes' %}No quedan marcas por revisar. ¡Listo!{% else %}Sin resultados.{% endif %}
+    </p>
+    {% endfor %}
+  </div>
+  <p id="fin-pagina" class="sub" style="display: none; padding: 24px 0; font-size: 14px;">
+    Revisaste todo lo de esta página. <a href="{{ request.full_path }}">Cargar las que siguen</a>
+  </p>
+</div>
+
+<div class="paginado">
+  <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
+  <div class="enlaces">
+    {% if pagina > 1 %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, pagina=pagina - 1) }}">&larr; Anteriores</a>{% else %}<span class="boton-inactivo">&larr; Anteriores</span>{% endif %}
+    {% if pagina * por_pagina < total %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, pagina=pagina + 1) }}">Siguientes &rarr;</a>{% else %}<span class="boton-inactivo">Siguientes &rarr;</span>{% endif %}
+  </div>
+</div>
+
+<div id="aviso-deshacer" role="status"><span id="aviso-texto"></span><button type="button" id="btn-deshacer">Deshacer</button></div>
+<div id="visor"><img alt="Marca ampliada"></div>
+
+<script>
+(function () {
+  var VER = {{ ver | tojson }};
+  var CSRF = {{ csrf_token() | tojson }};
+  var URL_BASE = {{ url_for('revisar_marca_ruta', marca_id=0) | tojson }};
+  var ETIQUETAS = { activa: 'Al día', revisar: 'Revisar', baja: 'De baja' };
+  var ultimo = null, temporizador = null, ultimoClic = 0;
+  var aviso = document.getElementById('aviso-deshacer');
+
+  function enviar(id, cuerpo) {
+    return fetch(URL_BASE.replace('/0/', '/' + id + '/'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Error'); return j; }); });
+  }
+  function pintar(tarjeta, estado, activo) {
+    tarjeta.dataset.estado = estado;
+    tarjeta.classList.toggle('baja', estado === 'baja');
+    tarjeta.classList.toggle('oculta', !activo);
+    var chip = tarjeta.querySelector('[data-etiqueta-estado]');
+    chip.className = 'estado estado-' + estado;
+    chip.textContent = ETIQUETAS[estado] || estado;
+    tarjeta.querySelector('[data-accion=aprobar]').disabled = estado === 'activa';
+    tarjeta.querySelector('[data-accion=baja]').disabled = estado === 'baja';
+  }
+  function saleDeLaLista(estado, activo) { return VER === 'pendientes' ? (estado !== 'revisar' || !activo) : !activo; }
+  function actualizarVista(tarjeta, estado, activo) {
+    pintar(tarjeta, estado, activo);
+    tarjeta.style.display = saleDeLaLista(estado, activo) ? 'none' : '';
+    contarVisibles();
+  }
+  function mostrarAviso(texto) {
+    document.getElementById('aviso-texto').textContent = texto;
+    aviso.style.display = 'flex';
+    clearTimeout(temporizador);
+    temporizador = setTimeout(function () { aviso.style.display = 'none'; ultimo = null; ultimoLote = null; }, 12000);
+  }
+
+  document.getElementById('grilla').addEventListener('click', function (e) {
+    var amp = e.target.closest('[data-ampliar]');
+    if (amp && amp.dataset.ampliar) {
+      var visor = document.getElementById('visor');
+      visor.querySelector('img').src = amp.dataset.ampliar;
+      visor.style.display = 'flex';
+      return;
+    }
+    var boton = e.target.closest('[data-accion]');
+    if (!boton || boton.disabled) return;
+    var tarjeta = boton.closest('.rev-tarjeta');
+    var accion = boton.dataset.accion;
+    var antes = { estado: tarjeta.dataset.estado, activo: !tarjeta.classList.contains('oculta') };
+    boton.disabled = true;
+    enviar(tarjeta.dataset.id, { accion: accion }).then(function (r) {
+      ultimo = { tarjeta: tarjeta, antes: r.anterior };
+      actualizarVista(tarjeta, r.estado, r.activo);
+      document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+      var verbo = { aprobar: 'aprobada', baja: 'dada de baja', ocultar: 'ocultada' }[accion];
+      mostrarAviso(r.codigo + ' ' + verbo + '.');
+    }).catch(function (err) {
+      mostrarAviso('No se pudo: ' + err.message);
+      ultimo = null;
+      pintar(tarjeta, antes.estado, antes.activo);
+    });
+  });
+  document.getElementById('btn-deshacer').addEventListener('click', function () {
+    if (ultimoLote) {
+      var lotePrevio = ultimoLote; ultimoLote = null;
+      pedirLote({ accion: 'restaurar', items: lotePrevio.anteriores }).then(function (r) {
+        var previo = {};
+        lotePrevio.anteriores.forEach(function (a) { previo[a.id] = a; });
+        lotePrevio.tarjetas.forEach(function (t) { var a = previo[t.dataset.id]; if (a) actualizarVista(t, a.estado, a.activo); });
+        document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+        contarVisibles();
+        mostrarAviso('Se deshizo el cambio de ' + r.cantidad + ' marcas.');
+      }).catch(function (err) { mostrarAviso('No se pudo deshacer: ' + err.message); });
+      return;
+    }
+    if (!ultimo) return;
+    var u = ultimo; ultimo = null;
+    enviar(u.tarjeta.dataset.id, { accion: 'deshacer', estado: u.antes.estado, activo: u.antes.activo }).then(function (r) {
+      actualizarVista(u.tarjeta, r.estado, r.activo);
+      document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+      mostrarAviso('Se deshizo el cambio en ' + r.codigo + '.');
+    }).catch(function (err) { mostrarAviso('No se pudo deshacer: ' + err.message); });
+  });
+  function visibles() { return [].slice.call(document.querySelectorAll('.rev-tarjeta')).filter(function (t) { return t.style.display !== 'none'; }); }
+  function contarVisibles() {
+    var n = visibles().length;
+    document.getElementById('visibles').textContent = n;
+    document.getElementById('fin-pagina').style.display = n ? 'none' : 'block';
+  }
+  var ultimoLote = null;
+  function pedirLote(cuerpo) {
+    return fetch({{ url_for('revision_lote') | tojson }}, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Error'); return j; }); });
+  }
+  function lote(accion) {
+    var tarjetas = visibles();
+    if (!tarjetas.length) return;
+    var texto = accion === 'baja' ? 'Dar de baja' : 'Aprobar';
+    if (!window.confirm('¿' + texto + ' las ' + tarjetas.length + ' marcas que ves en pantalla? Podés deshacerlo enseguida.')) return;
+    var ids = tarjetas.map(function (t) { return parseInt(t.dataset.id, 10); });
+    pedirLote({ accion: accion, ids: ids }).then(function (r) {
+      var estado = accion === 'baja' ? 'baja' : 'activa';
+      tarjetas.forEach(function (t) { actualizarVista(t, estado, true); });
+      document.getElementById('cuenta-pendientes').textContent = r.pendientes;
+      ultimoLote = { tarjetas: tarjetas, anteriores: r.anteriores };
+      ultimo = null;
+      contarVisibles();
+      mostrarAviso(r.cantidad + (accion === 'baja' ? ' marcas dadas de baja.' : ' marcas aprobadas.'));
+    }).catch(function (err) { mostrarAviso('No se pudo: ' + err.message); });
+  }
+  var botonLoteA = document.getElementById('lote-aprobar'), botonLoteB = document.getElementById('lote-baja');
+  if (botonLoteA) botonLoteA.addEventListener('click', function () { lote('aprobar'); });
+  if (botonLoteB) botonLoteB.addEventListener('click', function () { lote('baja'); });
+  document.getElementById('visor').addEventListener('click', function () { this.style.display = 'none'; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') document.getElementById('visor').style.display = 'none'; });
+})();
+</script>
+{% endblock %}

@@ -46,48 +46,13 @@
     </div>
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
-  {% set columnas_disponibles = [('fecha', 'FECHA'), ('numero_guia', 'N.º DE GUÍA'), ('vendedor', 'VENDEDOR'), ('comprador', 'COMPRADOR'), ('cantidad', 'CANTIDAD'), ('monto', 'MONTO (GS.)'), ('estado', 'ESTADO')] %}
-  {% set mostrar_todas = columnas_visibles is none %}
+  {% set columnas_disponibles = [('fecha', 'FECHA'), ('numero_guia', 'N.º DE GUÍA'), ('vendedor', 'VENDEDOR'), ('comprador', 'COMPRADOR'), ('cantidad', 'CANTIDAD'), ('estado', 'ESTADO')] %}
 
   <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 14px; flex-wrap: wrap;">
     <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-      {% for f in filtros_guardados %}
-      <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--borde-suave); padding: 3px 4px 3px 10px; font-size: 12px;">
-        <a href="{{ url_for(ruta_lista, **f.parametros) }}">{{ f.nombre }}</a>
-        <form method="post" action="{{ url_for('eliminar_filtro_ruta', filtro_id=f.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar este filtro guardado?')">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="volver" value="{{ request.full_path }}">
-          <button type="submit" style="border: 0; background: none; color: var(--texto-secundario); padding: 0 4px; cursor: pointer; font-size: 13px; min-height: auto;" title="Eliminar filtro">&times;</button>
-        </form>
-      </span>
-      {% endfor %}
-      <details>
-        <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">+ Guardar filtro actual</summary>
-        <!-- Ver el comentario equivalente en buscar.html: asociado al
-             <form id="form-filtro-guias"> de arriba vía "form", para
-             guardar siempre lo que esté en pantalla, se haya apretado
-             "Filtrar" o no. -->
-        <div style="display: flex; gap: 6px; margin-top: 6px; align-items: center;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" form="form-filtro-guias">
-          <input type="hidden" name="volver" value="{{ request.full_path }}" form="form-filtro-guias">
-          <input type="text" name="nombre" form="form-filtro-guias" placeholder="Nombre del filtro" required style="font-size: 12px; padding: 4px 6px;">
-          <button type="submit" form="form-filtro-guias" formmethod="post" formaction="{{ url_for('guardar_filtro_ruta', seccion=ruta_lista) }}" class="boton" style="min-height: auto; padding: 4px 10px; font-size: 12px;">Guardar</button>
-        </div>
-      </details>
-      <details>
-        <summary style="cursor: pointer; font-size: 12px; color: var(--texto-secundario);">Columnas</summary>
-        <form method="post" action="{{ url_for('actualizar_preferencias_columnas_ruta', seccion=ruta_lista) }}" style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px; border: 1px solid var(--borde-suave); padding: 10px; font-size: 12px; background: var(--superficie);">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="volver" value="{{ request.full_path }}">
-          {% for clave, etiqueta in columnas_disponibles %}
-          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-            <input type="checkbox" name="columna" value="{{ clave }}" {% if mostrar_todas or clave in columnas_visibles %}checked{% endif %} style="width: auto;">
-            {{ etiqueta }}
-          </label>
-          {% endfor %}
-          <button type="submit" class="boton boton-primario" style="min-height: auto; margin-top: 4px;">Aplicar</button>
-        </form>
-      </details>
+
+      
+      
     </div>
     <div style="display: flex; gap: 16px; align-items: baseline;">
       {% if perfil.rol == 'administrador' %}
@@ -104,29 +69,28 @@
     <thead>
       <tr>
         {% for clave, etiqueta in columnas_disponibles %}
-        {% if mostrar_todas or clave in columnas_visibles %}<th>{{ etiqueta }}</th>{% endif %}
+        <th>{{ etiqueta }}</th>
         {% endfor %}
       </tr>
     </thead>
     <tbody>
       {% for o in operaciones %}
       <tr onclick="window.location='{{ url_for('ver_guia', operacion_id=o.id) }}'">
-        {% if mostrar_todas or 'fecha' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ o.fecha or '—' }}</td>{% endif %}
-        {% if mostrar_todas or 'numero_guia' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ o.numero_guia or '—' }}</td>{% endif %}
-        {% if mostrar_todas or 'vendedor' in columnas_visibles %}<td>{{ o.vendedor_nombre or 'Sin identificar' }}</td>{% endif %}
-        {% if mostrar_todas or 'comprador' in columnas_visibles %}<td>{{ o.comprador_nombre or '—' }}</td>{% endif %}
-        {% if mostrar_todas or 'cantidad' in columnas_visibles %}<td class="mono">{{ o.cantidad_animales if o.cantidad_animales is not none else '—' }}</td>{% endif %}
-        {% if mostrar_todas or 'monto' in columnas_visibles %}<td class="mono" style="white-space: nowrap;">{{ '{:,}'.format(o.monto_total).replace(',', '.') if o.monto_total is not none else '—' }}</td>{% endif %}
-        {% if mostrar_todas or 'estado' in columnas_visibles %}
+        <td class="mono" style="white-space: nowrap;">{{ o.fecha or '—' }}</td>
+        <td class="mono" style="white-space: nowrap;">{{ o.numero_guia or '—' }}</td>
+        <td>{{ o.vendedor_nombre or 'Sin identificar' }}</td>
+        <td>{{ o.comprador_nombre or '—' }}</td>
+        <td class="mono">{{ o.cantidad_animales if o.cantidad_animales is not none else '—' }}</td>
+        
         <td>
           {% if o.guia_colisionada %}<span class="estado estado-revisar">COLISIONA</span>
           {% elif o.revisar %}<span class="estado estado-revisar">REVISAR</span>
           {% else %}<span class="estado estado-activa">AL DÍA</span>{% endif %}
         </td>
-        {% endif %}
+        
       </tr>
       {% else %}
-      <tr><td colspan="{{ columnas_visibles|length if not mostrar_todas else columnas_disponibles|length }}" style="padding: 20px 0; color: var(--texto-secundario);">{{ 'Todavía no hay ventas cargadas.' if modo == 'venta' else 'Todavía no hay guías cargadas.' }}</td></tr>
+      <tr><td colspan="{{ columnas_disponibles|length }}" style="padding: 20px 0; color: var(--texto-secundario);">{{ 'Todavía no hay ventas cargadas.' if modo == 'venta' else 'Todavía no hay guías cargadas.' }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

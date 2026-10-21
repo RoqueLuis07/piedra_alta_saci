@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block titulo %}Archivo{% endblock %}
+{% block migaja %}REGISTRO DE MARCAS · ARCHIVO DE DOCUMENTOS EMITIDOS{% endblock %}
+{% block titulo_pagina %}Archivo{% endblock %}
+{% block meta_encabezado %}{{ total }} DOCUMENTO{{ '' if total == 1 else 'S' }} EMITIDO{{ '' if total == 1 else 'S' }}{% endblock %}
+
+{% block contenido %}
+<div class="contenido">
+  <p style="max-width: 62ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 22px 0 0;">
+    Cada guía o venta que se genera en PDF queda guardada acá, con la fecha en que se emitió y todos los datos de la operación y las marcas estampadas en ese momento. Hacé click en una fila para ver el detalle y volver a descargar el PDF.
+  </p>
+
+  <form method="get" action="{{ url_for('archivo') }}" style="display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 20px;">
+    <div style="flex: 1 1 260px; min-width: 0;">
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">N.º DE GUÍA, VENDEDOR O COMPRADOR</span>
+      <input type="text" name="q" value="{{ texto }}" placeholder="Ej. Villalba" style="width: 100%;">
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">TIPO</span>
+      <select name="tipo">
+        <option value="">Todos</option>
+        <option value="guia" {% if tipo == 'guia' %}selected{% endif %}>Guías</option>
+        <option value="venta" {% if tipo == 'venta' %}selected{% endif %}>Ventas</option>
+      </select>
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">EMITIDO DESDE</span>
+      <input type="date" name="desde" value="{{ desde }}">
+    </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">HASTA</span>
+      <input type="date" name="hasta" value="{{ hasta }}">
+    </div>
+    <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
+  </form>
+
+  <table class="registro" style="margin-top: 18px;">
+    <thead>
+      <tr>
+        <th>EMITIDO</th>
+        <th>TIPO</th>
+        <th>N.º DE GUÍA</th>
+        <th>VENDEDOR</th>
+        <th>COMPRADOR</th>
+        <th>MARCAS</th>
+        <th>EMITIDO POR</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in documentos %}
+      <tr onclick="window.location='{{ url_for('ver_documento', documento_id=d.id) }}'">
+        <td class="mono" style="white-space: nowrap;">{{ d.emitido_en|fecha_hora }}</td>
+        <td>{{ 'Venta' if d.tipo == 'venta' else 'Guía' }}</td>
+        <td class="mono" style="white-space: nowrap;">{{ d.numero_guia or '—' }}</td>
+        <td>{{ d.datos.vendedor_nombre or '—' }}</td>
+        <td>{{ d.datos.comprador_nombre or '—' }}</td>
+        <td class="mono">{{ d.cantidad_marcas }}</td>
+        <td>{{ d.emitido_por_nombre or '—' }}</td>
+        <td><a href="{{ url_for('documento_pdf', documento_id=d.id, descargar=1) }}" onclick="event.stopPropagation()">PDF &darr;</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="padding: 20px 0; color: var(--texto-secundario);">Todavía no se emitió ningún documento.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="paginado">
+  <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
+  <div class="enlaces">
+    {% if pagina > 1 %}
+    <a class="boton" href="{{ url_for('archivo', q=texto, tipo=tipo, desde=desde, hasta=hasta, pagina=pagina - 1) }}">&larr; Anteriores</a>
+    {% else %}
+    <span class="boton-inactivo">&larr; Anteriores</span>
+    {% endif %}
+    {% if pagina * por_pagina < total %}
+    <a class="boton" href="{{ url_for('archivo', q=texto, tipo=tipo, desde=desde, hasta=hasta, pagina=pagina + 1) }}">Siguientes &rarr;</a>
+    {% else %}
+    <span class="boton-inactivo">Siguientes &rarr;</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
