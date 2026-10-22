@@ -77,7 +77,7 @@
       {% if perfil.rol == 'administrador' %}
       <a href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, carpeta=carpeta or None, ver=None if ver_ocultos else 'ocultos') }}">{{ 'Ver activos' if ver_ocultos else 'Ver ocultos' }}</a>
       {% endif %}
-      <a href="{{ url_for('exportar', seccion='marcas', q=texto, estado=estado, tipo=tipo) }}">Exportar a Excel &darr;</a>
+      <a href="{{ url_for('exportar', seccion='marcas', q=texto, estado=estado, tipo=tipo, carpeta=carpeta or None) }}">Exportar a Excel &darr;</a>
     </div>
   </div>
   {% if ver_ocultos %}

@@ -140,6 +140,14 @@ def buscar_marcas(
     return filas, total
 
 
+def _fecha_iso(valor: str | None) -> str | None:
+    """La fecha AAAA-MM-DD válida, o None (un filtro mal escrito no debe romper el listado)."""
+    try:
+        return date.fromisoformat(valor).isoformat() if valor else None
+    except ValueError:
+        return None
+
+
 def listar_operaciones_paginado(
     conexion,
     pagina: int = 1,
@@ -162,6 +170,7 @@ def listar_operaciones_paginado(
     separada, no mezclada."""
     condiciones = [f"activo = {'false' if incluir_ocultos else 'true'}"]
     parametros: dict = {}
+    creada_desde, creada_hasta = _fecha_iso(creada_desde), _fecha_iso(creada_hasta)
     if tipo_operacion in ("compra", "venta"):
         condiciones.append("tipo_operacion = %(tipo_operacion)s")
         parametros["tipo_operacion"] = tipo_operacion
@@ -455,7 +464,7 @@ def ficha_marca(conexion, codigo: str) -> dict | None:
                 SELECT id, codigo, tipo, posicion, (archivo_png IS NOT NULL) AS archivo_png,
                        (archivo_svg IS NOT NULL) AS archivo_svg, estado
                 FROM marcas
-                WHERE operacion_id = %s AND activo = true
+                WHERE operacion_id = %s
                 ORDER BY tipo, posicion
                 """,
                 (marca["operacion_id"],),
@@ -778,6 +787,8 @@ def exportar_todo_para_respaldo(conexion) -> dict:
 def _json_default(valor):
     if isinstance(valor, (datetime, date)):
         return valor.isoformat()
+    if isinstance(valor, (bytes, bytearray, memoryview)):      # columnas bytea (imágenes, huella): base64, como ya lee el restaurador
+        return base64.b64encode(bytes(valor)).decode("ascii")
     raise TypeError(f"No se puede convertir a JSON: {type(valor)!r}")
 
 

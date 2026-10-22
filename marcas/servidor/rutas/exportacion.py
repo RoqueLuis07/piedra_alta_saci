@@ -28,8 +28,10 @@ def registrar(app) -> None:
         total = 0
         if seccion == "marcas":
             tipo = request.args.get("tipo") or None
+            carpeta = request.args.get("carpeta", type=int)
             resultados, total = buscar_marcas(
-                conexion, texto, pagina=1, por_pagina=LIMITE_EXPORTAR, estado=estado, tipo=tipo
+                conexion, texto, pagina=1, por_pagina=LIMITE_EXPORTAR, estado=estado, tipo=tipo,
+                carpeta=carpeta if carpeta in (1, 2) else None,
             )
             filtros = {"q": texto or "", "estado": estado or "", "tipo": tipo or ""}
         else:

@@ -194,7 +194,7 @@ def registrar(app) -> None:
         operacion = obtener_operacion_por_id(conexion, operacion_id)
         if not operacion:
             return _registro_no_encontrado("No se encontró esa guía.")
-        marcas = marcas_de_operacion(conexion, operacion_id)
+        marcas = marcas_de_operacion(conexion, operacion_id, incluir_ocultas=True)
         for m in marcas:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
         nombres = nombres_usuarios(conexion, [operacion.get("creado_por")])
@@ -328,14 +328,34 @@ def registrar(app) -> None:
                 ValueError("marca vacía"),
             )
 
+        if tipo not in ("dominante", "complementaria"):
+            tipo = "complementaria"
+        contenidos = []
+        for archivo in archivos:
+            crudo = archivo.read()
+            extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
+            if extension == "png":
+                try:
+                    from PIL import Image
+                    import io as _io
+
+                    Image.open(_io.BytesIO(crudo)).verify()
+                except Exception:
+                    return _error_seguro(
+                        f"«{archivo.filename}» no es una imagen válida. No se agregó ninguna marca.", ValueError("imagen inválida")
+                    )
+            contenidos.append((crudo, extension))
+        if tipo == "dominante":
+            ya = [m for m in marcas_de_operacion(conexion, operacion_id, incluir_ocultas=True) if m.get("tipo") == "dominante"]
+            if ya or len(archivos) > 1:
+                return _error_seguro("Una guía tiene una sola marca dominante.", ValueError("dominante repetida"))
         try:
-            for archivo in archivos or [None]:
+            for crudo, extension in contenidos or [(None, None)]:
                 nueva = crear_marca(
                     conexion, {"tipo": tipo, "descripcion": descripcion, "operacion_id": operacion_id}, perfil["id"]
                 )
-                if archivo:
-                    extension = "svg" if archivo.filename.lower().endswith(".svg") else "png"
-                    subir_imagen_marca(conexion, nueva["id"], archivo.read(), extension)
+                if crudo:
+                    subir_imagen_marca(conexion, nueva["id"], crudo, extension)
         except Exception as exc:
             # Si falla la imagen N de un lote de varias, este except ya
             # evitaba que el error se propagara -- pero eso significaba

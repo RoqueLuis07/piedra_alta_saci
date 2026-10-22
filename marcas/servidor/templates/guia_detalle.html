@@ -6,7 +6,7 @@
 {% block meta_encabezado %}
 <a href="{{ url_for('ventas' if es_venta else 'guias') }}">&larr; Volver al listado</a>
 &nbsp;·&nbsp;
-<a href="{{ url_for('emitir', operacion=operacion.id) }}">Emitir PDF &rarr;</a>
+{% if perfil.rol in ('administrador', 'operador') %}<a href="{{ url_for('emitir', operacion=operacion.id) }}">Emitir PDF &rarr;</a>{% endif %}
 {% endblock %}
 
 {% block contenido %}

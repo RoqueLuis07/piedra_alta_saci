@@ -116,8 +116,8 @@
 <div class="paginado">
   <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
   <div class="enlaces">
-    {% if pagina > 1 %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, pagina=pagina - 1) }}">&larr; Anteriores</a>{% else %}<span class="boton-inactivo">&larr; Anteriores</span>{% endif %}
-    {% if pagina * por_pagina < total %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, pagina=pagina + 1) }}">Siguientes &rarr;</a>{% else %}<span class="boton-inactivo">Siguientes &rarr;</span>{% endif %}
+    {% if pagina > 1 %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, carpeta=carpeta or None, pagina=pagina - 1) }}">&larr; Anteriores</a>{% else %}<span class="boton-inactivo">&larr; Anteriores</span>{% endif %}
+    {% if pagina * por_pagina < total %}<a class="boton" href="{{ url_for('revision', ver=ver, tipo=tipo or None, q=texto or None, motivo=motivo or None, carpeta=carpeta or None, pagina=pagina + 1) }}">Siguientes &rarr;</a>{% else %}<span class="boton-inactivo">Siguientes &rarr;</span>{% endif %}
   </div>
 </div>
 

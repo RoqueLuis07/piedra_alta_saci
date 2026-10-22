@@ -88,3 +88,51 @@ def test_permisos_por_rol(cliente, rol):
     # y todos pueden ver el catálogo y las guías
     for ruta in ("/buscar", "/buscar/dibujo", "/escaneos", "/guias", "/archivo"):
         assert c.get(ruta).status_code == 200, (rol, ruta)
+
+
+def test_correcciones_del_informe_qa(cliente):
+    import io
+
+    import psycopg2
+    from PIL import Image
+
+    from marcas.servidor import db
+
+    # D6: fechas inválidas no rompen los listados
+    assert cliente.get("/guias?desde=bad").status_code == 200
+    assert cliente.get("/ventas?hasta=nada").status_code == 200
+    # D1: el respaldo completo se descarga aunque haya columnas bytea (imagen, huella)
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        buf = io.BytesIO()
+        Image.new("RGBA", (40, 40), (0, 0, 0, 255)).save(buf, "PNG")
+        cur.execute("INSERT INTO marcas (tipo, archivo_png, huella) VALUES ('complementaria', %s, %s) RETURNING id",
+                    (psycopg2.Binary(buf.getvalue()), psycopg2.Binary(b"\x01\x02\x03")))
+        cur.execute("INSERT INTO operaciones (numero_guia, tipo_operacion) VALUES ('QA-D4', 'venta') RETURNING id")
+        op = cur.fetchone()["id"]
+    conexion.commit()
+    db.devolver_conexion(conexion)
+    assert cliente.get("/panel/respaldo.zip").status_code == 200
+    # D4: no se agregan marcas con archivos inválidos ni una segunda dominante
+    r = cliente.post(f"/guias/{op}/marcas", data={"tipo": "complementaria", "imagen": (io.BytesIO(b"no soy una imagen"), "x.png")},
+                     content_type="multipart/form-data")
+    assert r.status_code >= 400
+    ok = cliente.post(f"/guias/{op}/marcas", data={"tipo": "dominante", "imagen": (io.BytesIO(buf.getvalue()), "d.png")},
+                      content_type="multipart/form-data")
+    assert ok.status_code == 302
+    dup = cliente.post(f"/guias/{op}/marcas", data={"tipo": "dominante", "imagen": (io.BytesIO(buf.getvalue()), "d2.png")},
+                       content_type="multipart/form-data")
+    assert dup.status_code >= 400
+    assert "Marcas de esta guía (1)" in cliente.get(f"/guias/{op}").get_data(as_text=True)
+    # D5: «Sacadas por el detector» no muestra las bajas hechas a mano
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("INSERT INTO marcas (tipo, estado) VALUES ('complementaria', 'baja') RETURNING codigo")
+        a_mano = cur.fetchone()["codigo"]
+        cur.execute("INSERT INTO marcas (tipo, estado, motivo_calidad) VALUES ('complementaria', 'baja', 'no_es_marca:anulacion (99%)') RETURNING codigo")
+        detector = cur.fetchone()["codigo"]
+    conexion.commit()
+    db.devolver_conexion(conexion)
+    html = cliente.get("/revision?ver=bajas").get_data(as_text=True)
+    assert detector in html and a_mano not in html
+    assert a_mano in cliente.get("/revision?ver=todas").get_data(as_text=True)

@@ -37,6 +37,8 @@ def registrar(app) -> None:
         carpeta = request.args.get("carpeta", type=int)
         carpeta = carpeta if carpeta in (1, 2) else None
         pagina = max(1, request.args.get("pagina", 1, type=int))
+        if ver == "bajas" and not motivo:
+            motivo = "no_es_marca:"           # sólo las que sacó el detector; las bajas hechas a mano se ven en «Todas»
         marcas, total = buscar_marcas(
             conexion, texto, pagina=pagina, por_pagina=POR_PAGINA_REVISION,
             estado={"pendientes": "revisar", "bajas": "baja"}.get(ver), tipo=tipo,
@@ -47,7 +49,7 @@ def registrar(app) -> None:
         return render_template(
             "revision.html", activo="buscar", perfil=perfil_actual(), marcas=marcas, total=total,
             pagina=pagina, por_pagina=POR_PAGINA_REVISION, ver=ver, tipo=tipo or "", texto=texto or "",
-            motivo=motivo or "", carpeta=carpeta or "", motivos=motivos_pendientes(conexion, "baja" if ver == "bajas" else "revisar"),
+            motivo="" if motivo == "no_es_marca:" else (motivo or ""), carpeta=carpeta or "", motivos=motivos_pendientes(conexion, "baja" if ver == "bajas" else "revisar"),
             bajas_auto=contar_bajas_automaticas(conexion),
             pendientes=contar_pendientes_revision(conexion),
         )

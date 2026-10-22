@@ -1,5 +1,5 @@
 """Emitir PDF: una sola pantalla para completar la Guía de Traslado de SENACSA
-con las marcas (Rubro 2 y Anexo), ya sea una Compra o una Venta.
+con las marcas (Rubro 2 y Anexo). Sólo guías de venta.
 
 La persona sube el PDF oficial y arma la lista de marcas dibujándolas a mano,
 buscándolas en el catálogo o subiendo una imagen. Nada se guarda hasta que se
@@ -187,8 +187,10 @@ def registrar(app) -> None:
                 ruta.write_bytes(pdf_bytes)
                 try:
                     analisis = analizar_con_casillas(ruta)
-                except Exception as exc:
-                    return jsonify({"error": str(exc) or "No se pudo leer el PDF."}), 400
+                except ValueError as exc:
+                    return jsonify({"error": str(exc)}), 400
+                except Exception:
+                    return jsonify({"error": "El PDF está dañado o no es una Guía de Traslado de SENACSA."}), 400
                 try:
                     analisis["encabezado"] = extraer_encabezado(ruta)
                 except Exception:

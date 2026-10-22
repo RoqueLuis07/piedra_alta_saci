@@ -26,7 +26,7 @@ import psycopg2
 from psycopg2.extras import Json, RealDictCursor
 
 ORDEN = ("usuarios", "propietarios", "operaciones", "marcas", "cambios_pendientes")
-BYTEA = {"marcas": ("archivo_png", "archivo_svg"), "operaciones": ("borrador_pdf", "borrador_dominante_png")}
+BYTEA = {"marcas": ("archivo_png", "archivo_svg", "huella"), "operaciones": ("borrador_pdf", "borrador_dominante_png")}
 
 
 def leer_respaldo(carpeta: Path) -> dict[str, list[dict]]:
@@ -65,7 +65,7 @@ def restaurar(conexion, datos: dict[str, list[dict]], escribir: bool = True, for
             for fila in datos[tabla]:
                 valores = {}
                 for k, v in fila.items():
-                    if k not in columnas:
+                    if k not in columnas or (tabla == "marcas" and k == "escaneo_id"):   # las páginas escaneadas no van en el respaldo: se vuelven a vincular con cargar_escaneos.py
                         continue
                     if k in BYTEA.get(tabla, ()) and v is not None:
                         v = psycopg2.Binary(base64.b64decode(v))

@@ -66,6 +66,7 @@
 (function () {
   const CSRF = "{{ csrf_token() }}";
   const URL_FICHA = "{{ url_for('ver_marca', codigo='__C__') }}";
+  const PUEDE_EMITIR = {{ 'true' if perfil.rol in ('administrador', 'operador') else 'false' }};
   const URL_EMITIR = "{{ url_for('emitir') }}";
   const canvas = document.getElementById("lienzo-b");
   const ctx = canvas.getContext("2d");
@@ -142,7 +143,7 @@
       `<div class="datos"><div class="sub mono">LA MÁS PARECIDA</div><div class="puntaje">${m.puntaje}%</div>` +
       `<div>${esc(m.propietario || "Sin propietario")}</div><div class="sub">${esc(TIPO[m.tipo] || "")}${m.estado !== "activa" ? " · " + esc(m.estado) : ""}</div>` +
       `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"><a class="boton boton-primario" style="min-height:36px;padding:7px 12px;font-size:12px;" href="${URL_FICHA.replace("__C__", encodeURIComponent(m.codigo))}">Ver ficha</a>` +
-      `<a class="boton" style="min-height:36px;padding:7px 12px;font-size:12px;" href="${URL_EMITIR}?marcas=${encodeURIComponent(m.codigo)}">Usar en Emitir PDF</a></div></div>`;
+      (PUEDE_EMITIR ? `<a class="boton" style="min-height:36px;padding:7px 12px;font-size:12px;" href="${URL_EMITIR}?marcas=${encodeURIComponent(m.codigo)}">Usar en Emitir PDF</a>` : "") + `</div></div>`;
     document.getElementById("resumen").textContent = `COMPARADAS ${d.comparadas} MARCAS · MOSTRANDO LAS ${res.length} MÁS PARECIDAS` +
       (d.huellas_pendientes ? ` · ${d.huellas_pendientes} MARCAS TODAVÍA SIN ANALIZAR (VOLVÉ A BUSCAR)` : "");
     document.getElementById("rejilla").innerHTML = res.slice(1).map((x) =>
