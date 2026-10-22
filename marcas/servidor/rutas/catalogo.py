@@ -43,9 +43,11 @@ def registrar(app) -> None:
         estado = request.args.get("estado") or None
         tipo = request.args.get("tipo") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
+        carpeta = request.args.get("carpeta", type=int)
+        carpeta = carpeta if carpeta in (1, 2) else None
         ver_ocultos = perfil["rol"] == "administrador" and request.args.get("ver") == "ocultos"
         resultados, total = buscar_marcas(
-            conexion, texto, pagina=pagina, estado=estado, tipo=tipo, incluir_ocultos=ver_ocultos
+            conexion, texto, pagina=pagina, estado=estado, tipo=tipo, incluir_ocultos=ver_ocultos, carpeta=carpeta
         )
         for fila in resultados:
             fila["imagen_url"] = url_imagen(fila["id"], fila.get("archivo_png"))
@@ -59,6 +61,7 @@ def registrar(app) -> None:
             texto=texto or "",
             estado=estado or "",
             tipo=tipo or "",
+            carpeta=carpeta or "",
             ver_ocultos=ver_ocultos,
             perfil=perfil,
             desglose=desglose_marcas(conexion),

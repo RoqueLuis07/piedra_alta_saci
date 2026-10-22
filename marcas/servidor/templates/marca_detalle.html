@@ -9,7 +9,7 @@
   {% if origen %}
   <div class="aviso-pendiente" style="border-left-color: var(--verde-claro); background: var(--tabla-hover); color: var(--texto);">
     <strong>De dónde salió:</strong>
-    <a href="{{ url_for('ver_escaneo', escaneo_id=origen.id) }}">{{ origen.carpeta }} · {{ origen.archivo }}</a>
+    <a href="{{ url_for('ver_escaneo', escaneo_id=origen.id) }}">{{ origen.etiqueta or (origen.carpeta ~ ' · ' ~ origen.archivo) }}</a>
     ({{ {'GE2_PRINCIPAL': 'Guía GE2', 'GE2_ANEXO': 'Anexo', 'SENACSA_CERTIFICADO': 'Certificado sanitario', 'CIEFA_GO2': 'Declaración jurada CIEFA', 'ACTA_INTERVENCION_COLCAT': 'Acta COLCAT'}.get(origen.formato, origen.formato) }}{% if ficha.marca.posicion %} · {{ ficha.marca.posicion }}{% endif %}){% if origen.numero_guia %}
     · guía <a href="{{ url_for('ver_guia_escaneada', numero=origen.numero_guia) }}">{{ origen.numero_guia }}</a>{% endif %}.
     Abrí la página para confirmar que es una marca de verdad y no un trazo de la hoja.

@@ -42,9 +42,9 @@
 
   <div class="modos">
     <div class="segmento" role="tablist">
-      <a href="{{ url_for('revision', ver='pendientes', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'pendientes' }}">Por revisar <span class="cuenta" id="cuenta-pendientes">{{ pendientes }}</span></a>
-      <a href="{{ url_for('revision', ver='bajas', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'bajas' }}" title="Marcas que el detector sacó del catálogo: por si alguna era buena">Sacadas por el detector <span class="cuenta" style="background: var(--borde-suave); color: var(--texto);">{{ bajas_auto }}</span></a>
-      <a href="{{ url_for('revision', ver='todas', tipo=tipo or None, q=texto or None, motivo=motivo or None) }}" class="{{ 'activo' if ver == 'todas' }}">Todas las marcas</a>
+      <a href="{{ url_for('revision', ver='pendientes', tipo=tipo or None, q=texto or None, motivo=motivo or None, carpeta=carpeta or None) }}" class="{{ 'activo' if ver == 'pendientes' }}">Por revisar <span class="cuenta" id="cuenta-pendientes">{{ pendientes }}</span></a>
+      <a href="{{ url_for('revision', ver='bajas', tipo=tipo or None, q=texto or None, motivo=motivo or None, carpeta=carpeta or None) }}" class="{{ 'activo' if ver == 'bajas' }}" title="Marcas que el detector sacó del catálogo: por si alguna era buena">Sacadas por el detector <span class="cuenta" style="background: var(--borde-suave); color: var(--texto);">{{ bajas_auto }}</span></a>
+      <a href="{{ url_for('revision', ver='todas', tipo=tipo or None, q=texto or None, motivo=motivo or None, carpeta=carpeta or None) }}" class="{{ 'activo' if ver == 'todas' }}">Todas las marcas</a>
     </div>
     <form method="get" action="{{ url_for('revision') }}" style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
       <input type="hidden" name="ver" value="{{ ver }}">
@@ -58,6 +58,10 @@
           {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }} ({{ m.n }})</option>{% endfor %}
         </select></div>
       {% endif %}
+      <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">CARPETA</span>
+        <select name="carpeta"><option value="">Todas</option>
+          <option value="1" {% if carpeta == 1 %}selected{% endif %}>Carpeta 1</option>
+          <option value="2" {% if carpeta == 2 %}selected{% endif %}>Carpeta 2</option></select></div>
       <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">CÓDIGO</span>
         <input type="text" name="q" value="{{ texto }}" placeholder="M-00337" style="width: 140px;"></div>
       <button type="submit" class="boton" style="min-height: 38px; padding: 8px 14px;">Filtrar</button>
@@ -87,6 +91,7 @@
         <div class="cod"><a href="{{ url_for('ver_marca', codigo=m.codigo) }}" style="text-decoration: none;">{{ m.codigo }}</a>
           <span class="estado estado-{{ m.estado }}" data-etiqueta-estado>{{ {'activa': 'Al día', 'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span></div>
         <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.descripcion %} · {{ m.descripcion }}{% endif %}</div>
+        <div class="sub" style="margin-top: 4px;"><a href="{{ url_for('ver_marca', codigo=m.codigo) }}">Editar</a>{% if m.origen_etiqueta %} · {{ m.origen_etiqueta }}{% endif %}</div>
         {% if m.escaneo_id %}<div class="sub" style="margin-top: 4px;"><a href="{{ url_for('ver_escaneo', escaneo_id=m.escaneo_id) }}" target="_blank" rel="noopener">Ver en su página &nearr;</a>{% if m.posicion %} · {{ m.posicion }}{% endif %}</div>{% endif %}
         {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }}</div>{% endif %}
       </div>

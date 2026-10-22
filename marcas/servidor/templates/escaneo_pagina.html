@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block titulo %}{{ pagina.carpeta }} {{ pagina.archivo }} · Escaneo{% endblock %}
+{% block titulo %}{{ pagina.etiqueta or (pagina.carpeta ~ ' ' ~ pagina.archivo) }} · Escaneo{% endblock %}
 {% block migaja %}REGISTRO DE MARCAS · GUÍAS ESCANEADAS{% endblock %}
 {% block titulo_pagina %}{{ formatos.get(pagina.formato, pagina.formato) }}{% endblock %}
 {% block meta_encabezado %}
@@ -27,7 +27,7 @@
   <div style="display: flex; gap: 28px; flex-wrap: wrap; margin-top: 22px; align-items: flex-start;">
     <div class="visor-pag">
       <div class="marco"><a href="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" target="_blank" rel="noopener" title="Abrir en una pestaña nueva"><img src="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" alt="Página escaneada {{ pagina.archivo }}"></a></div>
-      <p class="sub mono" style="margin-top: 6px;">{{ pagina.carpeta }} · {{ pagina.archivo }}</p>
+      <p class="sub mono" style="margin-top: 6px;">{{ pagina.etiqueta or (pagina.carpeta ~ ' · ' ~ pagina.archivo) }}</p>
     </div>
 
     <div class="ficha-pag">

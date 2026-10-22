@@ -107,7 +107,7 @@ def preparar(nombre: str, contenido: bytes, maximo: int) -> tuple[list[dict], st
 
 
 def guardar_paginas(conexion, paginas: list[dict], numero_guia: str | None, fuente: str | None,
-                    formato: str | None, lote: str, orden_inicial: int) -> list[int]:
+                    formato: str | None, lote: str, orden_inicial: int, nombre: str = "") -> list[int]:
     """Inserta las páginas como escaneos nuevos. Devuelve sus ids."""
     ids = []
     with conexion.cursor() as cur:
@@ -118,12 +118,13 @@ def guardar_paginas(conexion, paginas: list[dict], numero_guia: str | None, fuen
             cur.execute(
                 """
                 INSERT INTO escaneos (carpeta, archivo, orden, formato, numero_guia, fuente_numero, confianza_numero,
-                                      texto_ocr, ancho, alto)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                                      texto_ocr, ancho, alto, etiqueta)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """,
                 (CARPETA, f"{lote}_{orden_inicial + i + 1:03d}.jpg", orden_inicial + i, formato or _formato(p["texto"]),
                  numero_guia, fuente if numero_guia else None, 1.0 if numero_guia else None,
-                 p["texto"] or None, imagen.size[0], imagen.size[1]),
+                 p["texto"] or None, imagen.size[0], imagen.size[1],
+                 f"Subida · {nombre[:60]} · pág. {i + 1}" if nombre else f"Subida · pág. {i + 1}"),
             )
             nuevo = cur.fetchone()["id"]
             cur.execute("INSERT INTO escaneos_imagenes (escaneo_id, imagen, miniatura) VALUES (%s, %s, %s)",

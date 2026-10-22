@@ -24,6 +24,10 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+RAIZ = Path(__file__).resolve().parent.parent
+if str(RAIZ) not in sys.path:
+    sys.path.insert(0, str(RAIZ))
+
 
 def leer_indice(carpeta: Path) -> list[dict]:
     paginas = []
@@ -60,6 +64,9 @@ def inferir_numeros(paginas: list[dict]) -> int:
                 p["numero_guia"], p["fuente_numero"], p["conf_numero"] = n_ant, "inferido:vecinas", 0.4
                 inferidas += 1
     return inferidas
+
+
+from marcas.servidor.origen import normalizar_origen  # noqa: E402
 
 
 def cargar(conexion, carpeta: Path, lote: int = 50, escribir: bool = True, informar=print) -> dict:
@@ -117,6 +124,7 @@ def cargar(conexion, carpeta: Path, lote: int = 50, escribir: bool = True, infor
         if escribir:
             cuentas["marcas_vinculadas"] = vincular_marcas(conexion)
             conexion.commit()
+            normalizar_origen(conexion)
     return cuentas
 
 

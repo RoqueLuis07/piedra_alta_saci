@@ -284,3 +284,35 @@ alter table marcas add column if not exists huella bytea;
 alter table marcas add column if not exists origen_carpeta text;
 alter table marcas add column if not exists origen_pagina text;
 create index if not exists idx_marcas_escaneo on marcas(escaneo_id);
+
+-- Origen normalizado: Carpeta 1 = «Epson L3210»; Carpeta 2 = «Epson L5290» (Parte 1.pdf, Parte 2.pdf e imágenes sueltas).
+-- La página es el número de imagen del archivo. Se calcula solo (idempotente) y se muestra como «Carpeta 2 · Parte 1 · pág. 17».
+alter table escaneos add column if not exists carpeta_n smallint;
+alter table escaneos add column if not exists parte smallint;
+alter table escaneos add column if not exists pagina_n integer;
+alter table escaneos add column if not exists etiqueta text;
+alter table marcas add column if not exists origen_carpeta_n smallint;
+alter table marcas add column if not exists origen_parte smallint;
+alter table marcas add column if not exists origen_pagina_n integer;
+alter table marcas add column if not exists origen_etiqueta text;
+
+update escaneos set
+  carpeta_n = case when carpeta = 'L3210' then 1 else 2 end,
+  parte = case carpeta when 'PARTE1' then 1 when 'PARTE2' then 2 end,
+  pagina_n = nullif(substring(archivo from '([0-9]+)\.[A-Za-z]+$'), '')::int,
+  etiqueta = 'Carpeta ' || case when carpeta = 'L3210' then '1' else '2' end
+             || case carpeta when 'PARTE1' then ' · Parte 1' when 'PARTE2' then ' · Parte 2' else '' end
+             || ' · pág. ' || coalesce(nullif(substring(archivo from '([0-9]+)\.[A-Za-z]+$'), '')::int::text, archivo)
+where etiqueta is null and carpeta in ('L3210', 'L5290', 'PARTE1', 'PARTE2');
+
+update marcas set
+  origen_carpeta_n = case when origen_carpeta = 'L3210' then 1 else 2 end,
+  origen_parte = case origen_carpeta when 'PARTE1' then 1 when 'PARTE2' then 2 end,
+  origen_pagina_n = nullif(substring(origen_pagina from '([0-9]+)\.[A-Za-z]+$'), '')::int,
+  origen_etiqueta = 'Carpeta ' || case when origen_carpeta = 'L3210' then '1' else '2' end
+             || case origen_carpeta when 'PARTE1' then ' · Parte 1' when 'PARTE2' then ' · Parte 2' else '' end
+             || ' · pág. ' || coalesce(nullif(substring(origen_pagina from '([0-9]+)\.[A-Za-z]+$'), '')::int::text, origen_pagina)
+where origen_etiqueta is null and origen_carpeta in ('L3210', 'L5290', 'PARTE1', 'PARTE2');
+
+create index if not exists idx_marcas_origen on marcas(origen_carpeta_n, origen_parte, origen_pagina_n);
+create index if not exists idx_escaneos_origen on escaneos(carpeta_n, parte, pagina_n);

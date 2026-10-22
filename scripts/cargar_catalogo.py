@@ -130,6 +130,9 @@ def cargar(conexion, csv_ruta: Path, carpeta_png: Path, lado: int = 512, limite:
                 )
                 cuentas["vinculadas"] = cur.rowcount
         conexion.commit()
+        from marcas.servidor.origen import normalizar_origen
+
+        normalizar_origen(conexion)
     return cuentas
 
 

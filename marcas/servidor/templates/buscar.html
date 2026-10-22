@@ -17,7 +17,7 @@
   <div class="pestanas-tipo" style="display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px;">
     {% for valor, nombre, n in [('', 'Todas', None), ('dominante', 'Dominantes', desglose.dominante if desglose else None), ('complementaria', 'Complementarias', desglose.complementaria if desglose else None)] %}
     <a class="boton {{ 'boton-primario' if tipo == valor else '' }}" style="min-height: 38px; padding: 8px 16px; font-size: 13px;"
-       href="{{ url_for('buscar', q=texto or None, estado=estado or None, tipo=valor or None) }}">{{ nombre }}{% if n is not none %} ({{ n }}){% endif %}</a>
+       href="{{ url_for('buscar', q=texto or None, estado=estado or None, tipo=valor or None, carpeta=carpeta or None) }}">{{ nombre }}{% if n is not none %} ({{ n }}){% endif %}</a>
     {% endfor %}
     <a class="boton" style="min-height: 38px; padding: 8px 16px; font-size: 13px;" href="{{ url_for('buscar_por_dibujo') }}">&#9998; Buscar por dibujo</a>
   </div>
@@ -45,6 +45,14 @@
         <option value="complementaria" {% if tipo == 'complementaria' %}selected{% endif %}>Complementaria</option>
       </select>
     </div>
+    <div>
+      <span class="etiqueta" style="display: block; margin-bottom: 6px;">CARPETA</span>
+      <select name="carpeta">
+        <option value="">Todas</option>
+        <option value="1" {% if carpeta == 1 %}selected{% endif %}>Carpeta 1 (L3210)</option>
+        <option value="2" {% if carpeta == 2 %}selected{% endif %}>Carpeta 2 (L5290)</option>
+      </select>
+    </div>
     <button type="submit" class="boton boton-primario" style="min-height: auto;">Filtrar</button>
   </form>
 
@@ -67,7 +75,7 @@
     </div>
     <div style="display: flex; gap: 16px; align-items: baseline;">
       {% if perfil.rol == 'administrador' %}
-      <a href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, ver=None if ver_ocultos else 'ocultos') }}">{{ 'Ver activos' if ver_ocultos else 'Ver ocultos' }}</a>
+      <a href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, carpeta=carpeta or None, ver=None if ver_ocultos else 'ocultos') }}">{{ 'Ver activos' if ver_ocultos else 'Ver ocultos' }}</a>
       {% endif %}
       <a href="{{ url_for('exportar', seccion='marcas', q=texto, estado=estado, tipo=tipo) }}">Exportar a Excel &darr;</a>
     </div>
@@ -94,6 +102,7 @@
       </div>
       <div class="cod">{{ m.codigo }}</div>
       <div class="detalle">{{ m.propietarios.nombre if m.propietarios else 'Sin propietario' }}</div>
+      {% if m.origen_etiqueta %}<div class="detalle" title="{{ m.origen_etiqueta }}">{{ m.origen_etiqueta }}</div>{% endif %}
       <div class="detalle">
         {{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}
         {% if m.estado != 'activa' %}· <span class="estado estado-{{ m.estado }}">{{ {'revisar': 'Revisar', 'baja': 'De baja'}.get(m.estado, m.estado) }}</span>{% endif %}
@@ -109,12 +118,12 @@
   <div class="mono">PÁGINA {{ pagina }} DE {{ ((total - 1) // por_pagina) + 1 if total else 1 }}</div>
   <div class="enlaces">
     {% if pagina > 1 %}
-    <a class="boton" href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, ver='ocultos' if ver_ocultos else None, pagina=pagina - 1) }}">&larr; Anteriores</a>
+    <a class="boton" href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, carpeta=carpeta or None, ver='ocultos' if ver_ocultos else None, pagina=pagina - 1) }}">&larr; Anteriores</a>
     {% else %}
     <span class="boton-inactivo">&larr; Anteriores</span>
     {% endif %}
     {% if pagina * por_pagina < total %}
-    <a class="boton" href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, ver='ocultos' if ver_ocultos else None, pagina=pagina + 1) }}">Siguientes &rarr;</a>
+    <a class="boton" href="{{ url_for('buscar', q=texto, estado=estado, tipo=tipo, carpeta=carpeta or None, ver='ocultos' if ver_ocultos else None, pagina=pagina + 1) }}">Siguientes &rarr;</a>
     {% else %}
     <span class="boton-inactivo">Siguientes &rarr;</span>
     {% endif %}

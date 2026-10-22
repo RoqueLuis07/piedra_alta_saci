@@ -40,6 +40,8 @@
     <a class="chip {{ '' if vista == 'sin_numero' else 'aviso' }}" href="{{ url_for('escaneos') }}">{{ resumen.guias }} guías</a>
     <a class="chip {{ 'aviso' if vista == 'sin_numero' }}" href="{{ url_for('escaneos', vista='sin_numero') }}">{{ resumen.sin_numero }} páginas sin número</a>
     <span class="chip">{{ resumen.paginas }} páginas</span>
+    <a class="chip {{ 'aviso' if carpeta == 1 }}" href="{{ url_for('escaneos', vista=('sin_numero' if vista == 'sin_numero' else None), carpeta=(None if carpeta == 1 else 1), q=texto or None) }}">Carpeta 1 · L3210</a>
+    <a class="chip {{ 'aviso' if carpeta == 2 }}" href="{{ url_for('escaneos', vista=('sin_numero' if vista == 'sin_numero' else None), carpeta=(None if carpeta == 2 else 2), q=texto or None) }}">Carpeta 2 · L5290</a>
     <span class="chip">{{ resumen.revisadas }} revisadas</span>
   </div>
 
@@ -88,7 +90,7 @@
     {% for p in filas %}
     <div class="tarjeta-pag" data-id="{{ p.id }}">
       <a href="{{ url_for('ver_escaneo', escaneo_id=p.id) }}"><img src="{{ url_for('miniatura_escaneo', escaneo_id=p.id) }}" alt="Página {{ p.archivo }}" loading="lazy"></a>
-      <div class="cab"><span class="mono">{{ p.carpeta }} · {{ p.archivo }}</span><br>{{ formatos.get(p.formato, p.formato) }}{% if p.n_marcas %} · {{ p.n_marcas }} marca{{ '' if p.n_marcas == 1 else 's' }}{% endif %}</div>
+      <div class="cab"><span class="mono">{{ p.etiqueta or (p.carpeta ~ ' · ' ~ p.archivo) }}</span><br>{{ formatos.get(p.formato, p.formato) }}{% if p.n_marcas %} · {{ p.n_marcas }} marca{{ '' if p.n_marcas == 1 else 's' }}{% endif %}</div>
       {% if perfil.rol in ('operador', 'administrador') %}
       <form onsubmit="return asignar(this, {{ p.id }});">
         <input type="text" name="numero_guia" placeholder="N.º de guía" inputmode="numeric" aria-label="N.º de guía de la página {{ p.archivo }}">

@@ -26,7 +26,7 @@ _CAMPOS_EDITABLES = (
 _COLUMNAS_PAGINA = (
     "id, carpeta, archivo, orden, formato, numero_guia, fuente_numero, confianza_numero, numero_certificado, "
     "propietario, propietario_documento, establecimiento, cantidad_animales, fecha_texto, n_marcas, "
-    "revisado, notas"
+    "revisado, notas, etiqueta, carpeta_n, parte, pagina_n"
 )
 
 
@@ -37,7 +37,7 @@ def _filtro_texto(texto: str | None, parametros: dict) -> str:
     parametros["patron"] = f"%{texto.strip()}%"
     return (
         " AND (e.numero_guia ILIKE %(patron)s OR e.propietario ILIKE %(patron)s OR e.propietario_documento ILIKE %(patron)s"
-        " OR e.numero_certificado ILIKE %(patron)s OR e.texto_ocr ILIKE %(patron)s)"
+        " OR e.numero_certificado ILIKE %(patron)s OR e.texto_ocr ILIKE %(patron)s OR e.etiqueta ILIKE %(patron)s)"
     )
 
 
@@ -56,7 +56,7 @@ def resumen_escaneos(conexion) -> dict:
 
 
 def listar_guias_escaneadas(
-    conexion, texto: str | None = None, formato: str | None = None, pagina: int = 1
+    conexion, texto: str | None = None, formato: str | None = None, pagina: int = 1, carpeta: int | None = None
 ) -> tuple[list[dict], int]:
     """Una fila por N.º de guía: propietario, formatos de documento que la componen, páginas y marcas."""
     parametros: dict = {}
@@ -64,6 +64,9 @@ def listar_guias_escaneadas(
     if formato in FORMATOS:
         filtro += " AND e.formato = %(formato)s"
         parametros["formato"] = formato
+    if carpeta in (1, 2):
+        filtro += " AND e.carpeta_n = %(carpeta_n)s"
+        parametros["carpeta_n"] = carpeta
     # Si algún documento de la guía coincide con la búsqueda, se muestra la guía entera.
     elegidas = f"""
         e.numero_guia IS NOT NULL AND e.numero_guia IN (
@@ -106,9 +109,14 @@ def listar_guias_escaneadas(
         return cur.fetchall(), total
 
 
-def paginas_sin_numero(conexion, texto: str | None = None, pagina: int = 1) -> tuple[list[dict], int]:
+def paginas_sin_numero(
+    conexion, texto: str | None = None, pagina: int = 1, carpeta: int | None = None
+) -> tuple[list[dict], int]:
     parametros: dict = {}
     filtro = _filtro_texto(texto, parametros)
+    if carpeta in (1, 2):
+        filtro += " AND e.carpeta_n = %(carpeta_n)s"
+        parametros["carpeta_n"] = carpeta
     with conexion.cursor() as cur:
         cur.execute(f"SELECT count(*) AS total FROM escaneos e WHERE e.numero_guia IS NULL {filtro}", parametros)
         total = cur.fetchone()["total"]
@@ -116,10 +124,10 @@ def paginas_sin_numero(conexion, texto: str | None = None, pagina: int = 1) -> t
         parametros["desde"] = max(0, pagina - 1) * POR_PAGINA_SIN_NUMERO
         cur.execute(
             f"""
-            SELECT e.id, e.carpeta, e.archivo, e.orden, e.formato, e.propietario, e.n_marcas
+            SELECT e.id, e.carpeta, e.archivo, e.orden, e.formato, e.propietario, e.n_marcas, e.etiqueta
             FROM escaneos e
             WHERE e.numero_guia IS NULL {filtro}
-            ORDER BY e.carpeta, e.orden
+            ORDER BY e.carpeta_n NULLS LAST, e.parte NULLS FIRST, e.pagina_n, e.id
             LIMIT %(limite)s OFFSET %(desde)s
             """,
             parametros,
@@ -131,7 +139,7 @@ def obtener_guia_escaneada(conexion, numero: str) -> dict | None:
     """Todas las páginas de una guía, con los datos consolidados y las marcas que salieron de ellas."""
     with conexion.cursor() as cur:
         cur.execute(
-            f"SELECT {_COLUMNAS_PAGINA} FROM escaneos WHERE numero_guia = %s ORDER BY carpeta, orden, id",
+            f"SELECT {_COLUMNAS_PAGINA} FROM escaneos WHERE numero_guia = %s ORDER BY carpeta_n NULLS LAST, parte NULLS FIRST, pagina_n, id",
             (numero,),
         )
         paginas = cur.fetchall()
@@ -243,7 +251,7 @@ def origen_de_marca(conexion, marca_id: int) -> dict | None:
     """El escaneo del que salió una marca (para verla en su contexto y confirmar que es legítima)."""
     with conexion.cursor() as cur:
         cur.execute(
-            "SELECT e.id, e.carpeta, e.archivo, e.formato, e.numero_guia FROM marcas m "
+            "SELECT e.id, e.carpeta, e.archivo, e.formato, e.numero_guia, e.etiqueta FROM marcas m "
             "JOIN escaneos e ON e.id = m.escaneo_id WHERE m.id = %s",
             (marca_id,),
         )

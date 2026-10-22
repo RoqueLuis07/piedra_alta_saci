@@ -76,6 +76,7 @@ def buscar_marcas(
     incluir_ocultos: bool = False,
     motivo: str | None = None,
     sin_baja: bool = False,
+    carpeta: int | None = None,
 ) -> tuple[list[dict], int]:
     """Los resultados de la página pedida y el total real de coincidencias.
 
@@ -94,6 +95,9 @@ def buscar_marcas(
         parametros["tipo"] = tipo
     if sin_baja:
         condiciones.append("m.estado <> 'baja'")
+    if carpeta in (1, 2):
+        condiciones.append("m.origen_carpeta_n = %(carpeta_n)s")
+        parametros["carpeta_n"] = carpeta
     if motivo:
         # prefijo exacto del motivo de calidad (p. ej. "no_es_marca:anulacion")
         condiciones.append("m.motivo_calidad LIKE %(motivo)s")
@@ -102,7 +106,8 @@ def buscar_marcas(
         parametros["patron"] = f"%{texto}%"
         condiciones.append(
             "(m.codigo ILIKE %(patron)s OR o.numero_guia ILIKE %(patron)s "
-            "OR p.nombre ILIKE %(patron)s OR p.documento ILIKE %(patron)s)"
+            "OR p.nombre ILIKE %(patron)s OR p.documento ILIKE %(patron)s OR m.origen_etiqueta ILIKE %(patron)s "
+            "OR EXISTS (SELECT 1 FROM escaneos e WHERE e.id = m.escaneo_id AND e.numero_guia ILIKE %(patron)s))"
         )
     where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
     desde = max(0, pagina - 1) * por_pagina
@@ -119,7 +124,7 @@ def buscar_marcas(
             f"""
             SELECT m.id, m.codigo, m.tipo, m.estado, m.posicion, m.propietario_id, m.operacion_id,
                    (m.archivo_png IS NOT NULL) AS archivo_png, m.vence_en,
-                   m.motivo_calidad, m.observaciones, m.descripcion, m.escaneo_id, m.posicion,
+                   m.motivo_calidad, m.observaciones, m.descripcion, m.escaneo_id, m.posicion, m.origen_etiqueta,
                    p.nombre AS propietario_nombre, p.documento AS propietario_documento,
                    o.numero_guia AS operacion_numero_guia, o.fecha AS operacion_fecha
             {origen}

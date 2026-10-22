@@ -34,18 +34,20 @@ def registrar(app) -> None:
         tipo = request.args.get("tipo") or None
         texto = request.args.get("q") or None
         motivo = request.args.get("motivo") or None
+        carpeta = request.args.get("carpeta", type=int)
+        carpeta = carpeta if carpeta in (1, 2) else None
         pagina = max(1, request.args.get("pagina", 1, type=int))
         marcas, total = buscar_marcas(
             conexion, texto, pagina=pagina, por_pagina=POR_PAGINA_REVISION,
             estado={"pendientes": "revisar", "bajas": "baja"}.get(ver), tipo=tipo,
-            motivo=motivo,
+            motivo=motivo, carpeta=carpeta,
         )
         for m in marcas:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
         return render_template(
             "revision.html", activo="buscar", perfil=perfil_actual(), marcas=marcas, total=total,
             pagina=pagina, por_pagina=POR_PAGINA_REVISION, ver=ver, tipo=tipo or "", texto=texto or "",
-            motivo=motivo or "", motivos=motivos_pendientes(conexion, "baja" if ver == "bajas" else "revisar"),
+            motivo=motivo or "", carpeta=carpeta or "", motivos=motivos_pendientes(conexion, "baja" if ver == "bajas" else "revisar"),
             bajas_auto=contar_bajas_automaticas(conexion),
             pendientes=contar_pendientes_revision(conexion),
         )

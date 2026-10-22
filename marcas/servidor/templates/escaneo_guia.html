@@ -49,7 +49,7 @@
         <a class="doc-tarjeta" href="{{ url_for('ver_escaneo', escaneo_id=p.id) }}">
           <img src="{{ url_for('miniatura_escaneo', escaneo_id=p.id) }}" alt="{{ p.archivo }}" loading="lazy">
           <div class="nombre">{{ formatos.get(p.formato, p.formato) }}</div>
-          <div class="sub mono">{{ p.carpeta }} · {{ p.archivo }}</div>
+          <div class="sub mono">{{ p.etiqueta or (p.carpeta ~ ' · ' ~ p.archivo) }}</div>
           <div class="sub">{% if p.fuente_numero == 'manual' %}N.º corregido a mano{% elif p.fuente_numero and p.fuente_numero.startswith('inferido') %}N.º inferido por vecindad{% elif p.fuente_numero %}N.º leído{% endif %}{% if p.revisado %} · ✓ revisada{% endif %}</div>
         </a>
         {% endfor %}

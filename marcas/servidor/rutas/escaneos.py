@@ -65,7 +65,7 @@ def registrar(app) -> None:
                     continue
                 numero = numero_forzado or detectado
                 fuente = "manual" if numero_forzado else ("pdf" if detectado else None)
-                ids = guardar_paginas(conexion, paginas, numero, fuente, formato, nuevo_lote(), 0)
+                ids = guardar_paginas(conexion, paginas, numero, fuente, formato, nuevo_lote(), 0, archivo.filename)
                 restante -= len(paginas)
                 resultados.append({"nombre": archivo.filename, "paginas": len(ids), "numero": numero, "primero": ids[0]})
             conexion.commit()
@@ -88,15 +88,17 @@ def registrar(app) -> None:
         texto = (request.args.get("q") or "").strip() or None
         formato = request.args.get("formato") or None
         pagina = max(1, request.args.get("pagina", 1, type=int))
+        carpeta = request.args.get("carpeta", type=int)
+        carpeta = carpeta if carpeta in (1, 2) else None
         if vista == "sin_numero":
-            filas, total = paginas_sin_numero(conexion, texto, pagina)
+            filas, total = paginas_sin_numero(conexion, texto, pagina, carpeta)
             por_pagina = POR_PAGINA_SIN_NUMERO
         else:
-            filas, total = listar_guias_escaneadas(conexion, texto, formato, pagina)
+            filas, total = listar_guias_escaneadas(conexion, texto, formato, pagina, carpeta)
             por_pagina = POR_PAGINA_GUIAS
         return render_template(
             "escaneos.html", activo="escaneos", perfil=perfil_actual(), vista=vista, filas=filas, total=total,
-            pagina=pagina, por_pagina=por_pagina, texto=texto or "", formato=formato or "",
+            pagina=pagina, por_pagina=por_pagina, texto=texto or "", formato=formato or "", carpeta=carpeta or "",
             formatos=FORMATOS, resumen=resumen_escaneos(conexion),
         )
 

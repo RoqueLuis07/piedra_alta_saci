@@ -120,3 +120,31 @@ def test_eliminar_guias_respeta_el_archivo(cliente):
     assert cliente.post(f"/guias/{archivada}/eliminar").status_code in (400, 409, 422, 500, 200)
     assert cliente.post("/guias/eliminar", json={"ids": []}).status_code == 400
     assert "Eliminar seleccionadas" in cliente.get("/guias").get_data(as_text=True)
+
+
+def test_origen_normalizado_carpeta_1_y_2(cliente):
+    from marcas.servidor import db
+    from marcas.servidor.origen import normalizar_origen
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        for carpeta, archivo in (("L3210", "0030.jpg"), ("PARTE1", "p1_0017.jpg"), ("PARTE2", "p2_0003.jpg"), ("L5290", "0349.jpg")):
+            cur.execute("INSERT INTO escaneos (carpeta, archivo, orden) VALUES (%s, %s, 0)", (carpeta, archivo))
+            cur.execute("INSERT INTO marcas (tipo, origen_carpeta, origen_pagina) VALUES ('dominante', %s, %s)", (carpeta, archivo))
+    conexion.commit()
+    normalizar_origen(conexion)
+    with conexion.cursor() as cur:
+        cur.execute("SELECT archivo, etiqueta, carpeta_n, parte, pagina_n FROM escaneos WHERE archivo IN ('0030.jpg','p1_0017.jpg','p2_0003.jpg','0349.jpg')")
+        e = {f["archivo"]: f for f in cur.fetchall()}
+        cur.execute("SELECT origen_pagina, origen_etiqueta FROM marcas WHERE origen_pagina IN ('0030.jpg','p1_0017.jpg','p2_0003.jpg','0349.jpg')")
+        m = {f["origen_pagina"]: f["origen_etiqueta"] for f in cur.fetchall()}
+    db.devolver_conexion(conexion)
+    assert e["0030.jpg"]["etiqueta"] == "Carpeta 1 · pág. 30" and e["0030.jpg"]["carpeta_n"] == 1
+    assert e["p1_0017.jpg"]["etiqueta"] == "Carpeta 2 · Parte 1 · pág. 17" and e["p1_0017.jpg"]["parte"] == 1
+    assert e["p2_0003.jpg"]["etiqueta"] == "Carpeta 2 · Parte 2 · pág. 3"
+    assert e["0349.jpg"]["etiqueta"] == "Carpeta 2 · pág. 349" and e["0349.jpg"]["parte"] is None
+    assert m == {"0030.jpg": "Carpeta 1 · pág. 30", "p1_0017.jpg": "Carpeta 2 · Parte 1 · pág. 17",
+                 "p2_0003.jpg": "Carpeta 2 · Parte 2 · pág. 3", "0349.jpg": "Carpeta 2 · pág. 349"}
+    assert "Carpeta 2" in cliente.get("/buscar?carpeta=2").get_data(as_text=True)
+    assert "Carpeta 1 · pág. 30" in cliente.get("/buscar?q=pág.+30").get_data(as_text=True)
+    assert cliente.get("/escaneos?carpeta=2").status_code == 200
