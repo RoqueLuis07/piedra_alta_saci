@@ -19,6 +19,18 @@
   .marcas-pag a { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 6px; text-decoration: none; color: var(--texto); }
   .marcas-pag .mini { aspect-ratio: 1; background: #fff; border: 1px solid var(--borde-fina); }
   .marcas-pag img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .herr { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 10px 12px; margin-bottom: 8px; }
+  .herr-fila { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .herr .boton { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+  .herr label { font-size: 12px; color: var(--texto-secundario); display: flex; gap: 6px; align-items: center; }
+  .herr select { width: auto; padding: 4px 6px; }
+  .segmento-mini { display: inline-flex; border: 1px solid var(--texto); }
+  .segmento-mini .modo { border: 0; background: transparent; padding: 7px 14px; font-weight: 600; font-size: 12.5px; cursor: pointer; color: var(--texto); }
+  .segmento-mini .modo.activo { background: var(--verde-oscuro); color: var(--sobre-oscuro); }
+  .lienzo-pag { position: relative; width: 100%; }
+  .lienzo-pag canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  .nuevas { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 10px; }
+  .nuevas a { border: 2px solid var(--verde-claro); background: var(--superficie); padding: 6px; text-decoration: none; color: var(--texto); }
 </style>
 {% endblock %}
 
@@ -26,7 +38,28 @@
 <div class="contenido" style="max-width: 1400px;">
   <div style="display: flex; gap: 28px; flex-wrap: wrap; margin-top: 22px; align-items: flex-start;">
     <div class="visor-pag">
-      <div class="marco"><a href="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" target="_blank" rel="noopener" title="Abrir en una pestaña nueva"><img src="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" alt="Página escaneada {{ pagina.archivo }}"></a></div>
+      {% if perfil.rol in ('administrador', 'operador') %}
+      <div class="herr" id="herramientas">
+        <strong>Sacar una marca de esta página</strong>
+        <div class="herr-fila">
+          <div class="segmento-mini" role="tablist">
+            <button type="button" class="modo activo" data-modo="recorte">Recortar</button>
+            <button type="button" class="modo" data-modo="calco">Calcar</button>
+          </div>
+          <label>Tipo <select id="h-tipo"><option value="complementaria">Complementaria</option><option value="dominante">Dominante</option></select></label>
+          <label>Zoom <select id="h-zoom"><option value="100">100%</option><option value="150">150%</option><option value="200">200%</option><option value="300">300%</option></select></label>
+          <label id="h-grosor-l" style="display: none;">Trazo <select id="h-grosor"><option value="3">Fino</option><option value="6" selected>Medio</option><option value="11">Grueso</option></select></label>
+        </div>
+        <div class="herr-fila">
+          <button type="button" class="boton boton-primario" id="h-guardar" disabled>Guardar marca</button>
+          <button type="button" class="boton" id="h-deshacer">Deshacer</button>
+          <button type="button" class="boton" id="h-borrar">Borrar selección</button>
+          <span class="sub" id="h-msg" role="status"></span>
+        </div>
+        <p class="sub" id="h-ayuda" style="margin: 4px 0 0;">Arrastrá un recuadro sobre la marca tal como está impresa y tocá «Guardar marca». Si está tapada por un sello, usá «Calcar» y repasala con el mouse o el dedo.</p>
+      </div>
+      {% endif %}
+      <div class="marco" id="marco"><div class="lienzo-pag" id="lienzo-pag"><img id="img-pagina" src="{{ url_for('imagen_escaneo', escaneo_id=pagina.id) }}" alt="Página escaneada" crossorigin="anonymous"><canvas id="capa-pag"></canvas></div></div>
       <p class="sub mono" style="margin-top: 6px;">{{ pagina.etiqueta or (pagina.carpeta ~ ' · ' ~ pagina.archivo) }}</p>
     </div>
 
@@ -55,6 +88,7 @@
       {% if pagina.numero_certificado %}<div class="campo-fila"><div class="campo-etiqueta">Certificado</div><div class="campo-valor mono">{{ pagina.numero_certificado }}</div></div>{% endif %}
 
       <h2 class="subtitulo" style="margin-top: 26px;">Marcas de esta página ({{ pagina.marcas|length }})</h2>
+      <div class="nuevas" id="nuevas" aria-label="Marcas que acabás de guardar"></div>
       {% if pagina.marcas %}
       <div class="marcas-pag">
         {% for m in pagina.marcas %}
@@ -74,4 +108,101 @@
     </div>
   </div>
 </div>
+{% if perfil.rol in ('administrador', 'operador') %}
+<script>
+(function () {
+  var CSRF = {{ csrf_token() | tojson }};
+  var URL_GUARDAR = {{ url_for('guardar_marca_de_pagina', escaneo_id=pagina.id) | tojson }};
+  var img = document.getElementById('img-pagina'), capa = document.getElementById('capa-pag'), ctx = capa.getContext('2d');
+  var wrap = document.getElementById('lienzo-pag'), msg = document.getElementById('h-msg'), guardar = document.getElementById('h-guardar');
+  var modo = 'recorte', rect = null, trazos = [], actual = null, arrastre = null;
+
+  function ajustar() { capa.width = img.naturalWidth || 1400; capa.height = img.naturalHeight || 1980; pintar(); }
+  if (img.complete) ajustar(); else img.addEventListener('load', ajustar);
+  function pos(e) {
+    var r = capa.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * capa.width / r.width, y: (e.clientY - r.top) * capa.height / r.height };
+  }
+  function pintar() {
+    ctx.clearRect(0, 0, capa.width, capa.height);
+    if (rect) {
+      ctx.fillStyle = 'rgba(245,158,11,0.18)'; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.strokeStyle = '#d97706'; ctx.lineWidth = Math.max(2, capa.width / 400); ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    }
+    ctx.strokeStyle = 'rgba(220,38,38,0.85)'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    trazos.forEach(function (t) {
+      ctx.lineWidth = t.g * capa.width / 700; ctx.beginPath();
+      t.p.forEach(function (p, i) { if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); });
+      if (t.p.length === 1) ctx.lineTo(t.p[0].x + 0.1, t.p[0].y);
+      ctx.stroke();
+    });
+    guardar.disabled = modo === 'recorte' ? !(rect && rect.w > 8 && rect.h > 8) : !trazos.length;
+  }
+  capa.addEventListener('pointerdown', function (e) {
+    e.preventDefault(); capa.setPointerCapture(e.pointerId); var p = pos(e);
+    if (modo === 'recorte') { arrastre = p; rect = { x: p.x, y: p.y, w: 0, h: 0 }; }
+    else { actual = { g: parseInt(document.getElementById('h-grosor').value, 10), p: [p] }; trazos.push(actual); }
+    pintar();
+  });
+  capa.addEventListener('pointermove', function (e) {
+    var p = pos(e);
+    if (modo === 'recorte' && arrastre) { rect = { x: Math.min(arrastre.x, p.x), y: Math.min(arrastre.y, p.y), w: Math.abs(p.x - arrastre.x), h: Math.abs(p.y - arrastre.y) }; pintar(); }
+    else if (actual) { actual.p.push(p); pintar(); }
+  });
+  function soltar() { arrastre = null; actual = null; }
+  capa.addEventListener('pointerup', soltar); capa.addEventListener('pointercancel', soltar);
+
+  document.querySelectorAll('#herramientas .modo').forEach(function (b) {
+    b.addEventListener('click', function () {
+      modo = b.dataset.modo;
+      document.querySelectorAll('#herramientas .modo').forEach(function (x) { x.classList.toggle('activo', x === b); });
+      document.getElementById('h-grosor-l').style.display = modo === 'calco' ? 'flex' : 'none';
+      document.getElementById('h-ayuda').textContent = modo === 'recorte'
+        ? 'Arrastrá un recuadro sobre la marca tal como está impresa y tocá «Guardar marca». Si está tapada por un sello, usá «Calcar».'
+        : 'Repasá la marca con el mouse o el dedo sobre la imagen (en rojo). Sólo se guarda tu trazo, sin el fondo de la hoja.';
+      rect = null; trazos = []; pintar();
+    });
+  });
+  document.getElementById('h-zoom').addEventListener('change', function () { wrap.style.width = this.value + '%'; });
+  document.getElementById('h-deshacer').addEventListener('click', function () { trazos.pop(); pintar(); });
+  document.getElementById('h-borrar').addEventListener('click', function () { rect = null; trazos = []; pintar(); });
+
+  function imagenAGuardar() {
+    var t = document.createElement('canvas'), c = t.getContext('2d');
+    if (modo === 'recorte') {
+      var x = Math.max(0, Math.round(rect.x)), y = Math.max(0, Math.round(rect.y));
+      var w = Math.min(capa.width - x, Math.round(rect.w)), h = Math.min(capa.height - y, Math.round(rect.h));
+      t.width = w; t.height = h; c.drawImage(img, x, y, w, h, 0, 0, w, h);
+    } else {
+      t.width = capa.width; t.height = capa.height; c.fillStyle = '#fff'; c.fillRect(0, 0, t.width, t.height);
+      c.strokeStyle = '#000'; c.lineCap = 'round'; c.lineJoin = 'round';
+      trazos.forEach(function (tr) {
+        c.lineWidth = tr.g * capa.width / 700; c.beginPath();
+        tr.p.forEach(function (p, i) { if (i) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); });
+        if (tr.p.length === 1) c.lineTo(tr.p[0].x + 0.1, tr.p[0].y);
+        c.stroke();
+      });
+    }
+    return t.toDataURL('image/png');
+  }
+  guardar.addEventListener('click', function () {
+    var datos;
+    try { datos = imagenAGuardar(); } catch (e) { msg.textContent = 'El navegador no dejó leer la imagen. Probá con «Calcar».'; return; }
+    guardar.disabled = true; msg.textContent = 'Guardando…';
+    fetch(URL_GUARDAR, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify({ imagen: datos, tipo: document.getElementById('h-tipo').value }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || 'Error'); return j; }); })
+      .then(function (m) {
+        var a = document.createElement('a'); a.href = m.ficha; a.target = '_blank'; a.rel = 'noopener';
+        a.innerHTML = '<div class="mini" style="aspect-ratio:1;background:#fff;border:1px solid var(--borde-fina);"><img style="width:100%;height:100%;object-fit:contain;display:block;" alt=""></div><div class="mono" style="font-size:11.5px;margin-top:4px;"></div><div class="sub"></div>';
+        a.querySelector('img').src = m.imagen_url; a.querySelectorAll('div')[1].textContent = m.codigo;
+        a.querySelectorAll('div')[2].textContent = (m.tipo === 'dominante' ? 'Dominante' : 'Complementaria') + ' · guardada';
+        document.getElementById('nuevas').prepend(a);
+        msg.textContent = 'Guardada como ' + m.codigo + '. Podés sacar otra.';
+        rect = null; trazos = []; pintar();
+      }).catch(function (err) { msg.textContent = err.message; pintar(); });
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

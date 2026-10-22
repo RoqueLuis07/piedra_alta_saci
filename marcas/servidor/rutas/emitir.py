@@ -116,9 +116,7 @@ def _operacion_para_emitir(conexion, perfil: dict) -> dict:
             raise _PedidoInvalido("No se encontró la operación a la que pertenece este documento.")
         return operacion
 
-    tipo = request.form.get("tipo_operacion")
-    if tipo not in ("compra", "venta"):
-        raise _PedidoInvalido("Elegí si es una Compra o una Venta.")
+    tipo = "venta"      # Emitir PDF sólo completa guías de venta: las compras se cargan como guías escaneadas
     numero = request.form.get("numero_guia", "").strip()
     if numero:
         # Una guía de SENACSA tiene un número único: si ya se cargó, el nuevo PDF

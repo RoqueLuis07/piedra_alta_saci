@@ -5,8 +5,12 @@ from __future__ import annotations
 
 from flask import Response, jsonify, redirect, render_template, request, url_for
 
+import base64
+import binascii
+
 from marcas.servidor.auth import conexion_actual, perfil_actual, requiere_rol, requiere_sesion
-from marcas.servidor.consultas import url_imagen
+from marcas.servidor.consultas import crear_marca, subir_imagen_marca, url_imagen
+from marcas.servidor.extraer_marca import normalizar_marca
 from marcas.servidor.consultas_escaneos import (
     FORMATOS,
     POR_PAGINA_GUIAS,
@@ -129,6 +133,41 @@ def registrar(app) -> None:
         return render_template(
             "escaneo_pagina.html", activo="escaneos", perfil=perfil_actual(), pagina=pagina, formatos=FORMATOS,
         )
+
+    @app.post("/escaneos/pagina/<int:escaneo_id>/marcas")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def guardar_marca_de_pagina(escaneo_id: int):
+        """Guarda como marca un recorte o un calco hecho sobre esta página: {imagen: dataURL PNG, tipo}.
+        Queda en el catálogo, vinculada a la página y a la guía de origen."""
+        conexion = conexion_actual()
+        datos = request.get_json(silent=True) or {}
+        tipo = datos.get("tipo") if datos.get("tipo") in ("dominante", "complementaria") else "complementaria"
+        texto = (datos.get("imagen") or "").split(",", 1)[-1]
+        try:
+            crudo = base64.b64decode(texto, validate=True)
+        except (binascii.Error, ValueError):
+            crudo = b""
+        png = normalizar_marca(crudo[: 12 * 1024 * 1024]) if crudo else None
+        if png is None:
+            return jsonify({"error": "No se ve ningún trazo en lo que elegiste. Marcá un recuadro más grande o dibujá con más fuerza."}), 400
+        pagina = obtener_escaneo(conexion, escaneo_id)
+        if not pagina:
+            return jsonify({"error": "No se encontró la página."}), 404
+        try:
+            nueva = crear_marca(conexion, {
+                "tipo": tipo, "estado": "activa", "escaneo_id": escaneo_id, "numero_guia": pagina.get("numero_guia"),
+                "origen_etiqueta": pagina.get("etiqueta"), "descripcion": "Sacada de una guía cargada",
+            }, perfil_actual()["id"])
+            subir_imagen_marca(conexion, nueva["id"], png, "png")
+            with conexion.cursor() as cur:
+                cur.execute("UPDATE escaneos SET n_marcas = n_marcas + 1 WHERE id = %s", (escaneo_id,))
+        except Exception as exc:
+            conexion.rollback()
+            print(f"guardar_marca_de_pagina: {exc}")
+            return jsonify({"error": "No se pudo guardar la marca."}), 500
+        return jsonify({"codigo": nueva["codigo"], "id": nueva["id"], "tipo": tipo,
+                        "imagen_url": url_imagen(nueva["id"], True), "ficha": url_for("ver_marca", codigo=nueva["codigo"])})
 
     @app.post("/escaneos/pagina/<int:escaneo_id>")
     @requiere_sesion

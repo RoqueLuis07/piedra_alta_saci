@@ -91,10 +91,7 @@
         <p class="sub" style="margin: 0;">Este PDF se asocia a la operación {{ operacion.numero_guia or ('#' ~ operacion.id) }} ({{ 'venta' if operacion.tipo_operacion == 'venta' else 'compra' }}); los datos ya están cargados.</p>
         {% else %}
         <p class="sub" style="margin: 0 0 12px;">Se leyeron del PDF; corregí lo que haga falta.</p>
-        <div class="opciones" role="radiogroup" aria-label="Tipo de operación">
-          <label><input type="radio" name="tipo_operacion" value="compra" checked> Compra</label>
-          <label><input type="radio" name="tipo_operacion" value="venta"> Venta</label>
-        </div>
+        <p class="sub" style="margin: 0 0 12px;"><span class="estado estado-revisar">VENTA</span> Esta pantalla completa sólo guías de venta. Las guías de compra llegan impresas: se cargan en <a href="{{ url_for('subir_guias_pantalla') }}">Guías escaneadas → Subir guía</a>.</p>
         <div class="campos-doc">
           <div class="campo-edicion"><label for="f-numero">N.º de guía</label><input type="text" id="f-numero"></div>
           <div class="campo-edicion"><label for="f-vendedor">Vendedor</label><input type="text" id="f-vendedor" style="font-family: inherit;"></div>

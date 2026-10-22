@@ -148,3 +148,76 @@ def test_origen_normalizado_carpeta_1_y_2(cliente):
     assert "Carpeta 2" in cliente.get("/buscar?carpeta=2").get_data(as_text=True)
     assert "Carpeta 1 · pág. 30" in cliente.get("/buscar?q=pág.+30").get_data(as_text=True)
     assert cliente.get("/escaneos?carpeta=2").status_code == 200
+
+
+def _recorte_con_marca() -> str:
+    import base64
+
+    from PIL import ImageDraw
+
+    im = Image.new("RGB", (320, 240), (236, 234, 228))
+    d = ImageDraw.Draw(im)
+    d.line([(60, 190), (160, 50), (260, 190)], fill=(20, 20, 90), width=9)
+    d.line([(90, 130), (230, 130)], fill=(20, 20, 90), width=7)
+    salida = io.BytesIO()
+    im.save(salida, "PNG")
+    return "data:image/png;base64," + base64.b64encode(salida.getvalue()).decode()
+
+
+def test_sacar_marca_de_una_guia_cargada(cliente):
+    r = cliente.post("/escaneos/subir", data={"numero_guia": "55100200", "archivos": (io.BytesIO(_foto()), "impresa.jpg")},
+                     content_type="multipart/form-data")
+    assert r.status_code == 302
+    pagina_id = int(cliente.get(r.headers["Location"]).get_data(as_text=True).split("/escaneos/pagina/")[1].split('"')[0].split("?")[0])
+    html = cliente.get(f"/escaneos/pagina/{pagina_id}").get_data(as_text=True)
+    assert "Sacar una marca de esta página" in html and "Calcar" in html
+
+    r = cliente.post(f"/escaneos/pagina/{pagina_id}/marcas", json={"imagen": _recorte_con_marca(), "tipo": "dominante"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    m = r.get_json()
+    assert m["codigo"].startswith("M-") and m["tipo"] == "dominante"
+    png = cliente.get(m["imagen_url"])
+    assert png.status_code == 200
+    im = Image.open(io.BytesIO(png.get_data()))
+    assert im.mode == "RGBA" and im.size == (512, 512) and im.getchannel("A").getextrema()[1] == 255
+    ficha = cliente.get(m["ficha"]).get_data(as_text=True)
+    assert "55100200" in ficha                       # apunta a su guía de origen
+    assert m["codigo"] in cliente.get("/escaneos/guia/55100200").get_data(as_text=True)
+
+    en_blanco = "data:image/png;base64," + __import__("base64").b64encode(_foto()).decode()
+    assert cliente.post(f"/escaneos/pagina/{pagina_id}/marcas", json={"imagen": en_blanco}).status_code == 400
+    assert cliente.post("/escaneos/pagina/999999/marcas", json={"imagen": _recorte_con_marca()}).status_code == 404
+
+
+def test_emitir_solo_ventas(cliente, tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from generar_guia_demo import generar as generar_guia
+
+    html = cliente.get("/emitir").get_data(as_text=True)
+    assert 'value="compra"' not in html and "sólo guías de venta" in html
+    pdf = generar_guia(tmp_path / "v.pdf", guia="VENTA-0001", incluir_rubro2=True).read_bytes()
+    r = cliente.post("/emitir/generar", content_type="multipart/form-data", data={
+        "pdf_guia": (io.BytesIO(pdf), "v.pdf"), "tipo_operacion": "compra", "numero_guia": "VENTA-0001",
+        "vendedor_nombre": "V", "comprador_nombre": "C", "orden": "[{\"t\": \"dib\", \"archivo\": \"d0\", \"guardar\": false}]",
+        "d0": (io.BytesIO(_png_dibujo()), "d0.png")})
+    assert r.status_code == 200, r.get_data(as_text=True)[:300]
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("SELECT tipo_operacion FROM operaciones WHERE numero_guia = 'VENTA-0001'")
+        assert cur.fetchone()["tipo_operacion"] == "venta"      # aunque el pedido diga «compra», Emitir siempre guarda ventas
+    db.devolver_conexion(conexion)
+
+
+def _png_dibujo() -> bytes:
+    from PIL import ImageDraw
+
+    im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+    ImageDraw.Draw(im).ellipse([40, 40, 216, 216], outline=(0, 0, 0, 255), width=12)
+    salida = io.BytesIO()
+    im.save(salida, "PNG")
+    return salida.getvalue()

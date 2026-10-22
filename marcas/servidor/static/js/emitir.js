@@ -337,17 +337,10 @@
     poner("f-vendedor", enc.vendedor_nombre);
     poner("f-comprador", enc.comprador_nombre);
     poner("f-cantidad", enc.cantidad_animales);
-    if (enc.vendedor_nombre && !document.querySelector("input[name=tipo_operacion]").dataset.tocado) {
-      var esVenta = /piedra\s+alta/i.test(enc.vendedor_nombre);
-      document.querySelector("input[name=tipo_operacion][value=" + (esVenta ? "venta" : "compra") + "]").checked = true;
-    }
   }
   ["f-numero", "f-vendedor", "f-comprador", "f-cantidad"].forEach(function (id) {
     var el = $(id);
     if (el) el.addEventListener("input", function () { el.dataset.tocado = "1"; });
-  });
-  document.querySelectorAll("input[name=tipo_operacion]").forEach(function (r) {
-    r.addEventListener("change", function () { document.querySelector("input[name=tipo_operacion]").dataset.tocado = "1"; });
   });
 
   // ---------- PDF ----------
@@ -421,7 +414,7 @@
     var f = armarPedido();
     if (CFG.operacionId) f.append("operacion_id", CFG.operacionId);
     else {
-      f.append("tipo_operacion", document.querySelector("input[name=tipo_operacion]:checked").value);
+      f.append("tipo_operacion", "venta");
       f.append("numero_guia", $("f-numero").value);
       f.append("vendedor_nombre", $("f-vendedor").value);
       f.append("comprador_nombre", $("f-comprador").value);

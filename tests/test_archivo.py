@@ -289,7 +289,7 @@ def test_revision_filtra_por_motivo_y_decide_en_lote(cliente):
 
     pagina = cliente.get("/revision?motivo=no_es_marca:anulacion").get_data(as_text=True)
     assert ids[0]["codigo"] in pagina and ids[1]["codigo"] in pagina and ids[2]["codigo"] not in pagina
-    assert "No es marca: anulacion" in cliente.get("/revision").get_data(as_text=True)  # opciones de motivo
+    assert "X y rayas de anulación" in cliente.get("/revision").get_data(as_text=True)  # opciones de motivo
 
     lote_ids = [ids[0]["id"], ids[1]["id"]]
     r = cliente.post("/revision/lote", json={"accion": "baja", "ids": lote_ids})

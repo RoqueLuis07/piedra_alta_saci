@@ -55,7 +55,7 @@
       {% if motivos %}
       <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">MOTIVO</span>
         <select name="motivo" style="max-width: 260px;"><option value="">Todos ({{ pendientes }})</option>
-          {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }} ({{ m.n }})</option>{% endfor %}
+          {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ')|replace('No es marca: anulacion', 'X y rayas de anulación')|replace('No es marca: linea de tabla', 'Línea de tabla')|replace('No es marca: texto o sello', 'Texto impreso o sello')|replace('No es marca: fragmento', 'Fragmento o mancha') }} ({{ m.n }})</option>{% endfor %}
         </select></div>
       {% endif %}
       <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">CARPETA</span>
@@ -93,7 +93,7 @@
         <div class="sub">{{ {'dominante': 'Dominante', 'complementaria': 'Complementaria'}.get(m.tipo, '') }}{% if m.descripcion %} · {{ m.descripcion }}{% endif %}</div>
         <div class="sub" style="margin-top: 4px;"><a href="{{ url_for('ver_marca', codigo=m.codigo) }}">Editar</a>{% if m.origen_etiqueta %} · {{ m.origen_etiqueta }}{% endif %}</div>
         {% if m.escaneo_id %}<div class="sub" style="margin-top: 4px;"><a href="{{ url_for('ver_escaneo', escaneo_id=m.escaneo_id) }}" target="_blank" rel="noopener">Ver en su página &nearr;</a>{% if m.posicion %} · {{ m.posicion }}{% endif %}</div>{% endif %}
-        {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ') }}</div>{% endif %}
+        {% if m.motivo_calidad %}<div class="motivo">{{ m.motivo_calidad|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ')|replace('No es marca: anulacion', 'X y rayas de anulación')|replace('No es marca: linea de tabla', 'Línea de tabla')|replace('No es marca: texto o sello', 'Texto impreso o sello')|replace('No es marca: fragmento', 'Fragmento o mancha') }}</div>{% endif %}
       </div>
       <div class="rev-acciones">
         <button type="button" class="ok" data-accion="aprobar" {% if m.estado == 'activa' %}disabled{% endif %}>✓ Aprobar</button>
