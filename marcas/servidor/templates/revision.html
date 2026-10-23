@@ -55,7 +55,7 @@
       {% if motivos %}
       <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">MOTIVO</span>
         <select name="motivo" style="max-width: 260px;"><option value="">Todos ({{ pendientes }})</option>
-          {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ')|replace('No es marca: anulacion', 'X y rayas de anulación')|replace('No es marca: linea de tabla', 'Línea de tabla')|replace('No es marca: texto o sello', 'Texto impreso o sello')|replace('No es marca: fragmento', 'Fragmento o mancha') }} ({{ m.n }})</option>{% endfor %}
+          {% for m in motivos %}<option value="{{ m.motivo }}" {% if motivo == m.motivo %}selected{% endif %}>{{ m.motivo|replace('no_es_marca:', 'No es marca: ')|replace('_', ' ')|replace('No es marca: anulacion', 'X y rayas de anulación')|replace('No es marca: linea de tabla', 'Línea de tabla')|replace('No es marca: texto o sello', 'Texto impreso o sello')|replace('No es marca: fragmento', 'Fragmento o mancha')|replace('No es marca: revision visual', 'Descartada al revisarla a ojo (trazo, sello o firma)') }} ({{ m.n }})</option>{% endfor %}
         </select></div>
       {% endif %}
       <div><span class="etiqueta" style="display: block; margin-bottom: 4px;">CARPETA</span>
