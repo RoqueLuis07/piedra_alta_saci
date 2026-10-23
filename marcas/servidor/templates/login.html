@@ -114,7 +114,7 @@
     .form-panel .bajada { font-size: 13px; line-height: 1.6; color: var(--texto-secundario); margin: 0 0 28px; }
     label { display: block; margin-bottom: 18px; font-size: 12px; letter-spacing: 0.06em; color: var(--texto-secundario); text-transform: uppercase; }
     input { width: 100%; border: 1px solid var(--texto); background: var(--superficie); color: var(--texto); padding: 11px 12px; font-size: 14px; margin-top: 7px; font-family: inherit; transition: border-color .15s; }
-    input:focus { outline: none; border-color: var(--verde-oscuro); border-width: 1.5px; }
+    input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--dorado); outline-offset: 2px; box-shadow: 0 0 0 2px var(--texto); }
     button { width: 100%; background: var(--verde-oscuro); color: var(--sobre-oscuro); border: 1px solid var(--verde-oscuro); padding: 13px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; cursor: pointer; margin-top: 8px; transition: background .15s, border-color .15s, color .15s, transform .15s; }
     button:hover { background: var(--verde-claro); border-color: var(--verde-claro); color: var(--sobre-claro); }
     button:active { transform: scale(0.99); }

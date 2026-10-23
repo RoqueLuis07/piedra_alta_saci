@@ -71,6 +71,10 @@
   a:hover { color: var(--verde-claro); }
   input, select, button { font-family: inherit; border-radius: 0; }
   .mono { font-family: 'IBM Plex Mono', monospace; }
+  /* Foco de teclado bien visible en cualquier fondo: anillo dorado con un filo del color del texto. */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--dorado); outline-offset: 2px; box-shadow: 0 0 0 2px var(--texto); }
+  .nav a:focus-visible, .nav button:focus-visible { outline: 3px solid var(--dorado); outline-offset: -3px; box-shadow: none; }
+
   .shell { display: flex; align-items: stretch; min-height: 100vh; }
 
   .nav { flex: 0 0 236px; align-self: flex-start; position: sticky; top: 0; height: 100vh; overflow-x: hidden; overflow-y: auto; background: var(--verde-oscuro); color: var(--sobre-oscuro); display: flex; flex-direction: column; transition: flex-basis .16s ease; }

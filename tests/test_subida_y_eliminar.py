@@ -290,3 +290,33 @@ def test_restaurar_imagen_de_otra_marca_se_rechaza(cliente):
     r = cliente.post(f"/marcas/{b}/restaurar-imagen/{version}")
     assert r.status_code == 404
     assert cliente.get(f"/imagenes/marca/{b}.png").data == _png(40)
+
+
+def test_revision_no_promete_ocultar_a_quien_no_puede(cliente):
+    from marcas.servidor import db
+    from marcas.servidor.auth import encriptar_contrasena
+    from marcas.servidor.consultas import crear_usuario
+
+    _crear_marca_con_imagen(_png(55))
+    conexion = db.obtener_conexion()
+    crear_usuario(conexion, "operador@prueba.test", encriptar_contrasena("clave-de-prueba"), "Operador Prueba", "operador", True)
+    conexion.commit()
+    db.devolver_conexion(conexion)
+
+    operador = cliente.application.test_client()
+    operador.environ_base["wsgi.url_scheme"] = "https"
+    assert operador.post("/login", data={"email": "operador@prueba.test", "contrasena": "clave-de-prueba"}).status_code == 302
+
+    pagina_admin = cliente.get("/revision?ver=todas").get_data(as_text=True)
+    pagina_operador = operador.get("/revision?ver=todas").get_data(as_text=True)
+    assert "<strong>Ocultar</strong>" in pagina_admin
+    assert "<strong>Ocultar</strong>" not in pagina_operador and "Ocultar</button>" not in pagina_operador
+    assert "<strong>Baja</strong>" in pagina_operador
+
+
+def test_el_foco_de_teclado_tiene_estilo_visible(cliente):
+    base = cliente.get("/buscar").get_data(as_text=True)
+    assert ":focus-visible" in base and "var(--dorado)" in base
+    anonimo = cliente.application.test_client()
+    anonimo.environ_base["wsgi.url_scheme"] = "https"
+    assert ":focus-visible" in anonimo.get("/login").get_data(as_text=True)

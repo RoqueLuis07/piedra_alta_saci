@@ -37,7 +37,7 @@
 {% block contenido %}
 <div class="contenido">
   <p style="max-width: 78ch; font-size: 14px; line-height: 1.65; color: var(--texto-secundario); margin: 20px 0 0;">
-    Mirá cada marca y decidí con un toque: <strong>Aprobar</strong> la deja lista para usar, <strong>Baja</strong> la saca de uso (por ejemplo un sello o un fragmento de página que no es una marca) y <strong>Ocultar</strong> la esconde del catálogo. Nada se borra, y podés deshacer el último cambio. Tocá la imagen para verla grande.
+    Mirá cada marca y decidí con un toque: <strong>Aprobar</strong> la deja lista para usar, <strong>Baja</strong> la saca de uso (por ejemplo un sello o un fragmento de página que no es una marca){% if perfil.rol == 'administrador' %} y <strong>Ocultar</strong> la esconde del catálogo{% endif %}. Nada se borra, y podés deshacer el último cambio. Tocá la imagen para verla grande.
   </p>
 
   <div class="modos">
@@ -164,7 +164,7 @@
     document.getElementById('aviso-texto').textContent = texto;
     aviso.style.display = 'flex';
     clearTimeout(temporizador);
-    temporizador = setTimeout(function () { aviso.style.display = 'none'; ultimo = null; ultimoLote = null; }, 12000);
+    temporizador = setTimeout(function () { aviso.style.display = 'none'; ultimo = null; ultimoLote = null; }, 60000);
   }
 
   document.getElementById('grilla').addEventListener('click', function (e) {
