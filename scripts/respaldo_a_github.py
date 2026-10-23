@@ -8,35 +8,40 @@ mismo código de la app pero un comando de arranque distinto:
 
     python scripts/respaldo_a_github.py
 
+Respalda TODO lo necesario para recuperar el sistema (ver marcas/servidor/respaldo.py): usuarios con sus
+contraseñas, operaciones, marcas con sus imágenes, páginas escaneadas con su imagen, el PDF de cada documento
+emitido, el historial de imágenes de las marcas y los cambios pendientes.
+
 Variables de entorno que necesita (además de las que ya usa la app):
+- DATABASE_URL: la base principal (Railway). Se respalda en la carpeta «respaldo/».
+- RENDER_DATABASE_URL: (opcional) la base de Render. Se respalda en «respaldo_render/», en el mismo repositorio.
 - GITHUB_TOKEN: un token de acceso personal de GitHub (de grano fino,
   limitado sólo al repo de respaldos, con permiso de "Contents"
   lectura+escritura). Nunca se guarda en el repo del código.
 - BACKUP_REPO: "owner/repo" del repositorio privado de respaldos.
 - BACKUP_BRANCH: rama a usar (opcional, default "main").
 
-Sube siempre a las MISMAS rutas (no una carpeta por fecha), así cada
-corrida pisa el archivo anterior y el propio historial de commits de git
-sirve como "volver a un punto en el tiempo" -- sin duplicar todo el
-contenido (imágenes incluidas) todos los días. Las marcas se parten en
-lotes para no acercarse al límite de tamaño de archivo de GitHub (100 MB)
-a medida que crezca el catálogo.
+Sube siempre a las MISMAS rutas (no una carpeta por fecha) y sólo los archivos que cambiaron desde la última
+vez: así el historial de commits de git sirve como "volver a un punto en el tiempo" sin duplicar todo el
+contenido (imágenes incluidas) todos los días. Cada archivo queda muy por debajo de los 100 MB que admite GitHub.
+Si una base falla, igual se respalda la otra y el script termina con error para que se note.
 """
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import sys
 from datetime import datetime, timezone
 
+import psycopg2
 import requests
+from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from marcas.servidor.consultas import dict_a_json, exportar_todo_para_respaldo
-from marcas.servidor.db import devolver_conexion, obtener_conexion
+from marcas.servidor.respaldo import volcar
 
-TAMANO_LOTE_MARCAS = 100   # con ~3000 marcas de 512 px, cada lote queda en ~6 MB
 GITHUB_API = "https://api.github.com"
 
 
@@ -49,69 +54,87 @@ def _config():
     return token, repo, rama
 
 
-def _sha_actual(sesion: requests.Session, repo: str, ruta: str, rama: str) -> str | None:
-    """El sha del archivo si ya existe en el repo -- la API de GitHub lo
-    exige para ACTUALIZAR un archivo (si no se manda, asume que es nuevo
-    y falla si ya existía)."""
-    r = sesion.get(f"{GITHUB_API}/repos/{repo}/contents/{ruta}", params={"ref": rama})
-    if r.status_code == 200:
-        return r.json()["sha"]
-    if r.status_code == 404:
-        return None
-    r.raise_for_status()
+def _sha_git(contenido: bytes) -> str:
+    """El sha que Git le da a un archivo (blob): sirve para saber si ya está subido igual."""
+    return hashlib.sha1(b"blob %d\0" % len(contenido) + contenido).hexdigest()
 
 
-def _subir_archivo(sesion: requests.Session, repo: str, ruta: str, contenido: str, rama: str, mensaje: str) -> None:
-    sha = _sha_actual(sesion, repo, ruta, rama)
-    payload = {
-        "message": mensaje,
-        "content": base64.b64encode(contenido.encode("utf-8")).decode("ascii"),
-        "branch": rama,
-    }
-    if sha:
-        payload["sha"] = sha
-    r = sesion.put(f"{GITHUB_API}/repos/{repo}/contents/{ruta}", json=payload)
-    if not r.ok:
-        raise RuntimeError(f"No se pudo subir {ruta}: {r.status_code} {r.text[:300]}")
-    print(f"  subido: {ruta} ({len(contenido)} bytes)")
+class Repositorio:
+    """Subida de archivos al repo de respaldos por la API de contenidos, saltando los que no cambiaron."""
+
+    def __init__(self, token: str, repo: str, rama: str):
+        self.repo, self.rama = repo, rama
+        self.sesion = requests.Session()
+        self.sesion.headers.update({
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        })
+        self.shas = self._leer_arbol()
+        self.subidos = self.sin_cambios = 0
+
+    def _leer_arbol(self) -> dict[str, str]:
+        r = self.sesion.get(f"{GITHUB_API}/repos/{self.repo}/git/trees/{self.rama}", params={"recursive": "1"})
+        if r.status_code in (404, 409):      # repo o rama todavía vacíos
+            return {}
+        r.raise_for_status()
+        return {e["path"]: e["sha"] for e in r.json().get("tree", []) if e["type"] == "blob"}
+
+    def subir(self, ruta: str, contenido: bytes, mensaje: str) -> None:
+        sha_nuevo = _sha_git(contenido)
+        sha_actual = self.shas.get(ruta)
+        if sha_actual == sha_nuevo:
+            self.sin_cambios += 1
+            return
+        payload = {"message": mensaje, "content": base64.b64encode(contenido).decode("ascii"), "branch": self.rama}
+        if sha_actual:
+            payload["sha"] = sha_actual
+        r = self.sesion.put(f"{GITHUB_API}/repos/{self.repo}/contents/{ruta}", json=payload, timeout=300)
+        if not r.ok:
+            raise RuntimeError(f"No se pudo subir {ruta}: {r.status_code} {r.text[:300]}")
+        self.shas[ruta] = r.json()["content"]["sha"]
+        self.subidos += 1
+        print(f"  subido: {ruta} ({len(contenido)} bytes)")
+
+
+def respaldar(repositorio: Repositorio, url_base: str, carpeta: str, etiqueta: str) -> dict:
+    if "sslmode=" not in url_base and ".render.com" in url_base:
+        url_base += ("&" if "?" in url_base else "?") + "sslmode=require"
+    marca_tiempo = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    print(f"Respaldo de {etiqueta} iniciado -- {marca_tiempo}")
+    conexion = psycopg2.connect(url_base, cursor_factory=RealDictCursor, connect_timeout=30)
+    try:
+        manifiesto = volcar(
+            conexion,
+            lambda ruta, contenido: repositorio.subir(ruta, contenido, f"Respaldo automático {marca_tiempo} ({etiqueta}) -- {ruta.split('/', 1)[1]}"),
+            carpeta,
+        )
+    finally:
+        conexion.close()
+    print(f"Respaldo de {etiqueta} completo: {manifiesto['cantidades']}")
+    return manifiesto
 
 
 def main() -> None:
     token, repo, rama = _config()
-    sesion = requests.Session()
-    sesion.headers.update({
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    })
-
-    conexion = obtener_conexion()
-    try:
-        datos = exportar_todo_para_respaldo(conexion)
-    finally:
-        devolver_conexion(conexion)
-
-    ahora = datetime.now(timezone.utc)
-    marca_tiempo = ahora.strftime("%Y-%m-%d %H:%M UTC")
-    print(f"Respaldo iniciado -- {marca_tiempo}")
-
-    marcas = datos.pop("marcas")
-    for tabla, filas in datos.items():
-        _subir_archivo(sesion, repo, f"respaldo/{tabla}.json", dict_a_json(filas), rama, f"Respaldo automático {marca_tiempo} -- {tabla}")
-
-    lotes = [marcas[i : i + TAMANO_LOTE_MARCAS] for i in range(0, len(marcas), TAMANO_LOTE_MARCAS)] or [[]]
-    for indice, lote in enumerate(lotes, start=1):
-        ruta = f"respaldo/marcas/lote_{indice:04d}.json"
-        _subir_archivo(sesion, repo, ruta, dict_a_json(lote), rama, f"Respaldo automático {marca_tiempo} -- marcas lote {indice}")
-
-    manifiesto = dict_a_json({
-        "generado_en": ahora,
-        "cantidades": {**{t: len(f) for t, f in datos.items()}, "marcas": len(marcas)},
-        "lotes_de_marcas": len(lotes),
-    })
-    _subir_archivo(sesion, repo, "respaldo/manifiesto.json", manifiesto, rama, f"Respaldo automático {marca_tiempo} -- manifiesto")
-
-    print(f"Respaldo completo: {len(marcas)} marcas en {len(lotes)} lote(s).")
+    repositorio = Repositorio(token, repo, rama)
+    fuentes = []
+    if os.environ.get("DATABASE_URL"):
+        fuentes.append((os.environ["DATABASE_URL"], os.environ.get("RESPALDO_CARPETA", "respaldo"), "Railway"))
+    if os.environ.get("RENDER_DATABASE_URL"):
+        fuentes.append((os.environ["RENDER_DATABASE_URL"], "respaldo_render", "Render"))
+    if not fuentes:
+        sys.exit("Falta DATABASE_URL (y, si querés respaldar también Render, RENDER_DATABASE_URL).")
+    fallos = []
+    for url, carpeta, etiqueta in fuentes:
+        try:
+            respaldar(repositorio, url, carpeta, etiqueta)
+        except Exception as exc:
+            print(f"ERROR respaldando {etiqueta}: {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr)
+            fallos.append(etiqueta)
+    print(f"Archivos subidos: {repositorio.subidos} · sin cambios: {repositorio.sin_cambios}")
+    if fallos:
+        sys.exit(f"Falló el respaldo de: {', '.join(fallos)}")
 
 
 if __name__ == "__main__":

@@ -801,6 +801,39 @@ _CAMPOS_BYTEA_MARCAS = ("archivo_png", "archivo_svg")
 _CAMPOS_BYTEA_OPERACIONES = ("borrador_pdf", "borrador_dominante_png")
 
 
+def exportar_tablas_chicas(conexion) -> dict:
+    """Las tablas que no pesan (usuarios con sus contraseñas, propietarios, operaciones, cambios pendientes y los
+    datos de los documentos emitidos, sin su PDF), listas para guardar como JSON. Las que pesan (marcas, páginas
+    escaneadas, PDF) se guardan por tandas: ver ``marcas/servidor/respaldo.py``."""
+    with conexion.cursor() as cur:
+        cur.execute("SELECT * FROM usuarios ORDER BY creado_en")
+        usuarios = cur.fetchall()
+        cur.execute("SELECT * FROM propietarios ORDER BY id")
+        propietarios = cur.fetchall()
+        cur.execute("SELECT * FROM operaciones ORDER BY id")
+        operaciones = cur.fetchall()
+        cur.execute("SELECT * FROM cambios_pendientes ORDER BY id")
+        cambios_pendientes = cur.fetchall()
+        # Archivo de documentos emitidos: acá sólo los datos (fecha, operación, marcas, peso); el PDF de cada uno
+        # va aparte, como archivo propio.
+        cur.execute(
+            "SELECT id, operacion_id, tipo, numero_guia, emitido_en, emitido_por, nombre, datos, marcas, "
+            "length(contenido) AS bytes_pdf FROM documentos_emitidos ORDER BY id"
+        )
+        documentos_emitidos = cur.fetchall()
+    for o in operaciones:
+        for campo in _CAMPOS_BYTEA_OPERACIONES:
+            if o.get(campo) is not None:
+                o[campo] = base64.b64encode(bytes(o[campo])).decode("ascii")
+    return {
+        "usuarios": usuarios,
+        "propietarios": propietarios,
+        "operaciones": operaciones,
+        "cambios_pendientes": cambios_pendientes,
+        "documentos_emitidos": documentos_emitidos,
+    }
+
+
 def exportar_todo_para_respaldo(conexion) -> dict:
     """Todo el contenido de la base, listo para guardar como respaldo.
 
@@ -810,42 +843,21 @@ def exportar_todo_para_respaldo(conexion) -> dict:
     PDF/Dominante de un borrador de venta) se codifican en base64 para
     poder ir en JSON.
     """
+    datos = exportar_tablas_chicas(conexion)
     with conexion.cursor() as cur:
-        cur.execute("SELECT * FROM usuarios ORDER BY creado_en")
-        usuarios = cur.fetchall()
-        cur.execute("SELECT * FROM propietarios ORDER BY id")
-        propietarios = cur.fetchall()
-        cur.execute("SELECT * FROM operaciones ORDER BY id")
-        operaciones = cur.fetchall()
         cur.execute("SELECT * FROM marcas ORDER BY id")
         marcas = cur.fetchall()
-        cur.execute("SELECT * FROM cambios_pendientes ORDER BY id")
-        cambios_pendientes = cur.fetchall()
-        # Archivo de documentos emitidos: sólo los datos (fecha, operación,
-        # marcas, peso). Los PDF no van a este respaldo -- pesan MB cada uno --
-        # y quedan en la propia base de Railway.
-        cur.execute(
-            "SELECT id, operacion_id, tipo, numero_guia, emitido_en, emitido_por, nombre, datos, marcas, "
-            "length(contenido) AS bytes_pdf FROM documentos_emitidos ORDER BY id"
-        )
-        documentos_emitidos = cur.fetchall()
-
     for m in marcas:
         for campo in _CAMPOS_BYTEA_MARCAS:
             if m.get(campo) is not None:
                 m[campo] = base64.b64encode(bytes(m[campo])).decode("ascii")
-    for o in operaciones:
-        for campo in _CAMPOS_BYTEA_OPERACIONES:
-            if o.get(campo) is not None:
-                o[campo] = base64.b64encode(bytes(o[campo])).decode("ascii")
-
     return {
-        "usuarios": usuarios,
-        "propietarios": propietarios,
-        "operaciones": operaciones,
+        "usuarios": datos["usuarios"],
+        "propietarios": datos["propietarios"],
+        "operaciones": datos["operaciones"],
         "marcas": marcas,
-        "cambios_pendientes": cambios_pendientes,
-        "documentos_emitidos": documentos_emitidos,
+        "cambios_pendientes": datos["cambios_pendientes"],
+        "documentos_emitidos": datos["documentos_emitidos"],
     }
 
 
