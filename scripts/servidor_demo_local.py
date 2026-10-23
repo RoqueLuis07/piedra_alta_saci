@@ -90,7 +90,7 @@ def preparar_base(pdf: Path | None):
                  "L3210" if i % 2 == 0 else "PARTE1", f"{i + 1:04d}.jpg" if i % 2 == 0 else f"p1_{i + 1:04d}.jpg"),
             )
         cur.execute("INSERT INTO operaciones (numero_guia, tipo_operacion, vendedor_nombre, comprador_nombre, cantidad_animales) "
-                    "VALUES ('90906711', 'venta', 'Piedra Alta S.A.C.I.', 'Comprador de Ejemplo', 25)")
+                    "VALUES ('90906711', 'venta', 'Piedra Alta S.A.I.', 'Comprador de Ejemplo', 25)")
     conexion.commit()
     if pdf and pdf.is_file():
         from marcas.servidor.subida_guias import guardar_paginas, nuevo_lote, preparar

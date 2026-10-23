@@ -1,4 +1,4 @@
-# Piedra Alta S.A.C.I. — Registro de marcas de ganado
+# Piedra Alta S.A.I. — Registro de marcas de ganado
 
 Aplicación web (Flask + Postgres, desplegada en Railway) para completar las
 **Guías de Traslado de SENACSA** con las marcas de ganado y guardar un archivo de

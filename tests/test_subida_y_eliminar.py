@@ -322,7 +322,9 @@ def test_el_foco_de_teclado_tiene_estilo_visible(cliente):
     assert ":focus-visible" in base and "var(--dorado)" in base
     anonimo = cliente.application.test_client()
     anonimo.environ_base["wsgi.url_scheme"] = "https"
-    assert ":focus-visible" in anonimo.get("/login").get_data(as_text=True)
+    login = anonimo.get("/login").get_data(as_text=True)
+    assert ":focus-visible" in login
+    assert "PIEDRA ALTA S.A.I." in login and "S.A.C.I" not in login and "S.A.C.I" not in base      # nombre de la empresa
 
 
 def test_parsear_respaldo_del_rubro_4():
