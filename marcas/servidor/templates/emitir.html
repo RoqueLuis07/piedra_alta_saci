@@ -54,6 +54,17 @@
   .vista .sig span { position: absolute; left: -3px; bottom: 100%; background: #d97706; color: #fff; font: 600 11px 'IBM Plex Mono', monospace; padding: 2px 6px; white-space: nowrap; }
   .vista .sig.dom span { background: #2563eb; }
   @keyframes latido { 50% { background: rgba(245, 158, 11, 0.38); } }
+  .respaldo-resumen { font-size: 12.5px; margin: 0 0 10px; line-height: 1.5; }
+  .guia-resp { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 10px 12px; margin-bottom: 8px; }
+  .guia-resp .cab { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-size: 12.5px; }
+  .guia-resp .num { font: 600 13px 'IBM Plex Mono', monospace; }
+  .guia-resp .ok { color: var(--estado-ok-texto); font-weight: 600; }
+  .guia-resp .no { color: var(--aviso-texto); font-weight: 600; }
+  .guia-resp .marcas-resp { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .marca-resp { width: 84px; border: 1px solid var(--borde-control); background: var(--superficie); padding: 4px; cursor: pointer; text-align: center; color: var(--texto); font-size: 10.5px; }
+  .marca-resp img { width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; display: block; }
+  .marca-resp.usada { opacity: 0.45; cursor: default; }
+  .marca-resp .tipo { display: block; margin-top: 3px; font: 600 9.5px 'IBM Plex Mono', monospace; text-transform: uppercase; }
   .campos-doc { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
   .opciones { display: flex; gap: 8px; margin-bottom: 12px; }
   .opciones label { flex: 1; border: 1px solid var(--texto); padding: 9px 12px; cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; }
@@ -90,6 +101,13 @@
         <input type="file" id="campo-pdf" accept="application/pdf" style="display: none;">
         <div id="aviso-pdf" class="error" style="display: none;"></div>
         <div class="cupo" id="cupo" style="display: none;"></div>
+      </div>
+
+      <div class="paso" id="paso-respaldo" style="display: none;">
+        <h2 class="paso-titulo"><span class="paso-num" style="background: var(--verde-claro); color: var(--sobre-claro);">&#10003;</span> Respaldo de la guía (Rubro 4)</h2>
+        <p class="sub" style="margin: 0 0 10px;">La guía cita de qué guías salieron las marcas. Acá se revisa si están cargadas y podés tocar una marca para usarla en esta guía.</p>
+        <div id="respaldo-resumen" class="respaldo-resumen"></div>
+        <div id="respaldo-lista"></div>
       </div>
 
       <div class="paso bloqueado" id="paso-datos">
@@ -180,5 +198,5 @@
     csrf: "{{ csrf_token() }}"
   };
 </script>
-<script src="{{ url_for('static', filename='js/emitir.js') }}"></script>
+<script src="{{ url_for('static', filename='js/emitir.js') }}?v=respaldo-1"></script>
 {% endblock %}

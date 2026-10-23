@@ -162,6 +162,8 @@ def obtener_guia_escaneada(conexion, numero: str) -> dict | None:
             (numero,),
         )
         operaciones = cur.fetchall()
+        cur.execute("SELECT respaldo FROM escaneos WHERE numero_guia = %s AND respaldo IS NOT NULL ORDER BY id LIMIT 1", (numero,))
+        fila_respaldo = cur.fetchone()
 
     def primero(campo, preferir_certificado=True):
         orden = sorted(paginas, key=lambda p: (p["formato"] != "SENACSA_CERTIFICADO", p["id"])) if preferir_certificado else paginas
@@ -178,6 +180,7 @@ def obtener_guia_escaneada(conexion, numero: str) -> dict | None:
         "paginas": paginas,
         "marcas": marcas,
         "operaciones": operaciones,
+        "respaldo": (fila_respaldo or {}).get("respaldo") or [],
     }
 
 
@@ -257,3 +260,56 @@ def origen_de_marca(conexion, marca_id: int) -> dict | None:
         )
         return cur.fetchone()
 
+
+
+def guias_de_respaldo(conexion, filas: list[dict], max_marcas: int = 60) -> list[dict]:
+    """Valida el «Respaldo» del Rubro 4 contra lo que hay cargado: para cada guía de transferencia (G) dice si el
+    número existe como guía escaneada y/o como guía cargada, y trae sus marcas (dominantes primero) para elegirlas.
+    Las boletas de marca (B) se devuelven tal cual, sin buscar. Mantiene el orden de ``filas``."""
+    numeros = [f["numero"] for f in filas if f.get("cod") == "G"]
+    paginas: dict[str, dict] = {}
+    operaciones: dict[str, list[dict]] = {}
+    marcas: dict[str, list[dict]] = {}
+    if numeros:
+        with conexion.cursor() as cur:
+            cur.execute(
+                "SELECT numero_guia, count(*) AS paginas, min(id) AS primero FROM escaneos "
+                "WHERE numero_guia = ANY(%s) GROUP BY numero_guia", (numeros,))
+            paginas = {f["numero_guia"]: f for f in cur.fetchall()}
+            cur.execute(
+                "SELECT id, numero_guia, tipo_operacion FROM operaciones WHERE numero_guia = ANY(%s) AND activo ORDER BY id",
+                (numeros,))
+            for f in cur.fetchall():
+                operaciones.setdefault(f["numero_guia"], []).append(f)
+            cur.execute(
+                """
+                SELECT m.id, m.codigo, m.tipo, m.estado, m.descripcion, e.numero_guia AS guia_escaneo, o.numero_guia AS guia_operacion
+                FROM marcas m
+                LEFT JOIN escaneos e ON e.id = m.escaneo_id
+                LEFT JOIN operaciones o ON o.id = m.operacion_id
+                WHERE m.activo AND m.estado <> 'baja' AND m.archivo_png IS NOT NULL
+                  AND (e.numero_guia = ANY(%s) OR o.numero_guia = ANY(%s))
+                ORDER BY (m.tipo = 'dominante') DESC, m.codigo
+                """,
+                (numeros, numeros))
+            for f in cur.fetchall():
+                for numero in {f["guia_escaneo"], f["guia_operacion"]} & set(numeros):
+                    lista = marcas.setdefault(numero, [])
+                    if len(lista) < max_marcas and all(m["id"] != f["id"] for m in lista):
+                        lista.append({k: f[k] for k in ("id", "codigo", "tipo", "estado", "descripcion")})
+    resultado = []
+    for f in filas:
+        fila = dict(f)
+        if f.get("cod") == "G":
+            n = f["numero"]
+            fila.update({
+                "encontrada": n in paginas or n in operaciones,
+                "paginas": paginas[n]["paginas"] if n in paginas else 0,
+                "primer_escaneo": paginas[n]["primero"] if n in paginas else None,
+                "operaciones": [o["id"] for o in operaciones.get(n, [])],
+                "marcas": marcas.get(n, []),
+            })
+        else:
+            fila.update({"encontrada": None, "paginas": 0, "primer_escaneo": None, "operaciones": [], "marcas": []})
+        resultado.append(fila)
+    return resultado

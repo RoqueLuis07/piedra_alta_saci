@@ -195,6 +195,7 @@
   }
   function cambio() {
     pintarBandeja(); pintarCupo(); actualizarBoton(); pintarVista();
+    if ((ultimoRespaldo || []).length) pintarRespaldo(ultimoRespaldo);   // las marcas ya usadas se ven marcadas
   }
 
   // ---------- pedido al servidor ----------
@@ -243,6 +244,7 @@
         var aviso_pdf = $("aviso-pdf");
         if (res.error) {
           aviso_pdf.textContent = res.error; aviso_pdf.style.display = "block";
+          pintarRespaldo([]);
           $("vp-estado").textContent = "";
           $("vista").textContent = "";
           return;
@@ -251,6 +253,7 @@
         geom = res;
         estado.cupo = res.cupo; pintarCupo();
         if (res.encabezado) { estado.declaradas = res.encabezado.marcas_declaradas || null; autocompletar(res.encabezado); pintarCupo(); }
+        pintarRespaldo(res.respaldo_validado || []);
         construirVista();
         desbloquear();
       })
@@ -325,6 +328,75 @@
       v.scrollTo({ top: Math.max(0, y - 80), behavior: "smooth" });
     }
   }
+
+  // ---------- respaldo del Rubro 4 ----------
+  function marcaYaEstaUsada(codigo) {
+    return (estado.dominante && estado.dominante.codigo === codigo) || estado.items.some(function (i) { return i.codigo === codigo; });
+  }
+  function usarMarcaDeRespaldo(m) {
+    if (marcaYaEstaUsada(m.codigo)) return;
+    var item = itemCatalogo(m);
+    if (m.tipo === "dominante" && estado.cupo && estado.cupo.dominante_libre && !estado.dominante) estado.dominante = item;
+    else estado.items.push(item);
+    cambio();
+  }
+  var ultimoRespaldo = [];
+  function pintarRespaldo(lista) {
+    ultimoRespaldo = lista;
+    var paso = $("paso-respaldo"), resumen = $("respaldo-resumen"), cont = $("respaldo-lista");
+    cont.textContent = ""; resumen.textContent = "";
+    if (!lista.length) { paso.style.display = "none"; return; }
+    paso.style.display = "block";
+    var guias = lista.filter(function (f) { return f.cod === "G"; });
+    var boletas = lista.filter(function (f) { return f.cod === "B"; });
+    var halladas = guias.filter(function (f) { return f.encontrada; });
+    var conMarcas = halladas.filter(function (f) { return f.marcas.length; });
+    resumen.textContent = guias.length + " guías de respaldo leídas: " + halladas.length + " ya están cargadas en el sistema (" +
+      conMarcas.length + " con marcas para elegir) y " + (guias.length - halladas.length) + " todavía no." +
+      (boletas.length ? " Boleta de marca: " + boletas.map(function (b) { return b.numero; }).join(", ") + "." : "");
+    var faltan = guias.filter(function (f) { return !f.encontrada; });
+    if (faltan.length) {
+      var det = document.createElement("details"); det.className = "guia-resp";
+      var sum = document.createElement("summary"); sum.className = "no"; sum.style.cursor = "pointer";
+      sum.textContent = "✗ " + faltan.length + " guía" + (faltan.length === 1 ? "" : "s") + " de respaldo todavía no " + (faltan.length === 1 ? "está cargada" : "están cargadas") + " (subilas en Guías escaneadas)";
+      det.appendChild(sum);
+      var lis = document.createElement("div"); lis.className = "sub mono"; lis.style.marginTop = "6px";
+      lis.textContent = faltan.map(function (f) { return f.numero + (f.fecha ? " (" + f.fecha + ")" : ""); }).join(" · ");
+      det.appendChild(lis);
+      cont.appendChild(det);
+    }
+    guias.filter(function (f) { return f.encontrada; }).forEach(function (f) {
+      var caja = document.createElement("div"); caja.className = "guia-resp";
+      var cab = document.createElement("div"); cab.className = "cab";
+      var num = document.createElement("span"); num.className = "num"; num.textContent = "G " + f.numero; cab.appendChild(num);
+      if (f.fecha) { var fe = document.createElement("span"); fe.className = "sub"; fe.textContent = f.fecha; cab.appendChild(fe); }
+      var est = document.createElement("span");
+      if (f.encontrada) {
+        est.className = "ok";
+        est.textContent = "✓ está en el sistema" + (f.marcas.length ? " · " + f.marcas.length + " marca" + (f.marcas.length === 1 ? "" : "s") : " · sin marcas sacadas todavía");
+      } else { est.className = "no"; est.textContent = "✗ no está cargada (subila en Guías escaneadas)"; }
+      cab.appendChild(est);
+      if (f.url_guia) { var a = document.createElement("a"); a.href = f.url_guia; a.target = "_blank"; a.rel = "noopener"; a.textContent = "ver la guía ↗"; cab.appendChild(a); }
+      caja.appendChild(cab);
+      if (f.marcas.length) {
+        var fila = document.createElement("div"); fila.className = "marcas-resp";
+        f.marcas.forEach(function (m) {
+          var b = document.createElement("button"); b.type = "button"; b.className = "marca-resp";
+          var usada = marcaYaEstaUsada(m.codigo);
+          if (usada) { b.classList.add("usada"); b.disabled = true; }
+          b.title = usada ? "Ya está en esta guía" : "Usar " + m.codigo + " en esta guía";
+          var im = document.createElement("img"); im.src = m.imagen_url; im.alt = "Marca " + m.codigo; im.loading = "lazy"; b.appendChild(im);
+          var cod = document.createElement("span"); cod.textContent = m.codigo; b.appendChild(cod);
+          var t = document.createElement("span"); t.className = "tipo"; t.textContent = usada ? "✓ en la guía" : (m.tipo === "dominante" ? "Dominante" : "Compl."); b.appendChild(t);
+          b.addEventListener("click", function () { usarMarcaDeRespaldo(m); });
+          fila.appendChild(b);
+        });
+        caja.appendChild(fila);
+      }
+      cont.appendChild(caja);
+    });
+  }
+
   function desbloquear() {
     ["paso-datos", "paso-dominante", "paso-marcas"].forEach(function (id) { $(id).classList.remove("bloqueado"); });
   }

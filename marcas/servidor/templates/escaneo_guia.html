@@ -15,6 +15,13 @@
   .doc-tarjeta img { width: 100%; aspect-ratio: 3/4; object-fit: cover; object-position: top; background: #fff; border: 1px solid var(--borde-fina); display: block; }
   .doc-tarjeta .nombre { font-weight: 600; font-size: 12.5px; margin-top: 6px; }
   .doc-tarjeta .sub { font-size: 11px; }
+  .resp-fila { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px 10px; margin-bottom: 8px; font-size: 12.5px; }
+  .resp-fila .num { font: 600 13px 'IBM Plex Mono', monospace; }
+  .resp-fila .ok { color: var(--estado-ok-texto); font-weight: 600; }
+  .resp-fila .no { color: var(--aviso-texto); font-weight: 600; }
+  .resp-marcas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .resp-marcas a { width: 56px; border: 1px solid var(--borde-control); background: #fff; display: block; }
+  .resp-marcas img { width: 100%; aspect-ratio: 1; object-fit: contain; display: block; }
   .marcas-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 12px; margin-top: 12px; }
   .marca-tarjeta { border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px; text-decoration: none; color: var(--texto); display: block; }
   .marca-tarjeta:hover { border-color: var(--verde-claro); }
@@ -40,6 +47,21 @@
       <div class="campo-fila"><div class="campo-etiqueta">En el sistema</div><div class="campo-valor"><a href="{{ url_for('ver_guia', operacion_id=o.id) }}">{{ 'Venta' if o.tipo_operacion == 'venta' else 'Compra' }} #{{ o.id }}</a></div></div>
       {% endfor %}
       <p class="sub" style="margin-top: 10px;">Lo leído por OCR puede tener errores: abrí cada página para corregirlo.</p>
+
+      {% if respaldo %}
+      <h2 class="subtitulo" style="margin-top: 26px;">Respaldo de esta guía (Rubro 4)</h2>
+      {% set hallada = respaldo|selectattr('encontrada')|list %}
+      <p class="sub" style="margin: 0 0 10px;">La guía cita {{ respaldo|selectattr('cod', 'equalto', 'G')|list|length }} guías de transferencia de donde salieron sus marcas: {{ hallada|length }} ya están cargadas en el sistema.</p>
+      {% for f in respaldo %}
+      <div class="resp-fila">
+        <span class="num">{{ f.cod }} {{ f.numero }}</span>{% if f.fecha %} <span class="sub">· {{ f.fecha }}</span>{% endif %}
+        {% if f.cod == 'B' %}<span class="sub"> · boleta de marca (no se busca)</span>
+        {% elif f.encontrada %}<span class="ok"> · ✓ está en el sistema{% if f.url_guia %} · <a href="{{ f.url_guia }}">ver la guía</a>{% endif %}</span>
+        {% else %}<span class="no"> · ✗ no está cargada</span>{% endif %}
+        {% if f.marcas %}<div class="resp-marcas">{% for m in f.marcas %}<a href="{{ url_for('ver_marca', codigo=m.codigo) }}" title="{{ m.codigo }} · {{ 'Dominante' if m.tipo == 'dominante' else 'Complementaria' }}"><img src="{{ m.imagen_url }}" alt="Marca {{ m.codigo }}" loading="lazy"></a>{% endfor %}</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% endif %}
     </div>
 
     <div style="flex: 2 1 480px; min-width: 0;">

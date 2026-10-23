@@ -14,6 +14,7 @@ import uuid
 from pathlib import Path
 
 import psycopg2
+from psycopg2.extras import Json
 from PIL import Image, ImageOps
 
 LADO_IMAGEN = 1400
@@ -82,7 +83,14 @@ def paginas_de_pdf(contenido: bytes, maximo: int) -> list[dict]:
             texto = (lector.pages[i].extract_text() or "").strip()
         except Exception:
             texto = ""
-        paginas.append({"imagen": imagen, "texto": texto})
+        respaldo = None
+        try:
+            from marcas.pdf.guia import parsear_respaldo, texto_ordenado_de_pagina
+
+            respaldo = parsear_respaldo(texto_ordenado_de_pagina(pagina)) or None
+        except Exception:
+            respaldo = None
+        paginas.append({"imagen": imagen, "texto": texto, "respaldo": respaldo})
     return paginas
 
 
@@ -118,13 +126,14 @@ def guardar_paginas(conexion, paginas: list[dict], numero_guia: str | None, fuen
             cur.execute(
                 """
                 INSERT INTO escaneos (carpeta, archivo, orden, formato, numero_guia, fuente_numero, confianza_numero,
-                                      texto_ocr, ancho, alto, etiqueta)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                                      texto_ocr, ancho, alto, etiqueta, respaldo)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
                 """,
                 (CARPETA, f"{lote}_{orden_inicial + i + 1:03d}.jpg", orden_inicial + i, formato or _formato(p["texto"]),
                  numero_guia, fuente if numero_guia else None, 1.0 if numero_guia else None,
                  p["texto"] or None, imagen.size[0], imagen.size[1],
-                 f"Subida · {nombre[:60]} · pág. {i + 1}" if nombre else f"Subida · pág. {i + 1}"),
+                 f"Subida · {nombre[:60]} · pág. {i + 1}" if nombre else f"Subida · pág. {i + 1}",
+                 Json(p["respaldo"]) if p.get("respaldo") else None),
             )
             nuevo = cur.fetchone()["id"]
             cur.execute("INSERT INTO escaneos_imagenes (escaneo_id, imagen, miniatura) VALUES (%s, %s, %s)",

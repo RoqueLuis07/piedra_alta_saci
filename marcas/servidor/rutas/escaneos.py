@@ -12,6 +12,7 @@ from marcas.servidor.auth import conexion_actual, perfil_actual, requiere_rol, r
 from marcas.servidor.consultas import crear_marca, subir_imagen_marca, url_imagen
 from marcas.servidor.extraer_marca import normalizar_marca
 from marcas.servidor.consultas_escaneos import (
+    guias_de_respaldo,
     FORMATOS,
     POR_PAGINA_GUIAS,
     POR_PAGINA_SIN_NUMERO,
@@ -116,8 +117,14 @@ def registrar(app) -> None:
         for m in guia["marcas"]:
             m["imagen_url"] = url_imagen(m["id"], m.get("archivo_png"))
         utiles = [m["codigo"] for m in guia["marcas"] if m.get("archivo_png") and m["estado"] != "baja"]
+        respaldo = guias_de_respaldo(conexion, guia["respaldo"]) if guia["respaldo"] else []
+        for fila in respaldo:
+            if fila.get("primer_escaneo"):
+                fila["url_guia"] = url_for("ver_guia_escaneada", numero=fila["numero"])
+            for m in fila["marcas"]:
+                m["imagen_url"] = url_imagen(m["id"], True)
         return render_template(
-            "escaneo_guia.html", activo="escaneos", perfil=perfil_actual(), guia=guia, formatos=FORMATOS,
+            "escaneo_guia.html", activo="escaneos", perfil=perfil_actual(), guia=guia, formatos=FORMATOS, respaldo=respaldo,
             codigos_emitir=",".join(utiles[:MAX_MARCAS_A_EMITIR]), cantidad_emitir=min(len(utiles), MAX_MARCAS_A_EMITIR),
         )
 

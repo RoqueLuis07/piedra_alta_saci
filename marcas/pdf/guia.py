@@ -394,15 +394,20 @@ def _texto_ordenado_por_posicion(pdf: Path | str, pagina: int) -> str:
     página, en cambio, es siempre la misma."""
     doc = pdfium.PdfDocument(str(pdf))
     try:
-        textpage = doc[pagina].get_textpage()
-        piezas = []
-        for i in range(textpage.count_rects()):
-            l, t, r, b = textpage.get_rect(i)
-            texto = textpage.get_text_bounded(l, b, r, t).strip()
-            if texto:
-                piezas.append((t, l, texto))
+        return texto_ordenado_de_pagina(doc[pagina])
     finally:
         doc.close()
+
+
+def texto_ordenado_de_pagina(pagina_pdfium) -> str:
+    """Lo mismo que :func:`_texto_ordenado_por_posicion` para una página de pdfium ya abierta."""
+    textpage = pagina_pdfium.get_textpage()
+    piezas = []
+    for i in range(textpage.count_rects()):
+        l, t, r, b = textpage.get_rect(i)
+        texto = textpage.get_text_bounded(l, b, r, t).strip()
+        if texto:
+            piezas.append((t, l, texto))
     piezas.sort(key=lambda p: -p[0])
     filas: list[list[tuple[float, float, str]]] = []
     tolerancia = 4.0
@@ -511,6 +516,41 @@ def extraer_encabezado(pdf: Path | str) -> dict:
             resultado["comprador_ci_ruc"] = partes.group(2)
             resultado["comprador_dv"] = partes.group(3)
     return resultado
+
+
+_RE_RESPALDO = re.compile(r"\((B|G)\)\s*([A-Za-z0-9]+)(?:\s+(\d{2}/\d{2}/\d{4}))?")
+
+
+def parsear_respaldo(texto: str) -> list[dict]:
+    """Las filas de «Respaldo» del Rubro 4 (Boleta de Marca / Guía de Transferencia): de cada una, el código
+    (B = boleta de marca, G = guía de transferencia), el número y la fecha. Son las guías de donde salieron las
+    marcas del ganado que se vende. Lee del texto de la propia página, entre «Rubro 4» y «Factura de venta»;
+    si la página no tiene ese rubro devuelve una lista vacía."""
+    inicio = texto.find("Rubro 4")
+    if inicio < 0:
+        return []
+    fin = texto.find("Factura de venta", inicio)
+    bloque = texto[inicio : fin if fin > inicio else inicio + 4000]
+    # El título del rubro también dice «(B) y/o ... (G)»: las filas empiezan recién después de la columna «Respaldo».
+    desde = bloque.find("Respaldo")
+    if desde >= 0:
+        bloque = bloque[desde:]
+    vistos, filas = set(), []
+    for cod, numero, fecha in _RE_RESPALDO.findall(bloque):
+        clave = (cod, numero)
+        if clave in vistos or not any(c.isdigit() for c in numero):
+            continue
+        vistos.add(clave)
+        filas.append({"cod": cod, "numero": numero, "fecha": fecha or None})
+    return filas
+
+
+def extraer_respaldo(pdf: Path | str) -> list[dict]:
+    """El respaldo del Rubro 4 de la página principal del PDF (ver :func:`parsear_respaldo`)."""
+    principales = paginas_principales(pdf)
+    if not principales:
+        return []
+    return parsear_respaldo(_texto_ordenado_por_posicion(pdf, principales[0][0]))
 
 
 def hojas_de_anexo(pdf: Path | str) -> list[HojaAnexo]:

@@ -332,3 +332,7 @@ create table if not exists marcas_versiones_imagen (
 );
 
 create index if not exists idx_marcas_versiones_marca on marcas_versiones_imagen(marca_id, creado_en desc);
+
+-- Respaldo del Rubro 4 de una guía subida en PDF (las guías de transferencia de donde salieron las marcas):
+-- [{"cod": "G", "numero": "90947260", "fecha": "27/01/2025"}, ...]. Sólo lo llenan las guías subidas como PDF.
+alter table escaneos add column if not exists respaldo jsonb;

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from flask import Response, jsonify, render_template, request, url_for
 
-from marcas.pdf.guia import analizar_con_casillas, extraer_encabezado
+from marcas.pdf.guia import analizar_con_casillas, extraer_encabezado, extraer_respaldo
 from marcas.servidor import cache_guias
 from marcas.servidor.auth import conexion_actual, perfil_actual, requiere_rol, requiere_sesion
 from marcas.servidor.consultas import (
@@ -29,7 +29,7 @@ from marcas.servidor.consultas import (
     subir_imagen_marca,
     url_imagen,
 )
-from marcas.servidor.consultas_escaneos import codigos_a_marcas
+from marcas.servidor.consultas_escaneos import codigos_a_marcas, guias_de_respaldo
 from marcas.servidor.utilidades import (
     _CAMPOS_MINIMOS_GUIA,
     _CAMPOS_MINIMOS_VENTA,
@@ -195,8 +195,20 @@ def registrar(app) -> None:
                     analisis["encabezado"] = extraer_encabezado(ruta)
                 except Exception:
                     analisis["encabezado"] = None
+                try:
+                    analisis["respaldo"] = extraer_respaldo(ruta)
+                except Exception:
+                    analisis["respaldo"] = []
             cache_guias.guardar(clave, pdf_bytes, analisis)
-        return jsonify({**analisis, "clave": clave, "url_pagina": url_for("emitir_pagina", clave=clave, indice=0)})
+        # El respaldo del Rubro 4 se valida cada vez (no se guarda en la caché): lo cargado puede haber cambiado.
+        respaldo = guias_de_respaldo(conexion_actual(), analisis.get("respaldo") or [])
+        for fila in respaldo:
+            if fila.get("primer_escaneo"):
+                fila["url_guia"] = url_for("ver_guia_escaneada", numero=fila["numero"])
+            for m in fila["marcas"]:
+                m["imagen_url"] = url_imagen(m["id"], True)
+                m["url_ficha"] = url_for("ver_marca", codigo=m["codigo"])
+        return jsonify({**analisis, "respaldo_validado": respaldo, "clave": clave, "url_pagina": url_for("emitir_pagina", clave=clave, indice=0)})
 
     @app.get("/emitir/pagina/<clave>/<int:indice>.jpg")
     @requiere_sesion

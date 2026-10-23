@@ -323,3 +323,85 @@ def test_el_foco_de_teclado_tiene_estilo_visible(cliente):
     anonimo = cliente.application.test_client()
     anonimo.environ_base["wsgi.url_scheme"] = "https"
     assert ":focus-visible" in anonimo.get("/login").get_data(as_text=True)
+
+
+def test_parsear_respaldo_del_rubro_4():
+    from marcas.pdf.guia import parsear_respaldo
+
+    texto = (
+        "Rubro 4 - Boleta de Marca (B) y/o Guía de Transferencia (G) (Ley N° 2576 art 6°) TOTAL A PAGAR:\n"
+        "Marca Líquida (Propia o Dominante) Ganado Adquirido (Marcas Complementarias) Respaldo\n"
+        "Categoría Cantidad Categoría Cantidad Cod Número Fecha Cod Número Fecha\n"
+        "Vaquillas 54 (B) ACX492 (G) 90947260 27/01/2025\n"
+        "(G) 90959498 13/02/2025 (G) 90959493 13/02/2025\n"
+        "(G) 90959498 13/02/2025\n"
+        "Factura de venta o Nota de Remisión N° (G) 11111111 01/01/2020\n"
+    )
+    assert parsear_respaldo(texto) == [
+        {"cod": "B", "numero": "ACX492", "fecha": None},
+        {"cod": "G", "numero": "90947260", "fecha": "27/01/2025"},
+        {"cod": "G", "numero": "90959498", "fecha": "13/02/2025"},
+        {"cod": "G", "numero": "90959493", "fecha": "13/02/2025"},
+    ]
+    assert parsear_respaldo("Una página cualquiera sin ese rubro (G) 123456") == []
+
+
+def test_respaldo_se_lee_al_subir_el_pdf_y_se_valida_contra_lo_cargado(cliente):
+    from marcas.servidor import db
+
+    # una guía de respaldo que SÍ está cargada, con una marca sacada de ella
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("INSERT INTO escaneos (carpeta, archivo, numero_guia, formato) VALUES ('subidas', 'r1.jpg', '95000001', 'GE2_PRINCIPAL') RETURNING id")
+        escaneo = cur.fetchone()["id"]
+        cur.execute(
+            "INSERT INTO marcas (tipo, estado, escaneo_id, archivo_png) VALUES ('dominante', 'activa', %s, %s) RETURNING id, codigo",
+            (escaneo, psycopg2.Binary(_png(20))),
+        )
+        marca = cur.fetchone()
+    conexion.commit()
+    db.devolver_conexion(conexion)
+
+    # un PDF cuyo Rubro 4 cita esa guía y otra que no existe
+    salida = io.BytesIO()
+    c = canvas.Canvas(salida)
+    y = 780
+    for linea in (
+        "Rubro 2 - Diseño de Marca del Ganado a Trasladar y a Transferir",
+        "Rubro 4 - Boleta de Marca (B) y/o Guia de Transferencia (G)",
+        "Respaldo",
+        "(B) ZZZ123",
+        "(G) 95000001 13/02/2025",
+        "(G) 95000002 14/02/2025",
+        "Factura de venta o Nota de Remision",
+    ):
+        c.drawString(72, y, linea)
+        y -= 24
+    c.showPage()
+    c.save()
+    r = cliente.post(
+        "/escaneos/subir",
+        data={"archivos": (io.BytesIO(salida.getvalue()), "venta.pdf"), "numero_guia": "95000099"},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code in (200, 302), r.get_data(as_text=True)[:300]
+
+    pagina = cliente.get("/escaneos/guia/95000099").get_data(as_text=True)
+    assert "Respaldo de esta guía (Rubro 4)" in pagina
+    assert "G 95000001" in pagina and "está en el sistema" in pagina and marca["codigo"] in pagina
+    assert "G 95000002" in pagina and "no está cargada" in pagina
+    assert "B ZZZ123" in pagina and "boleta de marca" in pagina
+    # una guía sin respaldo no muestra la sección
+    assert "Respaldo de esta guía" not in cliente.get("/escaneos/guia/95000001").get_data(as_text=True)
+
+
+def test_emitir_analizar_devuelve_el_respaldo_validado(cliente, tmp_path):
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from generar_guia_demo import generar as generar_guia
+
+    pdf = generar_guia(tmp_path / "g2.pdf", guia="VISTA-0002", incluir_rubro2=True).read_bytes()
+    r = cliente.post("/emitir/analizar", data={"pdf_guia": (io.BytesIO(pdf), "g.pdf")}, content_type="multipart/form-data")
+    assert r.status_code == 200 and r.get_json()["respaldo_validado"] == []   # la guía de prueba no trae Rubro 4
