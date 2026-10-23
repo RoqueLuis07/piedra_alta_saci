@@ -178,10 +178,12 @@
       : "Si el PDF no la trae, dibujala en el cuadro de abajo y tocá «Usar como dominante».";
   }
   function actualizarBoton() {
-    var listo = !!estado.pdf && (estado.items.length > 0 || estado.dominante) && !estado.generado;
+    var sobran = geom ? Math.max(0, estado.items.length - geom.estaciones.length) : 0;
+    var listo = !!estado.pdf && (estado.items.length > 0 || estado.dominante) && !estado.generado && !sobran;
     $("btn-generar").disabled = !listo;
     if (estado.generado) return;
     if (!estado.pdf) aviso("Subí el PDF para empezar.");
+    else if (sobran) aviso("Sobra" + (sobran === 1 ? "" : "n") + " " + sobran + " marca" + (sobran === 1 ? "" : "s") + ": quitá " + (sobran === 1 ? "una" : sobran) + " para poder generar el PDF.");
     else if (!listo) aviso("Agregá al menos una marca.");
     else {
       var n = estado.items.length;
@@ -298,6 +300,7 @@
     return primero;
   }
   function pintarVista() {
+    actualizarBoton();
     if (!geom || !capas.length) return;
     capas.forEach(function (c) { c.textContent = ""; });
     var E = geom.estaciones, n = estado.items.length;
@@ -312,7 +315,7 @@
     var r2 = geom.cupo.complementarias_libres_rubro2;
     var enR2 = Math.min(n, r2), enAnexo = Math.max(0, Math.min(n, E.length) - r2);
     var txt = "En el Rubro 2: " + enR2 + " · En el Anexo: " + enAnexo + (estado.dominante ? " · Dominante estampada" : "");
-    if (n > E.length) txt = "Sobran " + (n - E.length) + " marcas: no entran en esta guía. " + txt;
+    if (n > E.length) txt = "Sobra" + (n - E.length === 1 ? "" : "n") + " " + (n - E.length) + " marca" + (n - E.length === 1 ? "" : "s") + ": no " + (n - E.length === 1 ? "entra" : "entran") + " en esta guía. " + txt;
     else if (n === E.length) txt += " · No quedan casillas libres";
     $("vp-estado").textContent = txt;
     if (destino && n !== ultimoN) {

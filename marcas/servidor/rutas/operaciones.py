@@ -124,6 +124,18 @@ def registrar(app) -> None:
                     valor = None
             campos[campo] = valor
         campos["tipo_operacion"] = "compra"
+        if campos.get("cantidad_animales") is not None and campos["cantidad_animales"] < 0:
+            return _error_seguro("La cantidad de animales no puede ser negativa.", ValueError("cantidad negativa"))
+        if campos.get("numero_guia"):
+            with conexion.cursor() as cur:
+                cur.execute("SELECT id FROM operaciones WHERE numero_guia = %s AND tipo_operacion = 'compra' AND activo LIMIT 1",
+                            (campos["numero_guia"],))
+                repetida = cur.fetchone()
+            if repetida:
+                return _error_seguro(
+                    f"Ya hay una guía con el número {campos['numero_guia']}. Abrila desde el listado para completarla o corregir el número.",
+                    ValueError("guía duplicada"),
+                )
         if _operacion_vacia(campos):
             return _error_seguro(
                 "Completá al menos el número de guía, el vendedor o la cantidad de animales antes de guardar.",

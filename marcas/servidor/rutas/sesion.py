@@ -105,6 +105,18 @@ def registrar(app, limiter) -> None:
             mensaje="No existe la página o el registro que buscás. Puede que el enlace esté mal escrito o ya no exista.",
         ), 404
 
+    @app.errorhandler(500)
+    def error_interno(_exc):
+        return render_template(
+            "error_simple.html",
+            titulo="Algo salió mal",
+            mensaje="No pudimos completar la acción y no se guardó nada a medias. Volvé atrás y probá de nuevo; si sigue pasando, avisá al administrador.",
+        ), 500
+
+    @app.get("/favicon.ico")
+    def favicon():
+        return app.send_static_file("favicon/favicon-32.png")
+
     @app.errorhandler(405)
     def metodo_no_permitido(_exc):
         return render_template(

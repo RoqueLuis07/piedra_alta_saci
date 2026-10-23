@@ -49,6 +49,9 @@ def registrar(app) -> None:
         resultados, total = buscar_marcas(
             conexion, texto, pagina=pagina, estado=estado, tipo=tipo, incluir_ocultos=ver_ocultos, carpeta=carpeta
         )
+        ultima = max(1, -(-total // POR_PAGINA_MARCAS))
+        if pagina > ultima:
+            return redirect(url_for("buscar", q=texto, estado=estado, tipo=tipo, carpeta=carpeta, pagina=ultima))
         for fila in resultados:
             fila["imagen_url"] = url_imagen(fila["id"], fila.get("archivo_png"))
         return render_template(

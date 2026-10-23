@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import io
 import zipfile
 from datetime import datetime, timezone
@@ -71,6 +73,8 @@ def registrar(app) -> None:
         error = None
         if not email or not nombre:
             error = "Completá el email y el nombre."
+        elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            error = "El email no es válido (por ejemplo: nombre@correo.com)."
         elif len(contrasena) < 6:
             error = "La contraseña debe tener al menos 6 caracteres."
         elif rol not in ("administrador", "operador", "consulta"):

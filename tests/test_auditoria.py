@@ -136,3 +136,28 @@ def test_correcciones_del_informe_qa(cliente):
     html = cliente.get("/revision?ver=bajas").get_data(as_text=True)
     assert detector in html and a_mano not in html
     assert a_mano in cliente.get("/revision?ver=todas").get_data(as_text=True)
+
+
+def test_validaciones_de_entrada(cliente):
+    # D8: guía con cantidad negativa o duplicada se rechaza con un mensaje claro
+    base = {"numero_guia": "UX-100", "vendedor_nombre": "V", "comprador_nombre": "C", "cantidad_animales": "5"}
+    assert cliente.post("/guias/nueva", data=base).status_code == 302
+    dup = cliente.post("/guias/nueva", data=base)
+    assert dup.status_code >= 400 and "Ya hay una guía" in dup.get_data(as_text=True)
+    neg = cliente.post("/guias/nueva", data={**base, "numero_guia": "UX-101", "cantidad_animales": "-3"})
+    assert neg.status_code >= 400 and "negativa" in neg.get_data(as_text=True)
+    # D9: email inválido al crear usuario
+    r = cliente.post("/panel/usuarios", data={"email": "noesmail", "nombre": "X", "contrasena": "clave-larga-1", "rol": "consulta"})
+    assert "email no es válido" in r.get_data(as_text=True) or r.status_code >= 400
+    # D10: número de guía con «/»
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    with conexion.cursor() as cur:
+        cur.execute("INSERT INTO escaneos (carpeta, archivo, orden, numero_guia) VALUES ('subidas', 'barra.jpg', 0, '12/34')")
+    conexion.commit()
+    db.devolver_conexion(conexion)
+    assert cliente.get("/escaneos/guia/12/34").status_code == 200
+    # D13: página fuera de rango vuelve a la última; favicon y página de error en español
+    assert cliente.get("/buscar?pagina=99", follow_redirects=True).status_code == 200
+    assert cliente.get("/favicon.ico").status_code == 200

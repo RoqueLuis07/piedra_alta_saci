@@ -106,7 +106,7 @@ def registrar(app) -> None:
             formatos=FORMATOS, resumen=resumen_escaneos(conexion),
         )
 
-    @app.get("/escaneos/guia/<numero>")
+    @app.get("/escaneos/guia/<path:numero>")
     @requiere_sesion
     def ver_guia_escaneada(numero: str):
         conexion = conexion_actual()

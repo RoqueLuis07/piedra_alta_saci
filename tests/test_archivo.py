@@ -408,7 +408,7 @@ def test_revision_muestra_las_bajas_automaticas_para_recuperar_las_buenas(client
     db.devolver_conexion(conexion)
 
     pagina = cliente.get("/revision?ver=bajas").get_data(as_text=True)
-    assert fila["codigo"] in pagina and "SACADAS POR EL DETECTOR" in pagina
+    assert fila["codigo"] in pagina and "POR EL DETECTOR" in pagina
     assert fila["codigo"] not in cliente.get("/revision").get_data(as_text=True)        # no está en «por revisar»
     r = cliente.post(f"/marcas/{fila['id']}/revision", json={"accion": "aprobar"})      # recuperada: era buena
     assert r.status_code == 200 and _situacion(fila["id"]) == ("activa", True)

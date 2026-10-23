@@ -70,7 +70,7 @@
 
   <div style="display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px;">
     <div class="mono" style="font-size: 11px; color: var(--texto-secundario);">
-      {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% elif ver == 'bajas' %} SACADAS POR EL DETECTOR{% endif %}{% if motivo %} · {{ motivo|replace('no_es_marca:', '')|replace('_', ' ')|upper }}{% endif %} · MOSTRANDO <span id="visibles">{{ marcas|length }}</span>
+      {{ total }} MARCA{{ '' if total == 1 else 'S' }}{% if ver == 'pendientes' %} POR REVISAR{% elif ver == 'bajas' %} {{ 'SACADA' if total == 1 else 'SACADAS' }} POR EL DETECTOR{% endif %}{% if motivo %} · {{ motivo|replace('no_es_marca:', '')|replace('_', ' ')|upper }}{% endif %} · MOSTRANDO <span id="visibles">{{ marcas|length }}</span>
     </div>
     {% if marcas %}
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
