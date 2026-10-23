@@ -99,7 +99,7 @@
         <button type="button" class="ok" data-accion="aprobar" {% if m.estado == 'activa' %}disabled{% endif %}>✓ Aprobar</button>
         <button type="button" class="baja" data-accion="baja" {% if m.estado == 'baja' %}disabled{% endif %}>Baja</button>
         {% if perfil.rol == 'administrador' %}<button type="button" class="ocultar" data-accion="ocultar">Ocultar</button>{% endif %}
-        {% if ver == 'bajas' and perfil.rol == 'administrador' %}<button type="button" class="baja" data-accion="eliminar" title="Borrarla definitivamente: no se puede deshacer">Eliminar</button>{% endif %}
+        {% if perfil.rol == 'administrador' %}<button type="button" class="baja" data-accion="eliminar" title="Borrarla definitivamente: no se puede deshacer">Eliminar</button>{% endif %}
       </div>
     </article>
     {% else %}

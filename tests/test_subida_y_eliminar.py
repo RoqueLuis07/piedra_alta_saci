@@ -49,7 +49,7 @@ def test_subir_pdf_y_fotos(cliente):
     assert cliente.post("/escaneos/subir", data={}, content_type="multipart/form-data").status_code == 400
 
 
-def test_eliminar_solo_marcas_en_baja(cliente):
+def test_eliminar_marcas_directo_sin_pasar_por_baja(cliente):
     from marcas.servidor import db
 
     conexion = db.obtener_conexion()
@@ -62,11 +62,11 @@ def test_eliminar_solo_marcas_en_baja(cliente):
     db.devolver_conexion(conexion)
 
     r = cliente.post("/revision/eliminar", json={"ids": [baja, activa]})
-    assert r.status_code == 200 and r.get_json()["eliminadas"] == 1
+    assert r.status_code == 200 and r.get_json()["eliminadas"] == 2
     conexion = db.obtener_conexion()
     with conexion.cursor() as cur:
         cur.execute("SELECT id FROM marcas WHERE id IN (%s, %s)", (baja, activa))
-        assert [f["id"] for f in cur.fetchall()] == [activa]
+        assert cur.fetchall() == []
     db.devolver_conexion(conexion)
     assert cliente.post("/revision/eliminar", json={"ids": []}).status_code == 400
     assert cliente.post("/revision/eliminar", json={"ids": ["x"]}).status_code == 400
@@ -312,6 +312,9 @@ def test_revision_no_promete_ocultar_a_quien_no_puede(cliente):
     assert "<strong>Ocultar</strong>" in pagina_admin
     assert "<strong>Ocultar</strong>" not in pagina_operador and "Ocultar</button>" not in pagina_operador
     assert "<strong>Baja</strong>" in pagina_operador
+    # «Eliminar» directo en cada tarjeta (también en «por revisar»): sólo para el administrador
+    assert 'data-accion="eliminar"' in cliente.get("/revision?ver=todas").get_data(as_text=True)
+    assert 'data-accion="eliminar"' not in operador.get("/revision?ver=todas").get_data(as_text=True)
 
 
 def test_el_foco_de_teclado_tiene_estilo_visible(cliente):

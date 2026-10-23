@@ -12,7 +12,7 @@ from marcas.servidor.consultas import (
     cambiar_revision_marca,
     contar_bajas_automaticas,
     contar_pendientes_revision,
-    eliminar_marcas_en_baja,
+    eliminar_marcas,
     motivos_pendientes,
     restaurar_revision_lote,
     url_imagen,
@@ -137,13 +137,13 @@ def registrar_eliminacion(app) -> None:
     @requiere_sesion
     @requiere_rol("administrador")
     def revision_eliminar():
-        """Borra para siempre marcas que ya están de baja (lo que no es una marca). {ids: [...]}"""
+        """Borra para siempre marcas (la persona ya confirmó en pantalla). Sólo administrador. {ids: [...]}"""
         conexion = conexion_actual()
         ids = (request.get_json(silent=True) or {}).get("ids")
         if not isinstance(ids, list) or not ids or len(ids) > 1000 or not all(isinstance(i, int) for i in ids):
             return jsonify({"error": "Pedido inválido."}), 400
         try:
-            borradas = eliminar_marcas_en_baja(conexion, ids)
+            borradas = eliminar_marcas(conexion, ids)
         except Exception as exc:
             conexion.rollback()
             print(f"revision_eliminar: {exc}")

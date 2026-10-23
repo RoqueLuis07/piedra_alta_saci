@@ -1051,13 +1051,13 @@ def restaurar_revision_lote(conexion, items: list[dict], usuario_id: str | None)
             )
 
 
-def eliminar_marcas_en_baja(conexion, ids: list[int]) -> int:
-    """Borra DEFINITIVAMENTE marcas que ya están dadas de baja (no se pueden recuperar).
-    Las que no están de baja se ignoran: primero hay que sacarlas de uso. Devuelve cuántas se borraron."""
+def eliminar_marcas(conexion, ids: list[int]) -> int:
+    """Borra DEFINITIVAMENTE marcas, estén en el estado que estén (no se pueden recuperar; su historial de imágenes
+    se va con ellas). Es la acción directa de «Eliminar» en la pantalla de Revisión. Devuelve cuántas se borraron."""
     if not ids:
         return 0
     with conexion.cursor() as cur:
-        cur.execute("DELETE FROM marcas WHERE id = ANY(%s) AND estado = 'baja'", (ids,))
+        cur.execute("DELETE FROM marcas WHERE id = ANY(%s)", (ids,))
         return cur.rowcount
 
 
