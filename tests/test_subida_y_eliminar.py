@@ -221,3 +221,72 @@ def _png_dibujo() -> bytes:
     salida = io.BytesIO()
     im.save(salida, "PNG")
     return salida.getvalue()
+
+
+def _png(color: int) -> bytes:
+    salida = io.BytesIO()
+    Image.new("RGB", (60, 60), (color, color, color)).save(salida, "PNG")
+    return salida.getvalue()
+
+
+def _crear_marca_con_imagen(contenido: bytes) -> tuple[int, str]:
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    try:
+        with conexion.cursor() as cur:
+            cur.execute(
+                "INSERT INTO marcas (tipo, archivo_png, huella) VALUES ('complementaria', %s, %s) RETURNING id, codigo",
+                (psycopg2.Binary(contenido), psycopg2.Binary(b"x" * 8)),
+            )
+            fila = cur.fetchone()
+        conexion.commit()
+        return fila["id"], fila["codigo"]
+    finally:
+        db.devolver_conexion(conexion)
+
+
+def _consultar(sql: str, params=()):
+    from marcas.servidor import db
+
+    conexion = db.obtener_conexion()
+    try:
+        with conexion.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+    finally:
+        db.devolver_conexion(conexion)
+
+
+def test_reemplazar_imagen_guarda_historial_y_se_puede_volver(cliente):
+    original, nueva = _png(10), _png(200)
+    marca_id, codigo = _crear_marca_con_imagen(original)
+
+    r = cliente.post(f"/marcas/{marca_id}", data={"nuevo_png": (io.BytesIO(nueva), "nueva.png")}, content_type="multipart/form-data")
+    assert r.status_code == 302 and "aviso=imagen" in r.headers["Location"]
+    assert cliente.get(f"/imagenes/marca/{marca_id}.png").data == nueva
+    # la huella vieja ya no vale: se recalcula sola en la próxima búsqueda por dibujo
+    assert _consultar("SELECT huella FROM marcas WHERE id = %s", (marca_id,))[0]["huella"] is None
+    versiones = _consultar("SELECT id, motivo FROM marcas_versiones_imagen WHERE marca_id = %s", (marca_id,))
+    assert len(versiones) == 1 and versiones[0]["motivo"] == "reemplazo"
+    assert cliente.get(f"/imagenes/marca/version/{versiones[0]['id']}.png").data == original
+
+    pagina = cliente.get(f"/marcas/{codigo}").get_data(as_text=True)
+    assert "Historial de la imagen (1)" in pagina and "Volver a esta imagen" in pagina and "Imagen cambiada" not in pagina
+
+    # volver a la original: la nueva queda en el historial (la restauración también se puede deshacer)
+    r = cliente.post(f"/marcas/{marca_id}/restaurar-imagen/{versiones[0]['id']}")
+    assert r.status_code == 302 and "aviso=restaurada" in r.headers["Location"]
+    assert cliente.get(f"/imagenes/marca/{marca_id}.png").data == original
+    motivos = [v["motivo"] for v in _consultar("SELECT motivo FROM marcas_versiones_imagen WHERE marca_id = %s ORDER BY id", (marca_id,))]
+    assert motivos == ["reemplazo", "restauracion"]
+
+
+def test_restaurar_imagen_de_otra_marca_se_rechaza(cliente):
+    a, _ = _crear_marca_con_imagen(_png(30))
+    b, _ = _crear_marca_con_imagen(_png(40))
+    cliente.post(f"/marcas/{a}", data={"nuevo_png": (io.BytesIO(_png(90)), "x.png")}, content_type="multipart/form-data")
+    version = _consultar("SELECT id FROM marcas_versiones_imagen WHERE marca_id = %s", (a,))[0]["id"]
+    r = cliente.post(f"/marcas/{b}/restaurar-imagen/{version}")
+    assert r.status_code == 404
+    assert cliente.get(f"/imagenes/marca/{b}.png").data == _png(40)

@@ -316,3 +316,19 @@ where origen_etiqueta is null and origen_carpeta in ('L3210', 'L5290', 'PARTE1',
 
 create index if not exists idx_marcas_origen on marcas(origen_carpeta_n, origen_parte, origen_pagina_n);
 create index if not exists idx_escaneos_origen on escaneos(carpeta_n, parte, pagina_n);
+
+-- Historial de la imagen de cada marca: cada vez que se reemplaza (o se vuelve a una versión
+-- anterior) la imagen de una marca, la que estaba puesta queda guardada acá. Nunca se borra
+-- sola: sirve para corregir una marca mal trazada y poder volver atrás. Tabla aparte para que
+-- los listados de marcas no arrastren las imágenes.
+create table if not exists marcas_versiones_imagen (
+  id bigserial primary key,
+  marca_id bigint not null references marcas(id) on delete cascade,
+  archivo_png bytea,
+  archivo_svg bytea,
+  motivo text not null default 'reemplazo' check (motivo in ('reemplazo', 'restauracion')),
+  creado_por uuid references usuarios(id),
+  creado_en timestamptz not null default now()
+);
+
+create index if not exists idx_marcas_versiones_marca on marcas_versiones_imagen(marca_id, creado_en desc);

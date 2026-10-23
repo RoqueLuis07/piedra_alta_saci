@@ -359,6 +359,71 @@ def subir_imagen_marca(conexion, marca_id: int, contenido: bytes, extension: str
             f"UPDATE marcas SET archivo_{extension} = %s WHERE id = %s",
             (psycopg2.Binary(contenido), marca_id),
         )
+        if extension == "png":
+            # La huella (búsqueda por dibujo) sale de la imagen: si cambia, se recalcula sola en la próxima búsqueda.
+            cur.execute("UPDATE marcas SET huella = NULL WHERE id = %s", (marca_id,))
+
+
+def guardar_version_imagen(conexion, marca_id: int, usuario_id, motivo: str = "reemplazo") -> int | None:
+    """Guarda en el historial la imagen que tiene la marca AHORA (antes de pisarla). Devuelve el id de la
+    versión, o None si la marca todavía no tenía imagen."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO marcas_versiones_imagen (marca_id, archivo_png, archivo_svg, motivo, creado_por)
+            SELECT id, archivo_png, archivo_svg, %s, %s FROM marcas
+            WHERE id = %s AND (archivo_png IS NOT NULL OR archivo_svg IS NOT NULL)
+            RETURNING id
+            """,
+            (motivo, usuario_id, marca_id),
+        )
+        fila = cur.fetchone()
+    return fila["id"] if fila else None
+
+
+def listar_versiones_imagen(conexion, marca_id: int) -> list[dict]:
+    """El historial de la imagen de una marca, de la más reciente a la más vieja (sin los bytes)."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            """
+            SELECT v.id, v.motivo, v.creado_en, v.creado_por, u.nombre AS creado_por_nombre,
+                   (v.archivo_png IS NOT NULL) AS tiene_png, (v.archivo_svg IS NOT NULL) AS tiene_svg
+            FROM marcas_versiones_imagen v LEFT JOIN usuarios u ON u.id = v.creado_por
+            WHERE v.marca_id = %s ORDER BY v.creado_en DESC, v.id DESC
+            """,
+            (marca_id,),
+        )
+        return cur.fetchall()
+
+
+def imagen_version(conexion, version_id: int, extension: str = "png") -> bytes | None:
+    if extension not in ("png", "svg"):
+        raise ValueError(f"extensión de imagen inválida: {extension!r}")
+    with conexion.cursor() as cur:
+        cur.execute(f"SELECT archivo_{extension} AS contenido FROM marcas_versiones_imagen WHERE id = %s", (version_id,))
+        fila = cur.fetchone()
+    contenido = fila["contenido"] if fila else None
+    return bytes(contenido) if contenido is not None else None
+
+
+def restaurar_version_imagen(conexion, marca_id: int, version_id: int, usuario_id) -> bool:
+    """Vuelve a poner una imagen anterior. La imagen actual NO se pierde: pasa al historial, así que
+    la propia restauración también se puede deshacer. Devuelve False si la versión no es de esa marca."""
+    with conexion.cursor() as cur:
+        cur.execute(
+            "SELECT archivo_png, archivo_svg FROM marcas_versiones_imagen WHERE id = %s AND marca_id = %s",
+            (version_id, marca_id),
+        )
+        version = cur.fetchone()
+    if not version:
+        return False
+    guardar_version_imagen(conexion, marca_id, usuario_id, "restauracion")
+    with conexion.cursor() as cur:
+        cur.execute(
+            "UPDATE marcas SET archivo_png = %s, archivo_svg = %s, huella = NULL WHERE id = %s",
+            (version["archivo_png"], version["archivo_svg"], marca_id),
+        )
+    return True
 
 
 def imagen_marca(conexion, marca_id: int, extension: str) -> bytes | None:

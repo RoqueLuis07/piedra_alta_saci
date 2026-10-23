@@ -12,7 +12,11 @@ from marcas.servidor.consultas import (
     buscar_marcas,
     desglose_marcas,
     ficha_marca,
+    guardar_version_imagen,
     imagen_marca,
+    imagen_version,
+    listar_versiones_imagen,
+    restaurar_version_imagen,
     nombres_usuarios,
     obtener_marca_por_id,
     ocultar_marca,
@@ -78,6 +82,10 @@ def registrar(app) -> None:
         if not ficha:
             return _registro_no_encontrado("No se encontró esa marca.")
         ficha["marca"]["imagen_url"] = url_imagen(ficha["marca"]["id"], ficha["marca"].get("archivo_png"))
+        if ficha["marca"]["imagen_url"] and ficha["marca"].get("actualizado_en"):
+            # El número cambia cada vez que se toca la marca: así el navegador no muestra la imagen vieja de su caché.
+            ficha["marca"]["imagen_url"] += "?v=" + str(int(ficha["marca"]["actualizado_en"].timestamp()))
+        versiones = listar_versiones_imagen(conexion, ficha["marca"]["id"])
         for acompanante in ficha["acompanantes"]:
             acompanante["imagen_url"] = url_imagen(acompanante["id"], acompanante.get("archivo_png"))
         nombres = nombres_usuarios(
@@ -90,6 +98,8 @@ def registrar(app) -> None:
             activo="buscar",
             ficha=ficha,
             origen=origen_de_marca(conexion, ficha["marca"]["id"]),
+            versiones=versiones,
+            aviso=request.args.get("aviso"),
             perfil=perfil_actual(),
         )
 
@@ -135,6 +145,9 @@ def registrar(app) -> None:
         codigo_para_volver = marca_actual["codigo"]
         if cambios or archivos_subidos:
             try:
+                if archivos_subidos:
+                    # La imagen que estaba puesta queda en el historial: se puede volver a ella desde la ficha.
+                    guardar_version_imagen(conexion, marca_id, perfil_actual()["id"], "reemplazo")
                 for extension, contenido in archivos_subidos.items():
                     subir_imagen_marca(conexion, marca_id, contenido, extension)
                 if cambios:
@@ -142,7 +155,31 @@ def registrar(app) -> None:
                 codigo_para_volver = cambios.get("codigo", codigo_para_volver)
             except Exception as exc:
                 return _error_seguro("No se pudo guardar el cambio.", exc)
-        return redirect(url_for("ver_marca", codigo=codigo_para_volver))
+        return redirect(url_for("ver_marca", codigo=codigo_para_volver, aviso="imagen" if archivos_subidos else None))
+
+    @app.post("/marcas/<int:marca_id>/restaurar-imagen/<int:version_id>")
+    @requiere_sesion
+    @requiere_rol("administrador", "operador")
+    def restaurar_imagen_marca(marca_id: int, version_id: int):
+        conexion = conexion_actual()
+        marca = obtener_marca_por_id(conexion, marca_id)
+        if not marca:
+            return _registro_no_encontrado("No se encontró esa marca.")
+        try:
+            hecho = restaurar_version_imagen(conexion, marca_id, version_id, perfil_actual()["id"])
+        except Exception as exc:
+            return _error_seguro("No se pudo volver a esa imagen.", exc)
+        if not hecho:
+            return _registro_no_encontrado("Esa versión no pertenece a esta marca.")
+        return redirect(url_for("ver_marca", codigo=marca["codigo"], aviso="restaurada"))
+
+    @app.get("/imagenes/marca/version/<int:version_id>.png", endpoint="imagen_version_marca")
+    @requiere_sesion
+    def imagen_version_marca_ruta(version_id: int):
+        contenido = imagen_version(conexion_actual(), version_id, "png")
+        if not contenido:
+            return _registro_no_encontrado("Esa versión no tiene imagen.")
+        return send_file(io.BytesIO(contenido), mimetype="image/png", max_age=3600)
 
     @app.post("/marcas/<int:marca_id>/ocultar")
     @requiere_sesion
@@ -176,7 +213,7 @@ def registrar(app) -> None:
         if not contenido:
             return _registro_no_encontrado("Esa marca no tiene esa imagen guardada.")
         mimetype = "image/svg+xml" if extension == "svg" else "image/png"
-        return send_file(io.BytesIO(contenido), mimetype=mimetype, max_age=3600)
+        return send_file(io.BytesIO(contenido), mimetype=mimetype, max_age=120)
 
     @app.get("/marcas/buscar.json")
     @requiere_sesion

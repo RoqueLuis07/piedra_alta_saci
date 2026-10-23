@@ -6,6 +6,15 @@
 
 {% block contenido %}
 <div class="contenido">
+  {% if aviso == 'imagen' %}
+  <div class="aviso-pendiente" role="status" style="border-left-color: var(--verde-claro); background: var(--tabla-hover); color: var(--texto);">
+    ✓ Imagen cambiada. La anterior quedó guardada en el historial de abajo, por si querés volver a ella.
+  </div>
+  {% elif aviso == 'restaurada' %}
+  <div class="aviso-pendiente" role="status" style="border-left-color: var(--verde-claro); background: var(--tabla-hover); color: var(--texto);">
+    ✓ Listo, se volvió a la imagen anterior. La que estaba puesta antes también quedó en el historial.
+  </div>
+  {% endif %}
   {% if origen %}
   <div class="aviso-pendiente" style="border-left-color: var(--verde-claro); background: var(--tabla-hover); color: var(--texto);">
     <strong>De dónde salió:</strong>
@@ -62,6 +71,30 @@
         </div>
       </div>
 
+      <h2 class="subtitulo" style="margin-top: 28px;">Historial de la imagen ({{ versiones|length }})</h2>
+      {% if versiones %}
+      <p class="sub" style="margin: 0 0 10px;">Cada vez que se cambia la imagen, la anterior queda guardada acá. Nada se pierde.</p>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+        {% for v in versiones %}
+        <div style="width: 150px; border: 1px solid var(--borde-suave); background: var(--superficie); padding: 8px;">
+          {% if v.tiene_png %}<img src="{{ url_for('imagen_version_marca', version_id=v.id) }}" alt="Imagen anterior de {{ ficha.marca.codigo }}" loading="lazy" style="width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border: 1px solid var(--borde-fina); display: block;">{% endif %}
+          <div class="sub" style="margin-top: 6px; line-height: 1.4;">
+            {{ 'Antes de volver a una imagen anterior' if v.motivo == 'restauracion' else 'Imagen reemplazada' }}<br>
+            {{ v.creado_en|fecha_hora }}{% if v.creado_por_nombre %} · {{ v.creado_por_nombre }}{% endif %}
+          </div>
+          {% if perfil.rol in ('operador', 'administrador') %}
+          <form method="post" action="{{ url_for('restaurar_imagen_marca', marca_id=ficha.marca.id, version_id=v.id) }}" style="margin-top: 6px;" onsubmit="return confirm('¿Volver a esta imagen? La imagen actual queda guardada en el historial.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="boton" style="min-height: 38px; width: 100%; padding: 6px 8px; font-size: 12px;">Volver a esta imagen</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="sub">Todavía no se cambió la imagen de esta marca.{% if perfil.rol in ('operador', 'administrador') %} Si está mal trazada, usá «Cambiar la imagen» a la derecha: la actual queda guardada acá y se puede recuperar.{% endif %}</p>
+      {% endif %}
+
       <h2 class="subtitulo" style="margin-top: 28px;">Otras marcas de esta guía ({{ ficha.acompanantes|length }})</h2>
       <div style="display: flex; flex-wrap: wrap; border: 1px solid var(--borde-fina); border-bottom: 0;">
         {% for a in ficha.acompanantes %}
@@ -116,12 +149,12 @@
         <div class="campo-edicion"><label>Observaciones</label><textarea name="observaciones" rows="3">{{ ficha.marca.observaciones or '' }}</textarea></div>
         <div class="campo-edicion"><label>Vencimiento ante SENACSA</label><input type="date" name="vence_en" value="{{ ficha.marca.vence_en or '' }}"></div>
         <div class="campo-edicion">
-          <label>Reemplazar imagen PNG</label>
+          <label>Cambiar la imagen (PNG)</label>
           <input type="file" name="nuevo_png" id="campo-nuevo-png" accept="image/png">
         </div>
         <div id="previa-nuevo-png" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;"></div>
         <details id="panel-dibujo-nuevo-png" style="margin-bottom: 14px;">
-          <summary class="sub" style="cursor: pointer;">Dibujar la imagen a mano en vez de subir un archivo</summary>
+          <summary class="sub" style="cursor: pointer;">O dibujar la imagen a mano (reemplaza la actual; la anterior queda en el historial)</summary>
           <div class="panel-dibujo" style="margin-top: 10px; border: 1px solid var(--borde-fina); padding: 10px; background: #fff;">
             <canvas width="260" height="260" style="width: 100%; max-width: 260px; border: 1px solid var(--texto); touch-action: none; cursor: crosshair;"></canvas>
             <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
